@@ -1,4 +1,3 @@
-![Build/Release](https://img.shields.io/badge/Build%2FRelease-passing-brightgreen) ![CodeQL](https://img.shields.io/badge/CodeQL-passing-brightgreen) ![version](https://img.shields.io/badge/version-v1.0.0-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
 # VNV Maker : The Visual Novel Designer
 
