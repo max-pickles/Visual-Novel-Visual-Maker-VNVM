@@ -1,4 +1,4 @@
-![Build/Release](https://img.shields.io/badge/Build%2FRelease-passing-brightgreen) ![CodeQL](https://img.shields.io/badge/CodeQL-passing-brightgreen) ![version](https://img.shields.io/badge/version-v1.0.0-blue) ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+![Build/Release](https://img.shields.io/badge/Build%2FRelease-passing-brightgreen) ![CodeQL](https://img.shields.io/badge/CodeQL-passing-brightgreen) ![version](https://img.shields.io/badge/version-v1.0.0-blue) ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 
 # VNV Maker : The Visual Novel Designer
 
@@ -8,11 +8,11 @@ VNV Maker is a lean, standalone desktop IDE for Ren'Py visual novel development.
 
 It works alongside the Ren'Py SDK. Your project is saved as a plain JSON `.vnvmaker` file and exports directly to `.rpy`. No lock-in.
 
-[Watch the Full Walkthrough Video @ YouTube →](#)
+[Watch the Full Walkthrough Video @ YouTube →](https://www.youtube.com/)
 
-[Download the latest release (v1.0.0)](#)
+[Download the latest release (v1.0.0)](https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM/releases/latest)
 
-[Download the latest nightly release (bleeding edge, tread carefully!)](#)
+[Download the latest nightly release (bleeding edge, tread carefully!)](https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM/releases)
 
 ## Why VNV Maker?
 
