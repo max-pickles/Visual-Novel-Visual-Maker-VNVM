@@ -1,0 +1,39 @@
+[package]
+name = "vnvmaker"
+version = "1.0.0"
+description = "VNVMaker — lean visual novel editor"
+authors = ["Maximiliano Cameron Mcmickle"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+default-run = "vnvmaker"
+
+[package.metadata.bundle]
+identifier = "com.vnvmaker.app"
+icon = ["icons/icon.ico"]
+
+
+[lib]
+name = "vnvmaker_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri           = { version = "2",  features = ["protocol-asset"] }
+tauri-plugin-fs     = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell  = "2"
+serde           = { version = "1", features = ["derive"] }
+serde_json      = "1"
+tokio           = { version = "1", features = ["full"] }
+regex           = "1"
+walkdir         = "1"
+uuid            = { version = "1", features = ["v4"] }
+
+[features]
+# This feature is used for production builds or when a dev server is not specified,
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

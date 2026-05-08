@@ -1,0 +1,545 @@
+/**
+ * ExportPanel.tsx — Ren'Py compiler + standalone SDK export.
+ * Uses compiler.ts for script generation and exportToSdk Tauri command.
+ */
+import React, { useState, useCallback, useMemo } from "react";
+import type { VNProject } from "./types";
+import { compileProject, getProjectStats } from "./compiler";
+import { exportToSdk, pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile } from "./tauriApi";
+import { validateProject } from "./validator";
+import { ToastManager } from "./toastContext";
+
+interface Props {
+  project: VNProject;
+}
+
+type StatusType = "idle" | "ok" | "err" | "running";
+type Status = { type: StatusType; msg: string };
+
+export function ExportPanel({ project }: Props) {
+  const [exportName, setExportName] = useState(
+    (project.title || "MyVN").replace(/[^a-zA-Z0-9_\-]/g, "_")
+  );
+  const [previewScripts, setPreviewScripts] = useState<{ filename: string, content: string }[] | null>(null);
+  const [selectedScript, setSelectedScript] = useState<string>("script.rpy");
+  const [status, setStatus] = useState<Status>({ type: "idle", msg: "" });
+  const [activeTab, setActiveTab] = useState<"options" | "preview">("options");
+  const [unusedAssets, setUnusedAssets] = useState<string[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  const safe = exportName.replace(/[^a-zA-Z0-9_\-]/g, "_") || "MyVN";
+  const rootPath = project._rootPath ?? "";
+
+  const setOk  = (msg: string) => { setStatus({ type: "ok",  msg }); ToastManager.success(msg.replace(/\n.*/s, "")); };
+  const setErr  = (msg: string) => { setStatus({ type: "err", msg }); ToastManager.error(msg.replace(/\n.*/s, "")); };
+  const setRun  = (msg: string) => setStatus({ type: "running", msg });
+
+  const stats      = useMemo(() => getProjectStats(project), [project]);
+  const validation = useMemo(() => validateProject(project), [project]);
+
+  // ── Scan unused assets ─────────────────────────────────────────────────────
+  React.useEffect(() => {
+    let active = true;
+    if (!rootPath) return;
+
+    async function scan() {
+      setIsScanning(true);
+      try {
+        const diskImages = await listAssetFiles(rootPath, "images");
+        const diskAudio = await listAssetFiles(rootPath, "audio");
+        
+        const used = new Set<string>();
+        if (project.cover) used.add(project.cover.replace(/\\/g, "/"));
+        for (const char of project.characters) {
+          for (const sprite of Object.values(char.sprites)) {
+            used.add(sprite.replace(/\\/g, "/"));
+          }
+        }
+        for (const sc of project.scenes) {
+          if (sc.bg) used.add(sc.bg.replace(/\\/g, "/"));
+          if (sc.music) used.add(sc.music.replace(/\\/g, "/"));
+          for (const ev of sc.events) {
+            if (ev.bg) used.add(ev.bg.replace(/\\/g, "/"));
+            if (ev.image) used.add(ev.image.replace(/\\/g, "/"));
+            if (ev.music) used.add(ev.music.replace(/\\/g, "/"));
+            if (ev.sfx) used.add(ev.sfx.replace(/\\/g, "/"));
+          }
+        }
+
+        const unused: string[] = [];
+        for (const file of [...diskImages, ...diskAudio]) {
+          const f = file.replace(/\\/g, "/");
+          // Skip internal gui and tl files
+          if (f.includes("gui/") || f.includes("tl/") || f.startsWith("images/gui/") || f.startsWith("game/gui/") || f.startsWith("game/tl/")) continue;
+          if (!used.has(f)) unused.push(f);
+        }
+        
+        if (active) setUnusedAssets(unused);
+      } catch (e) {
+        console.warn("Scan failed", e);
+      } finally {
+        if (active) setIsScanning(false);
+      }
+    }
+    scan();
+    return () => { active = false; };
+  }, [project, rootPath]);
+
+  const handleClean = async () => {
+    try {
+      setRun("Deleting assets...");
+      setShowConfirmModal(false);
+      let deleted = 0;
+      for (const file of unusedAssets) {
+        const absPath = `${rootPath.replace(/\\/g, "/")}/${file}`;
+        await deleteFile(absPath);
+        deleted++;
+      }
+      setOk(`✅ Deleted ${deleted} unused assets.`);
+      setUnusedAssets([]);
+    } catch (e) {
+      setErr(String(e));
+    }
+  };
+
+  // ── Preview compiled script ────────────────────────────────────────────────
+  const handlePreview = useCallback(async () => {
+    try {
+      setRun("Compiling script...");
+      const script = compileProject(project, { asExport: true });
+      const scripts = [{ filename: "script.rpy", content: script }];
+
+      if (rootPath) {
+        try {
+          const files = await getRpyFiles(rootPath);
+          for (const file of files) {
+            const filename = file.split('/').pop() || file;
+            if (filename === "script.rpy" || filename === "vnv_preview.rpy") continue;
+            const content = await readRpyFile(`${rootPath.replace(/\\/g, '/')}/${file}`);
+            scripts.push({ filename, content });
+          }
+        } catch (e) {
+          console.warn("Could not load other .rpy files", e);
+        }
+      }
+
+      setPreviewScripts(scripts);
+      setSelectedScript("script.rpy");
+      setActiveTab("preview");
+      setStatus({ type: "idle", msg: "" });
+    } catch (e) {
+      setErr(String(e));
+    }
+  }, [project, rootPath]);
+
+  // ── Save as .rpy file ──────────────────────────────────────────────────────
+  const handleSaveRpy = useCallback(async () => {
+    try {
+      setRun("Compiling…");
+      const script = compileProject(project, { asExport: true });
+      const path = await pickSavePath(`${safe}.rpy`);
+      if (!path) { setStatus({ type: "idle", msg: "" }); return; }
+      await writeTextFile(path, script);
+      setOk(`✅ Saved to:\n${path}`);
+    } catch (e) { setErr(String(e)); }
+  }, [project, safe]);
+
+  // ── Standalone export to SDK ───────────────────────────────────────────────
+  const handleExport = useCallback(async () => {
+    if (!safe) { setErr("Enter a project name first."); return; }
+    if (!rootPath) { setErr("No project folder — save your project first."); return; }
+    setRun(`Building standalone game "${safe}"…`);
+    try {
+      const script = compileProject(project, { asExport: true });
+      const outPath = await exportToSdk(script, safe, project.title || safe, rootPath);
+      setOk(`✅ Exported to:\n${outPath}\n\nYou can now open this project in the Ren'Py Launcher!`);
+    } catch (e) { setErr(String(e)); }
+  }, [project, safe, rootPath]);
+
+  const statusColor: Record<StatusType, string> = {
+    idle: "var(--dim)", ok: "var(--ok)", err: "var(--err)", running: "var(--warn)"
+  };
+
+  return (
+    <div className="col" style={{ height: "100%", overflow: "hidden", minHeight: 0 }}>
+      <style>{`
+        @keyframes export-glow {
+          0%, 100% { box-shadow: 0 0 10px color-mix(in srgb, var(--acc) 30%, transparent); }
+          50%      { box-shadow: 0 0 25px color-mix(in srgb, var(--acc) 70%, transparent); }
+        }
+      `}</style>
+      <div className="sec-hdr">EXPORT / COMPILE</div>
+
+      <div className="row" style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+
+        {/* ── Left panel ── */}
+        <div style={{ width: 380, flexShrink: 0, borderRight: "1px solid var(--bdr)", background: "var(--bg1)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div className="col" style={{ padding: "32px", paddingBottom: "64px", gap: 28, overflowY: "auto", flex: 1, minHeight: 0 }}>
+
+          {/* Project Stats card */}
+          <div className="card col gap12" style={{
+            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'linear-gradient(145deg, var(--bg2), var(--bg1))',
+            padding: 20, animation: 'vnv-fade-slide-in 0.2s ease both',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div className="label" style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--teal)', flex: 1 }}>PROJECT SUMMARY</div>
+              <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--mono)' }}>{project.title}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 20px" }}>
+              {([
+                ["Scenes",         stats.scenes,        "var(--acc2)"],
+                ["Characters",     stats.characters,    "var(--teal)"],
+                ["Total Events",   stats.events,        "var(--text)"],
+                ["Dialogue Lines", stats.dialogueLines, "var(--text)"],
+                ["Choice Points",  stats.choices,       "#9c6bf7"   ],
+                ["Music Tracks",   stats.music,         "var(--warn)"],
+              ] as [string, number, string][]).map(([label, val, color]) => (
+                <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ fontSize: 10, color: "var(--dim)", letterSpacing: "0.06em", textTransform: 'uppercase', fontWeight: 600 }}>{label}</div>
+                  <div style={{
+                    fontSize: 24, fontWeight: 800, color,
+                    fontFamily: "var(--mono)", lineHeight: 1,
+                    textShadow: `0 0 20px color-mix(in srgb, ${color} 30%, transparent)`,
+                  }}>{val}</div>
+                </div>
+              ))}
+            </div>
+            {!project.start && (
+              <div style={{ fontSize: 11, color: "var(--warn)", background: "rgba(245,158,11,0.1)", padding: "10px 12px", borderRadius: 6, borderLeft: "3px solid var(--warn)", marginTop: 8 }}>
+                <strong>⚠ No start scene set.</strong> Right-click a scene in the Graph to set it.
+              </div>
+            )}
+          </div>
+
+          {/* Asset Pruner */}
+          <div className="card col gap8" style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'var(--bg2)', padding: 16 }}>
+            <div className="label" style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--warn)' }}>ASSET OPTIMIZATION</div>
+            {isScanning ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 18, animation: 'spin 0.8s linear infinite' }}>⟳</div>
+                <div style={{ fontSize: 12, color: "var(--dim)" }}>Scanning for unused assets…</div>
+              </div>
+            ) : unusedAssets.length > 0 ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                    background: 'color-mix(in srgb, var(--err) 12%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--err) 25%, transparent)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+                  }}>🗑</div>
+                  <div style={{ fontSize: 12, color: "var(--text)" }}>
+                    Found <strong style={{ color: 'var(--err)' }}>{unusedAssets.length}</strong> unused asset{unusedAssets.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                <button className="btn" onClick={() => setShowConfirmModal(true)}
+                  style={{
+                    background: "rgba(239,68,68,0.12)", color: "var(--err)",
+                    border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)",
+                    padding: "8px 14px", fontSize: 12, borderRadius: 8, marginTop: 4,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.2)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.12)'}
+                >
+                  🗑 Clean {unusedAssets.length} Unused Files
+                </button>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: "var(--ok)" }}>
+                <span>✓</span> All files in project are used.
+              </div>
+            )}
+          </div>
+
+          {/* Compile to .rpy */}
+          <div className="col gap8">
+            <div className="label">COMPILE TO .RPY</div>
+            <div className="sublabel">Generate a standalone .rpy script you can paste into any Ren'Py project.</div>
+            <div className="row gap8">
+              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={handlePreview}>
+                👁 Preview Script
+              </button>
+              <button className="btn btn-accent" style={{ flex: 1 }} onClick={handleSaveRpy}
+                disabled={status.type === "running"}>
+                💾 Save .rpy
+              </button>
+            </div>
+          </div>
+
+          <div className="divider" style={{ opacity: 0.5 }} />
+
+          {/* Standalone SDK export */}
+          <div className="col gap12">
+            <div>
+              <div className="label" style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--acc)' }}>STANDALONE EXPORT (SDK)</div>
+              <div className="sublabel" style={{ marginTop: 4, lineHeight: 1.5 }}>
+                Creates a complete ready-to-play Ren'Py game folder inside your SDK.
+              </div>
+            </div>
+
+            <div className="col gap6">
+              <div className="label" style={{ color: 'var(--text)' }}>Project Folder Name</div>
+              <div className="sublabel">ASCII letters, numbers, dashes, underscores only.</div>
+              <input className="input mono" value={exportName} style={{ padding: '10px 14px', fontSize: 14 }}
+                onChange={e => setExportName(e.target.value)} placeholder="MyVN" />
+              {exportName !== safe && (
+                <div style={{ fontSize: 10, color: "var(--warn)", marginTop: 4 }}>→ Will be saved as: <strong>{safe}</strong></div>
+              )}
+            </div>
+
+            {/* What it does */}
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: "14px 16px", fontSize: 12, color: "var(--dim)", lineHeight: 1.8 }}>
+              <div style={{ color: "var(--text)", fontWeight: 700, marginBottom: 8, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase' }}>This will:</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📁 <span>Copy the Ren'Py GUI scaffold</span></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>⚙️ <span>Patch <code style={{ color: 'var(--acc2)', background: 'transparent', padding: 0 }}>options.rpy</code> with your title & name</span></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>📝 <span>Write compiled <code style={{ color: 'var(--acc2)', background: 'transparent', padding: 0 }}>script.rpy</code></span></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>🖼️ <span>Copy your <code style={{ color: 'var(--teal)', background: 'transparent', padding: 0 }}>images/</code> & <code style={{ color: 'var(--teal)', background: 'transparent', padding: 0 }}>audio/</code> folders</span></div>
+            </div>
+
+            {/* Validation Diagnostics */}
+            {(validation.errors.length > 0 || validation.warnings.length > 0) && (
+              <div className="col gap8">
+                <div className="label">VALIDATION</div>
+                {validation.errors.map((d, i) => (
+                  <div key={i} style={{ fontSize: 12, color: "#fca5a5", background: "rgba(239,68,68,0.12)", padding: "8px 12px", borderRadius: 6, borderLeft: "3px solid #ef4444" }}>
+                    {d.location && <strong style={{ color: '#ef4444' }}>[{d.location}] </strong>}{d.message}
+                  </div>
+                ))}
+                {validation.warnings.map((d, i) => (
+                  <div key={i} style={{ fontSize: 12, color: "#fcd34d", background: "rgba(245,158,11,0.12)", padding: "8px 12px", borderRadius: 6, borderLeft: "3px solid #f59e0b" }}>
+                    {d.location && <strong style={{ color: '#f59e0b' }}>[{d.location}] </strong>}{d.message}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button className="btn" onClick={handleExport}
+              disabled={status.type === "running" || !safe || !validation.ok}
+              style={{
+                padding: "12px 20px", fontSize: 14, fontWeight: 700, borderRadius: 8, marginTop: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                background: validation.ok ? 'var(--acc)' : 'rgba(255,255,255,0.05)',
+                color: validation.ok ? '#fff' : 'var(--dim)',
+                border: validation.ok
+                  ? '1px solid color-mix(in srgb, var(--acc) 70%, transparent)'
+                  : '1px solid var(--bdr)',
+                boxShadow: validation.ok && status.type !== 'running'
+                  ? '0 0 20px color-mix(in srgb, var(--acc) 30%, transparent)'
+                  : 'none',
+                animation: validation.ok && status.type !== 'running'
+                  ? 'export-glow 2.5s ease-in-out infinite'
+                  : 'none',
+                cursor: validation.ok ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+              }}
+              title={!validation.ok ? "Fix errors before exporting" : ""}>
+              {status.type === "running"
+                ? <><span style={{ animation: 'spin 0.6s linear infinite', display: 'inline-block' }}>⟳</span> Exporting…</>
+                : <>🚀 Export to SDK</>}
+            </button>
+            {!validation.ok && (
+              <div style={{ fontSize: 12, color: "var(--err)", textAlign: "center", fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <span>⛔</span> Fix {validation.errors.length} error{validation.errors.length !== 1 ? "s" : ""} to enable export
+              </div>
+            )}
+          </div>
+
+          {/* Status message */}
+          {status.msg && (
+            <div style={{
+              background: "var(--bg1)",
+              border: `1px solid ${statusColor[status.type]}`,
+              borderLeft: `4px solid ${statusColor[status.type]}`,
+              borderRadius: 6, padding: "10px 12px",
+              fontSize: 12, color: statusColor[status.type],
+              whiteSpace: "pre-wrap", lineHeight: 1.6,
+            }}>
+              {status.msg}
+            </div>
+          )}
+          </div>
+        </div>
+
+        {/* ── Right panel: script preview ── */}
+        <div className="col flex1" style={{ height: "100%", overflow: "hidden" }}>
+
+          {/* Tabs */}
+          <div className="row" style={{ background: "var(--bg1)", borderBottom: "1px solid var(--bdr)", padding: "0 16px" }}>
+            {(["options", "preview"] as const).map(tab => (
+              <button key={tab}
+                onClick={() => { if (tab === "preview" && !previewScripts) handlePreview(); else setActiveTab(tab); }}
+                style={{
+                  padding: "10px 16px", fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
+                  background: "transparent", border: "none", cursor: "pointer",
+                  color: activeTab === tab ? "var(--teal)" : "var(--dim)",
+                  borderBottom: activeTab === tab ? "2px solid var(--teal)" : "2px solid transparent",
+                  textTransform: "uppercase",
+                }}>
+                {tab === "options" ? "⚙ Options" : "📄 Script Preview"}
+              </button>
+            ))}
+            {previewScripts && selectedScript && (
+              <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: 10, color: "var(--dim)", fontFamily: "var(--mono)" }}>
+                {previewScripts.find(s => s.filename === selectedScript)?.content.split("\n").length} lines · {((previewScripts.find(s => s.filename === selectedScript)?.content.length || 0) / 1024).toFixed(1)} KB
+              </span>
+            )}
+          </div>
+
+          {activeTab === "preview" ? (
+            previewScripts ? (
+              <div className="col flex1" style={{ overflow: "hidden" }}>
+                <div 
+                  className="row vnv-scroll" 
+                  style={{ 
+                    background: "var(--bg2)", borderBottom: "1px solid var(--bdr)", 
+                    overflowX: "auto", overflowY: "hidden", whiteSpace: "nowrap" 
+                  }}
+                  onWheel={e => { e.currentTarget.scrollLeft += e.deltaY; }}
+                >
+                  {previewScripts.map(script => (
+                    <button
+                      key={script.filename}
+                      onClick={() => setSelectedScript(script.filename)}
+                      style={{
+                        padding: "8px 16px", fontSize: 11, fontFamily: "var(--mono)",
+                        background: selectedScript === script.filename ? "var(--bg1)" : "transparent",
+                        color: selectedScript === script.filename ? "var(--text)" : "var(--dim)",
+                        border: "none", borderRight: "1px solid var(--bdr)",
+                        borderBottom: selectedScript === script.filename ? "2px solid var(--acc2)" : "2px solid transparent",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {script.filename}
+                    </button>
+                  ))}
+                </div>
+                <pre style={{
+                  flex: 1, overflowY: "auto", padding: "14px 20px",
+                  fontFamily: "var(--mono)", fontSize: 12.5,
+                  color: "var(--text)", lineHeight: 1.7,
+                  background: "var(--bg0)", margin: 0,
+                }}>
+                  {renderSyntaxHighlight(previewScripts.find(s => s.filename === selectedScript)?.content || "")}
+                </pre>
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "var(--faint)" }}>
+                <span style={{ fontSize: 36 }}>📄</span>
+                <span style={{ fontSize: 12 }}>Click "Preview Script" to compile and preview</span>
+              </div>
+            )
+          ) : (
+            /* Options tab — instruction card */
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
+              <div className="card col gap12" style={{ maxWidth: 500 }}>
+                <div className="label">HOW IT WORKS</div>
+                <div style={{ fontSize: 12, color: "var(--dim)", lineHeight: 1.8 }}>
+                  <p>VNVMaker compiles your project into a valid <strong style={{ color: "var(--text)" }}>Ren'Py .rpy script</strong> that can be run directly by the Ren'Py engine.</p>
+                  <p>Your event types map to Ren'Py statements like this:</p>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 11, background: "var(--bg1)", padding: "10px 14px", borderRadius: 6, lineHeight: 2 }}>
+                    <div><span style={{ color: "var(--teal)" }}>dialogue</span> → <span style={{ color: "var(--acc2)" }}>Character "text"</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>narration</span> → <span style={{ color: "var(--acc2)" }}>"text"</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>bg</span> → <span style={{ color: "var(--acc2)" }}>scene expression Transform(...)</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>image</span> → <span style={{ color: "var(--acc2)" }}>show expression "path" at side</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>music</span> → <span style={{ color: "var(--acc2)" }}>play music "path"</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>effect</span> → <span style={{ color: "var(--acc2)" }}>with Dissolve(0.5)</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>choice</span> → <span style={{ color: "var(--acc2)" }}>menu: ...</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>jump</span> → <span style={{ color: "var(--acc2)" }}>jump vns_scene_id</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>setvar</span> → <span style={{ color: "var(--acc2)" }}>$ var = value</span></div>
+                    <div><span style={{ color: "var(--teal)" }}>if</span> → <span style={{ color: "var(--acc2)" }}>if condition: jump ...</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Are You Sure Modal */}
+      {showConfirmModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", animation: 'vnv-fade-slide-in 0.15s ease both' }}>
+          <div className="col" style={{ width: 520, background: "var(--bg1)", borderRadius: 14, border: "1px solid var(--bdr)", overflow: "hidden", boxShadow: "0 24px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)" }}>
+            {/* Modal header */}
+            <div style={{ padding: "16px 20px", background: "color-mix(in srgb, var(--err) 15%, var(--bg2))", borderBottom: "1px solid color-mix(in srgb, var(--err) 30%, var(--bdr))", display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--err)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🗑</div>
+              <div>
+                <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 14 }}>Delete Unused Assets</div>
+                <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>This action cannot be undone</div>
+              </div>
+            </div>
+
+            <div style={{ padding: 20, color: "var(--text)", fontSize: 13, lineHeight: 1.6 }}>
+              <p style={{ marginBottom: 12 }}>Permanently delete <strong style={{ color: 'var(--err)' }}>{unusedAssets.length}</strong> files not referenced by any scene, character, or event?</p>
+
+              {/* File list with type icons */}
+              <div style={{ background: "var(--bg0)", border: "1px solid var(--bdr)", borderRadius: 8, maxHeight: 220, overflowY: "auto" }}>
+                {unusedAssets.map(f => {
+                  const ext = f.split('.').pop()?.toLowerCase() ?? '';
+                  const icon = ['png','jpg','jpeg','webp','gif'].includes(ext) ? '🖼️'
+                    : ['mp3','ogg','wav','flac'].includes(ext) ? '🎵'
+                    : ['mp4','webm'].includes(ext) ? '🎬' : '📄';
+                  const name = f.split('/').pop() ?? f;
+                  return (
+                    <div key={f} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      fontSize: 11, fontFamily: 'var(--mono)',
+                    }}>
+                      <span style={{ fontSize: 14, flexShrink: 0 }}>{icon}</span>
+                      <span style={{ color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                      <span style={{ color: 'var(--faint)', flexShrink: 0, fontSize: 10 }}>{ext.toUpperCase()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="row" style={{ padding: "14px 20px", borderTop: "1px solid var(--bdr)", justifyContent: "flex-end", gap: 10, background: "var(--bg2)" }}>
+              <button className="btn btn-ghost" onClick={() => setShowConfirmModal(false)}>Cancel</button>
+              <button
+                className="btn"
+                style={{ background: "var(--err)", color: "#fff", border: "1px solid color-mix(in srgb, var(--err) 70%, transparent)", fontWeight: 700, padding: '0 18px', height: 34, borderRadius: 8 }}
+                onClick={handleClean}
+              >
+                Delete {unusedAssets.length} Files
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Syntax highlighter (basic, no deps) ─────────────────────────────────────
+
+function renderSyntaxHighlight(script: string): React.ReactNode {
+  return script.split("\n").map((line, i) => {
+    let color = "var(--text)";
+    const trimmed = line.trimStart();
+
+    if (trimmed.startsWith("##") || trimmed.startsWith("#"))        color = "var(--dim)";
+    else if (trimmed.startsWith("label "))                           color = "var(--teal)";
+    else if (trimmed.startsWith("define "))                          color = "#c084fc";
+    else if (trimmed.startsWith("default "))                         color = "#fb923c";
+    else if (trimmed.startsWith("init ") || trimmed === "init python:") color = "#fb923c";
+    else if (trimmed.startsWith("$"))                                color = "#60a5fa";
+    else if (trimmed.startsWith("scene ") || trimmed.startsWith("show ") || trimmed.startsWith("hide ")) color = "#4ade80";
+    else if (trimmed.startsWith("play ") || trimmed.startsWith("stop ")) color = "#facc15";
+    else if (trimmed.startsWith("with "))                            color = "#e879f9";
+    else if (trimmed.startsWith("menu:") || trimmed.startsWith("if ") || trimmed.startsWith("else:")) color = "#f472b6";
+    else if (trimmed.startsWith("jump ") || trimmed.startsWith("call ") || trimmed.startsWith("return")) color = "#22d3ee";
+    else if (trimmed.startsWith("pause "))                           color = "var(--dim)";
+    else if (trimmed.startsWith('"'))                                color = "#fbbf24";
+    else if (/^\s+[a-z_]+ "/.test(line))                           color = "#93c5fd";
+
+    return (
+      <span key={i} style={{ display: "block", color, minHeight: "1.2em" }}>
+        {line || " "}
+      </span>
+    );
+  });
+}

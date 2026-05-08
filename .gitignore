@@ -1,10 +1,5 @@
-*.rpyc
-*.rpymc
-*.pyc
-/saves/
-/tmp/
-log.txt
-errors.txt
-traceback.txt
-.DS_Store
-Thumbs.db
+node_modules
+dist
+src-tauri/target
+.vnvmaker_layout.json
+renpy-*

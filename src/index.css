@@ -1,0 +1,1071 @@
+/* VNVMaker — Global CSS */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
+:root {
+  --grid-dot-opacity: 0.35;
+  --bg0:    #05080f;
+  --bg1:    #080d1a;
+  --bg2:    #0d1220;
+  --bg3:    #111827;
+  --bg4:    #1a2540;
+  --bdr:    #1e2d42;
+  --text:   #e2e8f0;
+  --dim:    #4a5568;
+  --faint:  #2d3748;
+  --teal:   #00d4c8;
+  --acc:    #4b6cf7;
+  --acc2:   #6b8afb;
+  --ok:     #22c55e;
+  --warn:   #f59e0b;
+  --err:    #ef4444;
+  --pink:   #f472b6;
+  --amber:  #d4961e;
+  --sel:    #1a2a4a;
+  --hover:  #151e32;
+  --radius: 6px;
+  --font:   'Inter', system-ui, sans-serif;
+  --mono:   'JetBrains Mono', 'Fira Code', monospace;
+  --grid-dot-color: var(--teal);
+  --grid-dot-opacity: 0.35;
+}
+
+[data-bg-level="lighter"] {
+  --grid-dot-color: var(--teal);
+  --grid-dot-opacity: 0.6;
+}
+
+[data-bg-level="default"] {
+  --grid-dot-color: var(--teal);
+  --grid-dot-opacity: 0.35;
+}
+
+[data-bg-level="darker"] {
+  --grid-dot-color: var(--teal);
+  --grid-dot-opacity: 0.45;
+}
+
+/* ── Themes (YThemes-style data-theme attribute on :root) ── */
+
+:root[data-theme="vnv-dark"] {
+  --bg0: #05080f; --bg1: #080d1a; --bg2: #0d1220; --bg3: #111827; --bg4: #1a2540;
+  --bdr: #1e2d42; --text: #c8d8e8; --dim: #4a5568; --faint: #2d3748;
+  --teal: #00d4c8; --acc: #4b6cf7; --acc2: #6b8afb; --pink: #f472b6;
+  --sel: #1a2a4a; --hover: #151e32;
+}
+
+:root[data-theme="frappe"] {
+  --bg0: #232634; --bg1: #292c3c; --bg2: #303446; --bg3: #383b4e; --bg4: #414559;
+  --bdr: #414559; --text: #c6d0f5; --dim: #737994; --faint: #51576d;
+  --teal: #81c8be; --acc: #8caaee; --acc2: #99d1db; --pink: #f4b8e4;
+  --sel: #414559; --hover: #2b2e3f;
+}
+
+:root[data-theme="onedark"] {
+  --bg0: #1e2127; --bg1: #21252b; --bg2: #282c34; --bg3: #2f333d; --bg4: #3a3d46;
+  --bdr: #3a3d46; --text: #abb2bf; --dim: #5c6370; --faint: #3a3d46;
+  --teal: #56b6c2; --acc: #61afef; --acc2: #98c379; --pink: #c678dd;
+  --sel: #3a3d46; --hover: #2c313a;
+}
+
+:root[data-theme="matrix"] {
+  --bg0: #0d0208; --bg1: #0a1a10; --bg2: #0c2216; --bg3: #102b1a; --bg4: #214338;
+  --bdr: #1a4a2a; --text: #00ff41; --dim: #006622; --faint: #004418;
+  --teal: #00ff41; --acc: #00cc33; --acc2: #00ee44; --pink: #39ff14;
+  --sel: #08180f; --hover: #0c2010;
+}
+
+:root[data-theme="solarized-dark"] {
+  --bg0: #001e27; --bg1: #002b36; --bg2: #003745; --bg3: #004052; --bg4: #2e4c52;
+  --bdr: #2e4c52; --text: #839496; --dim: #586e75; --faint: #073642;
+  --teal: #2aa198; --acc: #268bd2; --acc2: #6c71c4; --pink: #d33682;
+  --sel: #073642; --hover: #00303d;
+}
+
+:root[data-theme="cyberpunk"] {
+  --bg0: #0a0010; --bg1: #0d0018; --bg2: #110020; --bg3: #160028; --bg4: #200040;
+  --bdr: #3d0070; --text: #f0e6ff; --dim: #7a4fa0; --faint: #3d1a5c;
+  --teal: #00ffff; --acc: #ff00ff; --acc2: #bf5fff; --pink: #ff0090;
+  --sel: #2a0050; --hover: #1a0035;
+}
+
+:root[data-theme="amber"] {
+  --bg0: #0f0a00; --bg1: #1a1100; --bg2: #221600; --bg3: #2c1e00; --bg4: #3d2a00;
+  --bdr: #5a3d00; --text: #ffd080; --dim: #8a6030; --faint: #3d2a00;
+  --teal: #ffb000; --acc: #ff8800; --acc2: #ffd700; --pink: #ff6040;
+  --sel: #3d2a00; --hover: #2a1c00;
+}
+
+
+:root[data-theme="nord"] {
+  --bg0: #242933; --bg1: #2e3440; --bg2: #3b4252; --bg3: #434c5e; --bg4: #4c566a;
+  --bdr: #4c566a; --text: #d8dee9; --dim: #8fbcbb; --faint: #434c5e;
+  --teal: #8fbcbb; --acc: #88c0d0; --acc2: #81a1c1; --pink: #b48ead;
+  --sel: #434c5e; --hover: #3b4252;
+}
+
+:root[data-theme="tokyo-night"] {
+  --bg0: #15161e; --bg1: #1a1b26; --bg2: #24283b; --bg3: #292e42; --bg4: #414868;
+  --bdr: #414868; --text: #c0caf5; --dim: #565f89; --faint: #292e42;
+  --teal: #7dcfff; --acc: #bb9af7; --acc2: #7aa2f7; --pink: #f7768e;
+  --sel: #292e42; --hover: #1f2335;
+}
+
+:root[data-theme="aura"] {
+  --bg0: #110f14; --bg1: #15141b; --bg2: #1c1b22; --bg3: #2d2b38; --bg4: #3d3b4f;
+  --bdr: #2d2b38; --text: #edecee; --dim: #6d6a7f; --faint: #2d2b38;
+  --teal: #61ffca; --acc: #a277ff; --acc2: #82e2ff; --pink: #f694ff;
+  --sel: #2d2b38; --hover: #1c1b22;
+}
+
+:root[data-theme="light"] {
+  --bg0: #f8fafc; --bg1: #f1f5f9; --bg2: #e2e8f0; --bg3: #cbd5e1; --bg4: #94a3b8;
+  --bdr: #cbd5e1; --text: #0f172a; --dim: #475569; --faint: #94a3b8;
+  --teal: #0284c7; --acc: #2563eb; --acc2: #4f46e5; --pink: #e11d48;
+  --sel: #e2e8f0; --hover: #f1f5f9;
+}
+
+:root[data-theme="cherry"] {
+  --bg0: #110909; --bg1: #140d0d; --bg2: #1e1414; --bg3: #2c1d1d; --bg4: #4a3030;
+  --bdr: #3d2727; --text: #ffcccc; --dim: #a67c7c; --faint: #2c1d1d;
+  --teal: #d96262; --acc: #bf4a4a; --acc2: #ff7a7a; --pink: #ff99aa;
+  --sel: #2c1d1d; --hover: #1e1414;
+}
+
+:root[data-theme="forest"] {
+  --bg0: #030a06; --bg1: #050f0a; --bg2: #0a1a11; --bg3: #112b1c; --bg4: #1d4a30;
+  --bdr: #173d27; --text: #b3e6cc; --dim: #6b9980; --faint: #112b1c;
+  --teal: #34d399; --acc: #10b981; --acc2: #059669; --pink: #a7f3d0;
+  --sel: #112b1c; --hover: #0a1a11;
+}
+
+:root[data-theme="sunset"] {
+  --bg0: #14080e; --bg1: #1a0b12; --bg2: #2a121c; --bg3: #3f1b2b; --bg4: #5a273d;
+  --bdr: #4c2134; --text: #ffdeb3; --dim: #a67b7b; --faint: #3f1b2b;
+  --teal: #fbbf24; --acc: #f59e0b; --acc2: #d97706; --pink: #f43f5e;
+  --sel: #3f1b2b; --hover: #2a121c;
+}
+
+:root[data-theme="royal"] {
+  --bg0: #09030e; --bg1: #0d0514; --bg2: #1a0a29; --bg3: #2a1142; --bg4: #401a66;
+  --bdr: #351554; --text: #e6ccff; --dim: #9973bf; --faint: #2a1142;
+  --teal: #d8b4fe; --acc: #c084fc; --acc2: #a855f7; --pink: #f472b6;
+  --sel: #2a1142; --hover: #1a0a29;
+}
+
+:root[data-theme="gruvbox"] {
+  --bg0: #1d2021; --bg1: #282828; --bg2: #3c3836; --bg3: #504945; --bg4: #665c54;
+  --bdr: #504945; --text: #ebdbb2; --dim: #928374; --faint: #3c3836;
+  --teal: #8ec07c; --acc: #fabd2f; --acc2: #d3869b; --pink: #b16286;
+  --sel: #504945; --hover: #3c3836;
+}
+
+:root[data-theme="oceanic"] {
+  --bg0: #152229; --bg1: #1b2b34; --bg2: #243945; --bg3: #345061; --bg4: #456b82;
+  --bdr: #345061; --text: #d8dee9; --dim: #7990a1; --faint: #243945;
+  --teal: #5fb3b3; --acc: #6699cc; --acc2: #c594c5; --pink: #f99157;
+  --sel: #345061; --hover: #243945;
+}
+
+:root[data-theme="rose-pine"] {
+  --bg0: #121019; --bg1: #191724; --bg2: #26233a; --bg3: #312f4c; --bg4: #444169;
+  --bdr: #312f4c; --text: #e0def4; --dim: #908caa; --faint: #26233a;
+  --teal: #9ccfd8; --acc: #31748f; --acc2: #c4a7e7; --pink: #ebbcba;
+  --sel: #312f4c; --hover: #26233a;
+}
+
+:root[data-theme="midnight"] {
+  --bg0: #000000; --bg1: #050505; --bg2: #0f0f0f; --bg3: #1a1a1a; --bg4: #333333;
+  --bdr: #222222; --text: #ffffff; --dim: #888888; --faint: #111111;
+  --teal: #38bdf8; --acc: #818cf8; --acc2: #a78bfa; --pink: #f472b6;
+  --sel: #222222; --hover: #0a0a0a;
+}
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none; /* Disable text selection globally for app-like feel */
+}
+
+/* Allow text selection in actual text editors / inputs */
+input, textarea {
+  user-select: auto;
+}
+
+/* ─── Scrollbars ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg1); }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+
+/* ─── Custom Title Bar ───────────────────────────────────────────────────── */
+.titlebar-btn:hover { background: rgba(255,255,255,0.08) !important; color: #e2e8f0 !important; }
+.titlebar-close:hover { background: #c42b1c !important; color: #fff !important; }
+
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: var(--radius);
+  font-size: 12px; font-weight: 600; font-family: var(--font);
+  cursor: pointer; border: 1px solid var(--bdr);
+  background: var(--bg2); color: var(--dim);
+  transition: color .15s, border-color .15s, background .15s;
+  white-space: nowrap; user-select: none;
+}
+.btn:hover { color: var(--text); border-color: var(--bg4); background: var(--bg3); filter: brightness(1.2); }
+.btn:active { background: var(--bg4); transform: scale(0.95); }
+.btn.active { color: var(--acc2); border-color: var(--acc); background: rgba(75,108,247,.12); }
+.btn.active:hover { filter: brightness(1.2); }
+.btn-accent {
+  background: var(--acc); border-color: var(--acc); color: #fff;
+}
+.btn-accent:hover { background: var(--acc2); border-color: var(--acc2); color: #fff; }
+.btn-teal {
+  background: var(--teal); border-color: var(--teal); color: var(--bg0);
+  font-weight: 700;
+}
+.btn-teal:hover { background: #00f5e8; border-color: #00f5e8; color: var(--bg0); }
+.btn-danger { color: var(--err); border-color: #3a1515; background: #1a0808; }
+.btn-danger:hover { background: #2a1010; border-color: var(--err); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--dim); }
+.btn-ghost:hover { background: var(--bg3); border-color: var(--bdr); color: var(--text); }
+.btn-icon { padding: 5px 8px; }
+button:disabled { opacity: .4; cursor: default; }
+
+/* ─── Inputs ─────────────────────────────────────────────────────────────── */
+.input {
+  background: var(--bg1); border: 1px solid var(--bdr);
+  border-radius: var(--radius); color: var(--text);
+  font-family: var(--font); font-size: 13px;
+  padding: 5px 10px; width: 100%;
+  transition: border-color .15s;
+  outline: none;
+}
+.input:focus { border-color: var(--acc); }
+.input::placeholder { color: var(--faint); }
+textarea.input { resize: vertical; min-height: 60px; font-family: var(--font); line-height: 1.5; }
+select.input { cursor: pointer; }
+
+/* ─── Panels / Cards ─────────────────────────────────────────────────────── */
+.panel { background: var(--bg1); border-right: 1px solid var(--bdr); }
+.card { background: var(--bg2); border: 1px solid var(--bdr); border-radius: var(--radius); padding: 12px; }
+
+/* ─── Labels ─────────────────────────────────────────────────────────────── */
+.label { font-size: 11px; font-weight: 600; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.sublabel { font-size: 11px; color: var(--faint); }
+
+/* ─── Section headers ────────────────────────────────────────────────────── */
+.sec-hdr {
+  font-size: 11px; font-weight: 700; color: var(--dim); letter-spacing: .12em;
+  text-transform: uppercase; padding: 8px 14px;
+  border-bottom: 1px solid var(--bdr); background: var(--bg2);
+}
+
+/* ─── Nav items ──────────────────────────────────────────────────────────── */
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--dim);
+  border-left: 2px solid transparent;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.nav-item:hover { background: var(--hover); color: var(--text); }
+.nav-item.active { color: var(--acc2); background: rgba(75,108,247,.08); border-left-color: var(--acc); font-weight: 600; }
+
+/* ─── Badges ─────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+}
+.badge-teal { background: var(--teal); color: var(--bg0); }
+.badge-acc  { background: var(--acc);  color: #fff; }
+.badge-warn { background: var(--warn); color: var(--bg0); }
+.badge-ok   { background: var(--ok);   color: var(--bg0); }
+.badge-err  { background: var(--err);  color: #fff; }
+
+/* ─── Status toast ───────────────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  padding: 10px 18px; border-radius: var(--radius);
+  font-size: 13px; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--bdr);
+  color: var(--text); z-index: 9999;
+  animation: slideUp .2s ease;
+}
+.toast.ok  { border-color: var(--ok);   color: var(--ok); }
+.toast.err { border-color: var(--err);  color: var(--err); }
+.toast.warn { border-color: var(--warn); color: var(--warn); }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Dividers ───────────────────────────────────────────────────────────── */
+.divider { border: none; border-top: 1px solid var(--bdr); margin: 8px 0; }
+
+/* ─── Mono text ──────────────────────────────────────────────────────────── */
+.mono { font-family: var(--mono); }
+
+/* ─── Flex utilities ─────────────────────────────────────────────────────── */
+.row   { display: flex; align-items: center; }
+.col   { display: flex; flex-direction: column; }
+.gap4  { gap: 4px; }
+.gap6  { gap: 6px; }
+.gap8  { gap: 8px; }
+.gap12 { gap: 12px; }
+.gap16 { gap: 16px; }
+.flex1 { flex: 1; min-width: 0; }
+.wrap  { flex-wrap: wrap; }
+
+/* ─── Color swatches ─────────────────────────────────────────────────────── */
+.swatch {
+  width: 28px; height: 28px; border-radius: 4px;
+  border: 2px solid transparent; cursor: pointer;
+  transition: border-color .12s, transform .12s;
+}
+.swatch:hover { transform: scale(1.15); }
+.swatch.selected { border-color: #fff; }
+
+/* ─── Timeline ───────────────────────────────────────────────────────────── */
+.tl-cell {
+  flex-shrink: 0; width: 56px; height: 52px;
+  border: 1px solid var(--bdr); border-radius: 4px;
+  background: var(--bg2); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; font-size: 10px; color: var(--dim);
+  position: relative; transition: border-color .12s, background .12s;
+  user-select: none;
+}
+.tl-cell:hover { background: var(--hover); border-color: var(--bg4); }
+.tl-cell.selected { border-color: var(--acc); background: rgba(75,108,247,.1); color: var(--acc2); }
+.tl-cell.empty { border-style: dashed; opacity: .5; }
+.tl-cell .type-icon { font-size: 18px; }
+.tl-cell .type-label { font-size: 9px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+
+/* ─── Asset grid ─────────────────────────────────────────────────────────── */
+.asset-tile {
+  width: 120px; height: 130px;
+  background: var(--bg3); border: 1px solid var(--bdr);
+  border-radius: var(--radius); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  padding: 4px; gap: 4px; overflow: hidden;
+  transition: border-color .12s, background .12s;
+}
+.asset-tile:hover { border-color: var(--acc); background: var(--hover); }
+.asset-tile.selected { border-color: var(--teal); background: rgba(0,212,200,.06); }
+.asset-tile img { width: 100%; flex: 1; object-fit: contain; border-radius: 3px; }
+.asset-tile .name { font-size: 10px; color: var(--dim); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+
+/* ─── Animations ─────────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin .8s linear infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+.pulse { animation: pulse 1.5s ease infinite; }
+
+/* ─── Graph Nodes ────────────────────────────────────────────────────────── */
+.node-card {
+  position: relative;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.node-card:hover {
+
+  box-shadow: 0 8px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1);
+}
+
+
+/* ── Selected node — static accent ring, no animation ────────────────────── */
+.node-card.selected {
+
+}
+
+
+/* ─── Project Card ───────────────────────────────────────────────────────── */
+.project-card {
+  display: flex; align-items: center; gap: 16px; padding: 0 24px; min-height: 76px;
+  border-bottom: 1px solid var(--bdr); cursor: pointer; transition: background 0.2s;
+}
+.project-card:hover { background: var(--hover); }
+.project-card .accent {
+  width: 4px; height: 48px; background: var(--acc); border-radius: 4px;
+  opacity: 0.6; transition: opacity 0.2s;
+}
+.project-card:hover .accent { opacity: 1; }
+.project-card .icon-box {
+  width: 48px; height: 48px; border-radius: 8px; background: color-mix(in srgb, var(--acc) 15%, var(--bg2));
+  display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;
+}
+.project-card .actions { opacity: 0; transition: opacity 0.2s; display: flex; gap: 8px; }
+.project-card:hover .actions { opacity: 1; }
+
+/* ─── Start Menu Button ──────────────────────────────────────────────────── */
+.start-menu-btn {
+  display: block;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 0 10px 44px;
+  cursor: pointer;
+  position: relative;
+  opacity: 0;
+  transform: translateX(-18px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.start-menu-btn.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.start-menu-btn .line {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 2px;
+  border-radius: 1px;
+  transition: width 0.2s ease;
+}
+.start-menu-btn:hover .line {
+  width: 20px;
+}
+.start-menu-btn.active .line {
+  width: 20px;
+}
+.start-menu-btn .title {
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  color: #a8bccf;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  transition: color 0.15s ease;
+}
+.start-menu-btn:hover .title,
+.start-menu-btn.active .title {
+  color: #adbdcc;
+}
+.start-menu-btn .subtitle {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin-top: 2px;
+  opacity: 0.7;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── Scene Editor UI Revamp ─── */
+
+.canvas-preview {
+  position: relative;
+  background: #000;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-bottom: 2px solid var(--teal);
+}
+
+.timeline-grid {
+  background: var(--bg0);
+  background-image: 
+    linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 56px 48px;
+}
+
+.tl-track-label {
+  width: 60px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--bdr);
+  background: var(--bg0);
+}
+
+.legacy-tool-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--dim);
+  border-radius: 4px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  transition: all 0.2s;
+}
+
+.legacy-tool-btn:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+}
+
+.legacy-tool-btn.active {
+  background: var(--bg1);
+  color: var(--teal);
+  border-color: var(--teal);
+}
+
+.inspector-input {
+  background: var(--bg0);
+  border: 1px solid var(--bdr);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 13px;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.inspector-input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
+.btn-apply {
+  background: var(--teal);
+  color: #000;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: opacity 0.2s;
+}
+
+.btn-apply:hover {
+  opacity: 0.9;
+}
+
+/* ── Character Editor ────────────────────────────────────────────────────── */
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.swatch:hover  { transform: scale(1.2); }
+.swatch.selected { border-color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,0.4); }
+
+/* ── Asset Browser tiles ─────────────────────────────────────────────────── */
+
+.asset-tile {
+  width: 100px;
+  height: 110px;
+  background: var(--bg3);
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.asset-tile:hover    { border-color: var(--teal); background: var(--bg4); }
+.asset-tile.selected { border-color: var(--teal); background: rgba(0,212,200,.08); }
+.asset-tile .name {
+  font-size: 9px;
+  color: var(--dim);
+  text-align: center;
+  padding: 3px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--bdr);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.gap2  { gap: 2px; }
+.gap4  { gap: 4px; }
+.gap6  { gap: 6px; }
+.gap8  { gap: 8px; }
+.gap10 { gap: 10px; }
+.gap12 { gap: 12px; }
+.gap14 { gap: 14px; }
+.gap16 { gap: 16px; }
+.wrap  { flex-wrap: wrap; }
+
+
+@keyframes popOutRight {
+  0% { opacity: 0; transform: translate(-20px, -50%) scale(0.5); }
+  50% { opacity: 1; transform: translate(5px, -50%) scale(1.1); }
+  100% { opacity: 1; transform: translate(0px, -50%) scale(1); }
+}
+
+@keyframes popInRight {
+  0% { opacity: 1; transform: translate(0px, -50%) scale(1); }
+  30% { opacity: 1; transform: translate(5px, -50%) scale(1.1); }
+  100% { opacity: 0; transform: translate(-20px, -50%) scale(0.5); }
+}
+
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Panel slide animations (Inspector, Minimap, Hide UI button) */
+@keyframes vnv-slide-in-right {
+  from { opacity: 0; transform: translateX(60px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes vnv-slide-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(60px); }
+}
+@keyframes vnv-slide-in-left {
+  from { opacity: 0; transform: translateX(-60px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes vnv-slide-out-left {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-60px); }
+}
+
+/* Panel mount animation */
+@keyframes vnv-fade-slide-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.panel-mount { animation: vnv-fade-slide-in 0.18s ease both; }
+
+/* Unsaved / status pulse dot */
+@keyframes vnv-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc2) 60%, transparent); }
+  50%       { opacity: 0.7; transform: scale(1.3); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acc2) 0%, transparent); }
+}
+
+/* Character stat bar grow animation */
+@keyframes vnv-bar-grow {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VOICE DIRECTOR — Audacity-inspired audio/visual components  (Phase 1)
+   Inspired by: WaveformView.cpp, TrackArt.cpp, MixerBoard.cpp
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Voiced / Unvoiced card backgrounds ──────────────────────────────────── */
+/* Borrowed from Audacity's DrawBackgroundWithSelection() two-brush system */
+
+.vnv-line-card-voiced {
+  background: color-mix(in srgb, var(--teal) 5%, var(--bg1));
+  border-color: color-mix(in srgb, var(--teal) 30%, transparent) !important;
+  border-left: 3px solid var(--teal) !important;
+}
+
+/* Sync-lock-style diagonal stripe for unvoiced cards (DrawSyncLockTiles) */
+.vnv-line-card-unvoiced {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    rgba(255, 255, 255, 0.018) 6px,
+    rgba(255, 255, 255, 0.018) 12px
+  );
+  border-left: 3px solid transparent;
+}
+
+/* ── Waveform player strip (WaveformView.cpp inspired) ───────────────────── */
+/* Container that holds: SVG waveform + play button + scrubber + VU meter    */
+
+.vnv-audio-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  background: var(--bg0);
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Play / pause button — styled like Audacity's transport buttons */
+.vnv-play-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 10px;
+  flex-shrink: 0;
+  transition: transform 0.1s, box-shadow 0.15s;
+  background: var(--teal);
+  color: #000;
+  font-weight: 700;
+}
+
+.vnv-play-btn:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--teal) 50%, transparent);
+}
+
+.vnv-play-btn:active {
+  transform: scale(0.95);
+}
+
+/* SVG waveform container — the "WaveformView" analog */
+.vnv-waveform-svg {
+  flex: 1;
+  height: 28px;
+  min-width: 0;
+  cursor: pointer;
+  position: relative;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/* Play-head cursor line (Audacity's DrawCursor) */
+.vnv-waveform-svg .playhead {
+  position: absolute;
+  top: 0;
+  width: 1.5px;
+  height: 100%;
+  background: #fff;
+  opacity: 0.85;
+  pointer-events: none;
+  transition: left 0.05s linear;
+}
+
+/* Scrubber progress fill behind waveform bars (selected region brush) */
+.vnv-scrubber-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--teal) 18%, transparent);
+  pointer-events: none;
+  transition: width 0.1s linear;
+  border-radius: 3px;
+}
+
+/* ── VU Peak Meter (MixerBoard / MeterPanel inspired) ────────────────────── */
+/* Vertical bar that animates during playback via AnalyserNode              */
+
+.vnv-vu-meter {
+  width: 6px;
+  height: 28px;
+  background: var(--bg3);
+  border-radius: 3px;
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.vnv-vu-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: linear-gradient(
+    to top,
+    var(--teal) 0%,
+    var(--teal) 60%,
+    var(--warn) 80%,
+    var(--err)  95%
+  );
+  border-radius: 3px;
+  transition: height 0.05s ease-out;
+  will-change: height;
+}
+
+/* Clip indicator — red tick at top of meter (SetClippingColors in Audacity) */
+.vnv-clip-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--err);
+  border-radius: 2px 2px 0 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.vnv-clip-indicator.clipping {
+  opacity: 1;
+  animation: vnv-clip-flash 0.3s ease;
+}
+
+@keyframes vnv-clip-flash {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ── VU meter keyframe for CSS-only fallback (no Web Audio) ─────────────── */
+@keyframes vnv-vu-idle {
+  0%, 100% { height: 15%; }
+  25%       { height: 35%; }
+  50%       { height: 55%; }
+  75%       { height: 28%; }
+}
+
+/* ── Waveform bar colors matching Audacity's SetSampleColors / SetRMSColors */
+.vnv-wave-bar-sample { fill: var(--teal); }
+.vnv-wave-bar-rms    { fill: color-mix(in srgb, var(--teal) 55%, var(--bg0)); }
+.vnv-wave-bar-silent { fill: var(--bg3); }
+
+/* ── Loading shimmer for waveform while decoding ─────────────────────────── */
+.vnv-wave-loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--bg3) 25%,
+    color-mix(in srgb, var(--teal) 12%, var(--bg3)) 50%,
+    var(--bg3) 75%
+  );
+  background-size: 200% 100%;
+  animation: vnv-shimmer 1.4s ease-in-out infinite;
+  border-radius: 3px;
+}
+
+@keyframes vnv-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Clip affordance label strip (TrackArt::DrawClipAffordance) ──────────── */
+/* Thin label at the top of a voiced card showing the filename               */
+
+.vnv-clip-affordance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  background: color-mix(in srgb, var(--teal) 10%, var(--bg2));
+  border-bottom: 1px solid color-mix(in srgb, var(--teal) 20%, transparent);
+  border-radius: 6px 6px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--teal);
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.vnv-clip-affordance .clip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+  flex-shrink: 0;
+  animation: vnv-pulse 2.5s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LINE RECORDER — microphone capture UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Record button (idle state, unvoiced cards) ──────────────────────────── */
+.vnv-rec-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 0;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+  background: color-mix(in srgb, var(--err) 8%, var(--bg2));
+  color: var(--err);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.vnv-rec-btn:hover {
+  background: color-mix(in srgb, var(--err) 16%, var(--bg2));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--err) 25%, transparent);
+}
+
+/* ── Live recording strip ────────────────────────────────────────────────── */
+.vnv-recording-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+  background: color-mix(in srgb, var(--err) 6%, var(--bg0));
+  overflow: hidden;
+}
+
+/* Pulsing red REC dot */
+.vnv-rec-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--err);
+  flex-shrink: 0;
+  animation: vnv-rec-pulse 1s ease-in-out infinite;
+}
+
+@keyframes vnv-rec-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 60%, transparent); }
+  50%       { opacity: 0.6; box-shadow: 0 0 0 5px color-mix(in srgb, var(--err) 0%, transparent); }
+}
+
+/* Elapsed time */
+.vnv-rec-timer {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--err);
+  min-width: 32px;
+  flex-shrink: 0;
+}
+
+/* Animated waveform bars during recording */
+.vnv-rec-waves {
+  flex: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vnv-rec-waves span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--err);
+  animation: vnv-rec-wave 0.7s ease-in-out infinite alternate;
+}
+
+.vnv-rec-waves span:nth-child(1) { animation-delay: 0.00s; }
+.vnv-rec-waves span:nth-child(2) { animation-delay: 0.09s; }
+.vnv-rec-waves span:nth-child(3) { animation-delay: 0.18s; }
+.vnv-rec-waves span:nth-child(4) { animation-delay: 0.27s; }
+.vnv-rec-waves span:nth-child(5) { animation-delay: 0.36s; }
+.vnv-rec-waves span:nth-child(6) { animation-delay: 0.18s; }
+.vnv-rec-waves span:nth-child(7) { animation-delay: 0.09s; }
+.vnv-rec-waves span:nth-child(8) { animation-delay: 0.27s; }
+
+@keyframes vnv-rec-wave {
+  from { height: 4px;  opacity: 0.5; }
+  to   { height: 18px; opacity: 1;   }
+}
+
+/* Stop button */
+.vnv-stop-btn {
+  background: var(--err);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.vnv-stop-btn:hover  { opacity: 0.85; }
+.vnv-stop-btn:active { transform: scale(0.95); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VOICE DIRECTOR STUDIO MODE (Audacity Recording View)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Defaults (Normal mode) */
+.vnv-dialogue-text { font-size: 14px; }
+.vnv-channel-strip { width: 240px; }
+
+/* Studio Mode Overrides */
+.vnv-studio-mode .vnv-line-card-voiced,
+.vnv-studio-mode .vnv-line-card-unvoiced {
+  padding: 12px 10px;
+}
+
+.vnv-studio-mode .vnv-dialogue-text {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+.vnv-studio-mode .vnv-channel-strip {
+  width: 400px;
+}
+
+.vnv-studio-mode .vnv-waveform-svg {
+  height: 60px;
+}
+
+.vnv-studio-mode .vnv-vu-meter {
+  height: 60px;
+}
+
+.vnv-studio-mode .vnv-recording-strip {
+  height: 60px;
+}
+
+.vnv-studio-mode .vnv-rec-waves span {
+  width: 5px;
+  border-radius: 3px;
+}
+
+@keyframes vnv-rec-wave-studio {
+  from { height: 10px; opacity: 0.5; }
+  to   { height: 48px; opacity: 1; }
+}
+
+.vnv-studio-mode .vnv-rec-waves span {
+  animation-name: vnv-rec-wave-studio;
+}
+
+.vnv-studio-mode .vnv-rec-btn {
+  padding: 12px 0;
+  font-size: 16px;
+}
+
+.vnv-studio-mode .vnv-stop-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+}
