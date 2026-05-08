@@ -7,11 +7,7 @@ VNV Maker is a lean, standalone desktop IDE for Ren'Py visual novel development.
 
 It works alongside the Ren'Py SDK. Your project is saved as a plain JSON `.vnvmaker` file and exports directly to `.rpy`. No lock-in.
 
-[Watch the Full Walkthrough Video @ YouTube →](https://www.youtube.com/)
 
-[Download the latest release (v1.0.0)](https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM/releases/latest)
-
-[Download the latest nightly release (bleeding edge, tread carefully!)](https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM/releases)
 
 ## Why VNV Maker?
 
