@@ -198,12 +198,7 @@ Tests live in `src/__tests__/` and cover the graph layout algorithm and project 
 | `camelCase.ts` | Pure TypeScript module |
 | `*.test.ts` | Jest test file |
 
----
 
-## 📄 License
-
-CC0 1.0 Universal (Public Domain) — see [LICENSE](LICENSE) for details.  
-This means you can copy, modify, and distribute VNV Maker for any purpose, even commercially, without asking permission.
 
 ---
 
