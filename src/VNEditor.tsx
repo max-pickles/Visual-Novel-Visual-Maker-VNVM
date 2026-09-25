@@ -591,7 +591,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
           )}
           {activeTab === "tl" && <TranslationDashboard project={project} rootPath={project._rootPath ?? ""} onProjectChange={updateProject} />}
           {activeTab === "voice" && <VoiceDirector project={project} onProjectChange={updateProject} rootPath={project._rootPath ?? ""} />}
-          {activeTab === "achievements" && <AchievementManager project={project} onProjectChange={updateProject} />}
+          {activeTab === "achievements" && <AchievementManager project={project} onProjectChange={updateProject} rootPath={project._rootPath ?? ""} />}
           {activeTab === "gui" && (
             <GuiEditor project={project} onProjectChange={updateProject} />
           )}

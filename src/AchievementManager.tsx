@@ -3,22 +3,32 @@
  * Premium redesign: trophy card grid sidebar with glow/unlock-status borders,
  * rich detail editor with icon preview, animated hidden toggle, and points field.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { VNProject, VNAchievement, uid } from "./types";
-import { AssetPicker } from "./Inspector";
+import { AssetBrowser } from "./AssetBrowser";
 import { useTranslation } from "./translationContext";
 
 interface Props {
   project: VNProject;
   onProjectChange: (p: VNProject) => void;
+  rootPath: string;
+}
+
+/** Image URL for an icon path, which is relative to the project folder like other assets. */
+function iconSrc(rootPath: string, icon?: string): string | null {
+  if (!icon) return null;
+  return convertFileSrc(/^([A-Za-z]:[\\/]|\/)/.test(icon) ? icon : `${rootPath}/${icon}`);
 }
 
 function AchievementCard({
   achievement,
+  iconUrl,
   isSelected,
   onClick,
 }: {
   achievement: VNAchievement;
+  iconUrl: string | null;
   isSelected: boolean;
   onClick: () => void;
 }) {
@@ -61,13 +71,13 @@ function AchievementCard({
           : "var(--bg3)",
         border: `1px solid ${isSelected ? "color-mix(in srgb, var(--acc2) 30%, transparent)" : "var(--bdr)"}`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: achievement.icon ? 10 : 20,
+        fontSize: iconUrl ? 10 : 20,
         transition: "all 0.15s",
         boxShadow: isSelected ? `0 0 8px color-mix(in srgb, var(--acc2) 20%, transparent)` : "none",
       }}>
-        {achievement.icon ? (
+        {iconUrl ? (
           <img
-            src={achievement.icon}
+            src={iconUrl}
             alt="icon"
             style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }}
             onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
@@ -108,10 +118,18 @@ function AchievementCard({
   );
 }
 
-export default function AchievementManager({ project, onProjectChange }: Props) {
+export default function AchievementManager({ project, onProjectChange, rootPath }: Props) {
   const achievements = project.achievements ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(achievements[0]?.id ?? null);
+  const [pickingIcon, setPickingIcon] = useState(false);
   const { t } = useTranslation();
+
+  useEffect(() => {
+    if (!pickingIcon) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPickingIcon(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickingIcon]);
 
   const addAchievement = () => {
     const newAch: VNAchievement = {
@@ -211,6 +229,7 @@ export default function AchievementManager({ project, onProjectChange }: Props) 
             <AchievementCard
               key={a.id}
               achievement={a}
+              iconUrl={iconSrc(rootPath, a.icon)}
               isSelected={selectedId === a.id}
               onClick={() => setSelectedId(a.id)}
             />
@@ -248,7 +267,7 @@ export default function AchievementManager({ project, onProjectChange }: Props) 
                 boxShadow: "0 0 20px color-mix(in srgb, var(--acc2) 10%, transparent)",
               }}>
                 {activeAch.icon ? (
-                  <img src={activeAch.icon} alt="icon" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 13 }} />
+                  <img src={iconSrc(rootPath, activeAch.icon) ?? ""} alt="icon" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 13 }} />
                 ) : "🏆"}
               </div>
 
@@ -355,11 +374,18 @@ export default function AchievementManager({ project, onProjectChange }: Props) 
               <div style={{
                 background: "var(--bg1)", padding: 16, borderRadius: 10,
                 border: "1px solid var(--bdr)",
+                display: "flex", alignItems: "center", gap: 10,
               }}>
-                <AssetPicker
-                  value={activeAch.icon ?? ""}
-                  onChange={v => updateAchievement(activeAch.id, { icon: v })}
-                />
+                <span style={{
+                  flex: 1, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  color: activeAch.icon ? "var(--teal)" : "var(--faint)",
+                }}>
+                  {activeAch.icon ? `✓ ${activeAch.icon.split("/").pop()}` : t('inspector.no_file')}
+                </span>
+                <button className="btn btn-ghost" style={{ fontSize: 11, flexShrink: 0 }}
+                  disabled={!rootPath} onClick={() => setPickingIcon(true)}>
+                  🖼 {t('editor.scene.choose_image')}
+                </button>
               </div>
               {activeAch.icon && (
                 <button
@@ -398,6 +424,52 @@ export default function AchievementManager({ project, onProjectChange }: Props) 
           </div>
         )}
       </div>
+
+      {/* ── Icon picker ── */}
+      {pickingIcon && activeAch && rootPath && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(0,0,0,0.65)", backdropFilter: "blur(6px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={() => setPickingIcon(false)}
+        >
+          <div
+            style={{
+              width: "82vw", height: "78vh", maxWidth: 1200,
+              background: "var(--bg1)", border: "1px solid var(--bdr)",
+              borderRadius: 14, overflow: "hidden",
+              display: "flex", flexDirection: "column",
+              boxShadow: "0 32px 96px rgba(0,0,0,0.7)",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              padding: "12px 18px", borderBottom: "1px solid var(--bdr)",
+              background: "var(--bg2)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{t('editor.scene.choose_image')}</span>
+              <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 4 }}>{t('editor.scene.picker_hint')}</span>
+              <button
+                onClick={() => setPickingIcon(false)}
+                style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--faint)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
+                title="Close (Esc)"
+              >✕</button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <AssetBrowser
+                rootPath={rootPath}
+                project={project}
+                onPick={path => {
+                  updateAchievement(activeAch.id, { icon: path });
+                  setPickingIcon(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
