@@ -336,7 +336,6 @@ fn extract_rpy_quoted(s: &str) -> Option<String> {
     let start = s.find('"')?;
     let inner = &s[start + 1..];
     
-    let mut end = 0;
     let mut escaped = false;
     for (i, c) in inner.char_indices() {
         if escaped {
@@ -344,8 +343,7 @@ fn extract_rpy_quoted(s: &str) -> Option<String> {
         } else if c == '\\' {
             escaped = true;
         } else if c == '"' {
-            end = i;
-            return Some(inner[..end].to_string());
+            return Some(inner[..i].to_string());
         }
     }
     None
@@ -531,10 +529,10 @@ fn update_app_icon(window: tauri::Window, teal_hex: String, acc_hex: String) -> 
     
     for y in 0..size {
         for x in 0..size {
-            let color = if y >= 9 && y < 23 {
+            let color = if (9..23).contains(&y) {
                 if x < 14 {
                     teal
-                } else if x >= 18 && x < 32 {
+                } else if (18..32).contains(&x) {
                     acc
                 } else {
                     [0, 0, 0, 0]

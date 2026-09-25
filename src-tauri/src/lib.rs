@@ -23,7 +23,7 @@ pub fn list_rpy_files(root: &Path) -> Vec<String> {
     WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpy"))
+        .filter(|e| e.path().extension().is_some_and(|x| x == "rpy"))
         .map(|e| {
             e.path()
                 .strip_prefix(root)
@@ -61,7 +61,7 @@ pub fn list_assets(root: &Path, asset_type: &str) -> Vec<String> {
             e.path()
                 .extension()
                 .and_then(|x| x.to_str())
-                .map_or(false, |x| exts.contains(&x.to_lowercase().as_str()))
+                .is_some_and(|x| exts.contains(&x.to_lowercase().as_str()))
         })
         .map(|e| {
             e.path()
@@ -190,7 +190,7 @@ pub fn scaffold_from_template(template: &Path, project_root: &Path, project_titl
     for entry in WalkDir::new(&game_dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpyc"))
+        .filter(|e| e.path().extension().is_some_and(|x| x == "rpyc"))
     {
         let _ = std::fs::remove_file(entry.path());
     }
@@ -356,7 +356,7 @@ pub fn validate_renpy_game(root: &Path) -> Result<std::path::PathBuf, String> {
         .any(|e| {
             e.path()
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("rpy"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("rpy"))
         });
 
     if !has_rpy {
@@ -367,4 +367,99 @@ pub fn validate_renpy_game(root: &Path) -> Result<std::path::PathBuf, String> {
     }
 
     Ok(game_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// A fresh, empty temporary folder for one test.
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("vnvmaker-test-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// root/game/images/bg.png plus root/project.vnvmaker
+    fn make_project(root: &Path) {
+        fs::create_dir_all(root.join("game/images")).unwrap();
+        fs::write(root.join("game/images/bg.png"), b"png").unwrap();
+        fs::write(root.join("game/script.rpy"), "label start:\n    return\n").unwrap();
+        fs::write(root.join("project.vnvmaker"), "{}").unwrap();
+    }
+
+    #[test]
+    fn recognises_projects() {
+        let dir = temp_dir("projects");
+        let project = dir.join("Project");
+        make_project(&project);
+        assert!(looks_like_project(&project));
+        assert!(!looks_like_project(&dir));
+        assert!(!looks_like_project(&project.join("game")));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn checks_extensions_case_insensitively() {
+        assert!(has_extension(Path::new("a/b/script.rpy"), "rpy"));
+        assert!(has_extension(Path::new("a/b/SCRIPT.RPY"), "rpy"));
+        assert!(!has_extension(Path::new("a/b/evil.bat"), "rpy"));
+        assert!(!has_extension(Path::new("a/b/rpy"), "rpy"));
+        assert!(has_extension(Path::new("p/project.vnvmaker"), "vnvmaker"));
+    }
+
+    #[test]
+    fn only_deletes_files_the_app_manages() {
+        let dir = temp_dir("delete");
+        let project = dir.join("Project");
+        make_project(&project);
+        assert!(is_deletable_project_file(&project.join("game/images/bg.png")));
+        assert!(is_deletable_project_file(&project.join("game/script.rpy")));
+        assert!(is_deletable_project_file(&project.join("project.vnvmaker")));
+        assert!(!is_deletable_project_file(&dir.join("notes.txt")));
+        assert!(!is_deletable_project_file(&dir.join("project.vnvmaker")));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn empty_or_missing_folders() {
+        let dir = temp_dir("empty");
+        assert!(dir_is_empty_or_missing(&dir));
+        assert!(dir_is_empty_or_missing(&dir.join("missing")));
+        fs::write(dir.join("file.txt"), "x").unwrap();
+        assert!(!dir_is_empty_or_missing(&dir));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn copies_a_project_but_never_into_itself() {
+        let dir = temp_dir("copy");
+        let project = dir.join("Project");
+        make_project(&project);
+        copy_dir_all(&project, &dir.join("Copy")).unwrap();
+        assert!(dir.join("Copy/game/images/bg.png").is_file());
+        assert!(copy_dir_all(&project, &project).is_err());
+        assert!(copy_dir_all(&project, &project.join("game/nested")).is_err());
+        assert_eq!(fs::read(project.join("game/images/bg.png")).unwrap(), b"png");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn scaffold_refuses_existing_folders() {
+        let dir = temp_dir("scaffold");
+        let template = dir.join("template/game");
+        fs::create_dir_all(template.join("gui")).unwrap();
+        fs::write(template.join("options.rpy"), "define config.name = _(\"Old\")\n").unwrap();
+        let fresh = dir.join("Fresh");
+        scaffold_from_template(&template, &fresh, "My Game").unwrap();
+        assert!(fs::read_to_string(fresh.join("game/options.rpy")).unwrap().contains("_(\"My Game\")"));
+        assert!(fresh.join("game/images").is_dir());
+        // A second project with the same folder must not overwrite the first.
+        assert!(scaffold_from_template(&template, &fresh, "Other").is_err());
+        assert!(fs::read_to_string(fresh.join("game/options.rpy")).unwrap().contains("_(\"My Game\")"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

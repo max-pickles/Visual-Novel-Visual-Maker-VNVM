@@ -42,7 +42,27 @@ jobs:
           workspaces: src-tauri
       - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy --locked
+        run: cargo clippy --locked --all-targets
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  backend-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test --locked
 
   renpy:
     name: Ren'Py lint and playthrough
