@@ -6,19 +6,18 @@ import React, { useState, useEffect } from "react";
 import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk, ProjectFileMissingError, pathExists, dirHasFiles, samePath } from "./tauriApi";
 import { newProject, newDemoProject, migrateProject } from "./types";
 import { importFromRpyFiles } from "./rpyImporter";
-import type { VNProject, RpyProject } from "./types";
+import type { VNProject } from "./types";
 
 import type { AppPrefs } from "./App";
 import { useTranslation } from "./translationContext";
 import { ToastManager } from "./toastContext";
 
 interface Props {
-  onLoadRpy: (project: RpyProject) => void;
   onLoadVnv: (project: VNProject) => void;
   prefs: AppPrefs;
 }
 
-export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
+export function StartScreen({ onLoadVnv, prefs }: Props) {
   const { t } = useTranslation();
   const { bgLevel, setBgLevel, glowEnabled, setGlowEnabled, scanlinesEnabled, setScanlinesEnabled, uiScale, setUiScale, autoSave, setAutoSave, theme, setTheme, language, setLanguage } = prefs;
   type BgLevel = 'darker' | 'default' | 'lighter';

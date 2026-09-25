@@ -1,9 +1,9 @@
 /**
  * StoryCanvas.tsx — Visual node graph viewer + folder support.
- * Renders both VNProject (new) and RpyProject (legacy).
+ * Renders a VNProject's scenes, folders and sticky notes.
  */
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { RpyProject, VNProject, NodeKind, LinkType, VNStickyNote } from './types';
+import type { VNProject, VNStickyNote } from './types';
 import { newScene } from './types';
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { GraphInspector } from "./GraphInspector";
@@ -72,11 +72,6 @@ function NodeBgThumb({ bgName, rootPath }: { bgName: string; rootPath: string })
 
 // ─── Colors & Constants ───────────────────────────────────────────────────────
 
-const NODE_COLORS: Record<NodeKind, string> = {
-  label: '#4b6cf7', menu: '#f472b6',
-  init: '#facc15', screen: '#4b6cf7', unknown: '#9ca3af'
-};
-
 const ZOOM_MIN = 0.1, ZOOM_MAX = 5.0, LOD_THRESHOLD = 0.3;
 const TILE_SIZE = 100;
 const FOLDER_COLOR = '#d4961e'; // Amber for folders
@@ -89,8 +84,7 @@ const ENDING_CYCLE: Array<'good' | 'bad' | 'odd' | 'stuck'> = ['good', 'bad', 'o
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 interface Props {
-  project: RpyProject | VNProject;
-  /** Only available for VNProject */
+  project: VNProject;
   onProjectChange?: (p: VNProject) => void;
   rootPath?: string;
   onNodePositionsChange: (positions: Record<string, [number, number]>) => void;
@@ -103,20 +97,6 @@ interface Props {
   /** Called when user clicks 'Enter Editor' on the main_menu node */
   onEnterMainMenu?: () => void;
   onPlayScene?: (id: string) => void;
-}
-
-// ─── Unified Node/Link Types ─────────────────────────────────────────────────
-
-interface CanvasNode {
-  id: string; label: string; kind: NodeKind | 'folder' | 'vn_scene';
-  x: number; y: number; w: number; h: number;
-  contentLines: string[]; bgImage?: string; isStart?: boolean; isEnd?: boolean;
-  /** Structural role badges from in/out degree analysis */
-  inDegree?: number; outDegree?: number; isUnreachable?: boolean;
-  /** Cannot be deleted or renamed — reserved system nodes like main_menu */
-  isLocked?: boolean;
-  /** Ending classification for terminal scenes */
-  endingType?: 'good' | 'bad' | 'odd' | 'stuck';
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -256,8 +236,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   useEffect(() => { projectRef.current = project; }, [project]);
   const onProjectChangeRef = useRef(onProjectChange);
   useEffect(() => { onProjectChangeRef.current = onProjectChange; }, [onProjectChange]);
-  const isVNRef = useRef('scenes' in project);
-  useEffect(() => { isVNRef.current = 'scenes' in project; }, [project]);
   const setIsConnectionModeRef = useRef(setIsConnectionMode);
   useEffect(() => { setIsConnectionModeRef.current = setIsConnectionMode; }, [setIsConnectionMode]);
 
@@ -352,7 +330,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
 
   // ─── Unified Data Model (via hook) ──────────────────────────────────────────
-  const { nodes, links, displayNodes: rawDisplayNodes, isVN } = useCanvasData({ project, rootPath });
+  const { nodes, links, displayNodes: rawDisplayNodes } = useCanvasData({ project, rootPath });
 
   // Merge external position overrides into nodes
   const displayNodes = useMemo(() => {
@@ -502,7 +480,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         }
       }
 
-      if (!onProjectChangeRef.current || !isVNRef.current) return;
+      if (!onProjectChangeRef.current) return;
 
       const menuX = me.clientX - rect.left;
       const menuY = me.clientY - rect.top;
@@ -638,7 +616,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       if (isDraggingSticky.current !== note.id) return;
       const dx = (me.clientX - stickyDragStart.current.px) / zoomRef.current;
       const dy = (me.clientY - stickyDragStart.current.py) / zoomRef.current;
-      if (!onProjectChangeRef.current || !isVNRef.current) return;
+      if (!onProjectChangeRef.current) return;
       const p = projectRef.current as any;
       onProjectChangeRef.current({
         ...p,
@@ -689,7 +667,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         const cx = (e.clientX - rect.left - pan.x) / zoom;
         const cy = (e.clientY - rect.top - pan.y) / zoom;
         
-        const p = project as VNProject;
+        const p = project;
         let sc;
         if (placingNodeType === 'scene') {
           sc = newScene(`Scene ${p.scenes.length + 1}`);
@@ -904,15 +882,15 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     if (kind === 'folder') {
       setFolderStack([...folderStack, id]);
       setSelection(new Set());
-    } else if (isVN) {
+    } else {
       setRenamingId(id);
       setRenameVal(label);
     }
   };
 
   const finishRename = () => {
-    if (!renamingId || !onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!renamingId || !onProjectChange) return;
+    const p = project;
     const updated = {
       ...p,
       scenes: p.scenes.map(s => s.id === renamingId ? { ...s, label: renameVal || s.label } : s),
@@ -928,8 +906,8 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   const handleAddScreen = () => setPlacingNodeType('screen');
 
   const handleAddFolder = () => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     const cx = Math.max(0, -pan.x / zoom) + 100;
     const cy = Math.max(0, -pan.y / zoom) + 100;
     const fldId = Math.random().toString(36).slice(2, 10);
@@ -941,11 +919,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   };
 
   const handleDeleteSelected = () => {
-    if (!onProjectChange || !isVN || selection.size === 0) return;
+    if (!onProjectChange || selection.size === 0) return;
     // Main menu node is locked — exclude it from deletion silently
     const deletable = new Set([...selection].filter(id => id !== MAIN_MENU_ID));
     if (deletable.size === 0) return;
-    const p = project as VNProject;
+    const p = project;
     const updatedScenes = p.scenes.filter(s => !deletable.has(s.id));
     const updatedFolders = p.folders.filter(f => !deletable.has(f.id)).map(f => ({
       ...f,
@@ -960,8 +938,8 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   };
 
   const handleSetStart = () => {
-    if (!onProjectChange || !isVN || selection.size !== 1) return;
-    const p = project as VNProject;
+    if (!onProjectChange || selection.size !== 1) return;
+    const p = project;
     const id = Array.from(selection)[0];
     const node = displayNodes.find(n => n.id === id);
     if (node?.kind === 'vn_scene') {
@@ -997,12 +975,12 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
   // Reset fit flag when project changes — in useEffect, never during render
   useEffect(() => {
-    const pid = isVN ? (project as VNProject).id : '';
+    const pid = project.id;
     if (pid && pid !== lastProjectIdRef.current) {
       lastProjectIdRef.current = pid;
       hasInitializedFit.current = false;
     }
-  }, [project, isVN]);
+  }, [project]);
 
   // Stable ref so the auto-fit effect never re-arms from handleFitToScreen identity changes
   const handleFitToScreenRef = useRef(handleFitToScreen);
@@ -1017,9 +995,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       setUiVisible(false);
 
       // Select main menu by default instead of being empty
-      if (isVNRef.current) {
-        setSelection(new Set([MAIN_MENU_ID]));
-      }
+      setSelection(new Set([MAIN_MENU_ID]));
 
       // Clear suppression after a tiny delay so the initial hidden state applies instantly
       setTimeout(() => setSuppressAnim(false), 50);
@@ -1033,10 +1009,9 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   }, [uiVisible]);
 
   // ── Sync Layout and Global Fit All Trigger ─────────────
-  const prevLayoutRef = useRef(isVN ? (project as VNProject).layout : {});
+  const prevLayoutRef = useRef(project.layout);
   useEffect(() => {
-    if (!isVN) return;
-    const currLayout = (project as VNProject).layout;
+    const currLayout = project.layout;
     const prevLayout = prevLayoutRef.current;
     if (currLayout === prevLayout) return;
 
@@ -1045,7 +1020,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     setPositions({});
     
     prevLayoutRef.current = currLayout;
-  }, [project, isVN, setPositions]);
+  }, [project, setPositions]);
 
   // Execute Fit All when requested globally (e.g. from Undo/Redo)
   const prevTriggerFitAllRef = useRef(triggerFitAll);
@@ -1061,14 +1036,14 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   }, [triggerFitAll, displayNodes, handleFitToScreen]);
 
   const handleGoToStart = useCallback(() => {
-    if (!isVN || !canvasSize.width || !canvasSize.height) return;
+    if (!canvasSize.width || !canvasSize.height) return;
     const startNode = displayNodes.find((n) => n.isStart);
     if (!startNode) return;
     setPan({
       x: canvasSize.width  / 2 - (startNode.x + startNode.w / 2) * zoom,
       y: canvasSize.height / 2 - (startNode.y + startNode.h / 2) * zoom,
     });
-  }, [displayNodes, canvasSize, isVN, zoom]);
+  }, [displayNodes, canvasSize, zoom]);
 
   // ── Fly-to-scene (triggered by QuickOpen Ctrl+P) ──────────────────────────
   // Animates pan+zoom so the target node is centred and at a comfortable zoom.
@@ -1114,11 +1089,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   }, [flyToSceneId]);
 
   // ─── Sticky Note Handlers ────────────────────────────────────────────────────
-  const stickyNotes: VNStickyNote[] = isVN ? ((project as VNProject).sticky_notes ?? []) : [];
+  const stickyNotes: VNStickyNote[] = project.sticky_notes ?? [];
 
   const addStickyNote = () => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     const id = Math.random().toString(36).slice(2, 10);
     const note: VNStickyNote = {
       id, text: '', color: 'yellow',
@@ -1130,14 +1105,14 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   };
 
   const updateStickyNote = (id: string, data: Partial<VNStickyNote>) => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     onProjectChange({ ...p, sticky_notes: stickyNotes.map((n) => n.id === id ? { ...n, ...data } : n) });
   };
 
   const deleteStickyNote = (id: string) => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     onProjectChange({ ...p, sticky_notes: stickyNotes.filter((n) => n.id !== id) });
   };
 
@@ -1177,8 +1152,8 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   };
 
   const handleAutoLayout = (mode: 'vn' | 'sugiyama' | 'rpg' | 'auto' = 'auto') => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     const actualMode = mode === 'auto' ? guessBestLayout(p) : mode;
     const newLayout = { ...p.layout };
     
@@ -1472,7 +1447,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   const inspPosX = inspectorPos.x < 0 ? inspDefaultX : inspectorPos.x;
   const inspPosY = inspectorPos.y < 0 ? inspDefaultY : inspectorPos.y;
 
-  const floatingInspector = isVN && activeSelection.size > 0 ? (
+  const floatingInspector = activeSelection.size > 0 ? (
     <div
       key="floating-inspector"
       onPointerDown={e => e.stopPropagation()}
@@ -1522,7 +1497,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       {/* Content */}
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <GraphInspector
-          project={project as VNProject}
+          project={project}
           rootPath={rootPath || ""}
           selection={activeSelection}
           onEditScene={onEditScene}
@@ -1530,7 +1505,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           onDeleteSelected={handleDeleteSelected}
           onRenameNode={(id, label) => {
             if (!onProjectChange) return;
-            const p = project as VNProject;
+            const p = project;
             onProjectChange({
               ...p,
               scenes: p.scenes.map(s => s.id === id ? { ...s, label } : s),
@@ -1539,7 +1514,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           }}
           onSetStart={(id) => {
             if (!onProjectChange) return;
-            const p = project as VNProject;
+            const p = project;
             onProjectChange({ ...p, start: id });
           }}
           onEnterMainMenu={onEnterMainMenu}
@@ -1559,7 +1534,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
       <CanvasToolbar 
-        canvasRef={canvasRef} displayNodes={displayNodes} isVN={isVN} project={project}
+        canvasRef={canvasRef} displayNodes={displayNodes} project={project}
         handleFitToScreen={handleFitToScreen} handleAddScene={handleAddScene}
         handleAddScreen={handleAddScreen} handleAddFolder={handleAddFolder}
         addStickyNote={addStickyNote} handleAutoLayout={handleAutoLayout}
@@ -1591,7 +1566,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           ))}
 
           <NodeLayer 
-            displayNodes={displayNodes} isVN={isVN} compactCards={compactCards}
+            displayNodes={displayNodes} compactCards={compactCards}
             visibleRect={visibleRect} zoom={zoom}
             handleNodePointerDown={handleNodePointerDown} handleNodePointerMove={handleNodePointerMove}
             handleNodePointerUp={handleNodePointerUp} handleNodeDoubleClick={handleNodeDoubleClick}
@@ -1739,7 +1714,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
             <div style={{ display: 'flex', gap: 8 }}>
                <button className="btn" style={{ flex: 1, background: 'var(--acc)', color: '#fff', fontSize: 12, padding: '6px' }} onClick={() => {
-                  const p = project as VNProject;
+                  const p = project;
                   const newLayout = { ...p.layout };
                   const newScenes = [...p.scenes];
                   
@@ -1848,7 +1823,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         {floatingInspector}
 
         {/* Hide UI Button — outside minimap, moves based on visibility */}
-        {isVN && (() => {
+        {(() => {
           const btnWidth = 100;
           const gap = 12;
           const mmWidth = 220;
@@ -1890,7 +1865,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       </div>
 
       {/* Recent Scenes HUD — top-right */}
-        {isVN && recentSceneIds.length > 0 && (
+        {recentSceneIds.length > 0 && (
           <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 30, pointerEvents: 'auto' }}>
             <button
               onPointerDown={e => e.stopPropagation()}
@@ -1912,7 +1887,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
                 minWidth: 180,
               }}>
                 {recentSceneIds.map(id => {
-                  const sc = (project as VNProject).scenes.find(s => s.id === id);
+                  const sc = project.scenes.find(s => s.id === id);
                   if (!sc) return null;
                   return (
                     <button key={id}

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { VNProject, NodeKind } from './types';
+import type { VNProject } from './types';
 import { MainMenuThumbnail } from "./MainMenuEditor";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useThumbnail } from "./useThumbnail";
@@ -7,10 +7,6 @@ import { useDebounce } from "./useDebounce";
 
 export const MAIN_MENU_ID = 'main_menu';
 const FOLDER_COLOR = '#d4961e'; 
-const NODE_COLORS: Record<NodeKind | string, string> = {
-  label: '#4b6cf7', menu: '#f472b6',
-  init: '#facc15', screen: '#4b6cf7', unknown: '#9ca3af'
-};
 
 const EXTS = [".png", ".jpg", ".jpeg", ".webp"];
 function bgCandidates(rootPath: string, name: string): string[] {
@@ -117,7 +113,6 @@ function ConnectionPort({ showPort, tool, color = 'var(--acc)', onPointerDown }:
 
 export interface NodeLayerProps {
   displayNodes: any[];
-  isVN: boolean;
   compactCards: boolean;
   visibleRect?: { x: number; y: number; w: number; h: number };
   zoom?: number;
@@ -135,7 +130,7 @@ export interface NodeLayerProps {
 
 export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
   const {
-    displayNodes, isVN, compactCards, visibleRect, zoom = 1, handleNodePointerDown, handleNodePointerMove,
+    displayNodes, compactCards, visibleRect, zoom = 1, handleNodePointerDown, handleNodePointerMove,
     handleNodePointerUp, handleNodeDoubleClick, canvasRef, finishRename, project, rootPath, handleConnectionDragStart,
     onProjectChange
   } = props;
@@ -179,15 +174,13 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
           return !sc?.events.some(ev => ev.char_id === charFilter);
         })();
         const dim   = (search && !isMatch) || charDim;
-        const sc = node.kind === 'vn_scene' && isVN
+        const sc = node.kind === 'vn_scene'
           ? (project as VNProject).scenes.find(s => s.id === node.id)
           : null;
         const isScreenScene = sc?.scene_type === 'screen';
         const color = node.id === MAIN_MENU_ID ? 'var(--teal)'
           : node.kind === 'folder' ? 'var(--amber)'
-          : node.kind === 'vn_scene'
-            ? (isScreenScene ? 'var(--teal)' : 'var(--acc)')
-            : (NODE_COLORS[node.kind as NodeKind] ?? 'var(--acc2)');
+          : isScreenScene ? 'var(--teal)' : 'var(--acc)';
         
         const isIsolated   = (node.inDegree === 0) && (node.outDegree === 0) && !node.isStart && node.id !== MAIN_MENU_ID;
         const isHub        = node.kind === 'vn_scene' && (node.inDegree  ?? 0) >= 3;
@@ -203,7 +196,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
           return (
             <div key={node.id} className="node-card"
               onPointerDown={e => {
-                if (isConnectionMode && isVN && node.kind === 'vn_scene' && tool === 'pointer' && handleConnectionDragStart) {
+                if (isConnectionMode && node.kind === 'vn_scene' && tool === 'pointer' && handleConnectionDragStart) {
                   handleConnectionDragStart(node)(e);
                 } else {
                   handleNodePointerDown(e, node.id);
@@ -257,7 +250,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
                 pointerEvents: 'none',
               }} />
             )}
-            {isVN && node.kind === 'vn_scene' && handleConnectionDragStart && (
+            {node.kind === 'vn_scene' && handleConnectionDragStart && (
               <ConnectionPort
                 showPort={isConnectionMode && (selection.size === 0 || selection.has(node.id))}
                 tool={tool}
@@ -322,14 +315,14 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
             </div>
             <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
               {node.bgImage && rootPath && <NodeBgThumb bgName={node.bgImage} rootPath={rootPath} />}
-              {node.id === MAIN_MENU_ID && isVN ? (
+              {node.id === MAIN_MENU_ID ? (
                 <MainMenuThumbnail
                   menu={(project as VNProject).main_menu}
                   title={(project as VNProject).title}
                   rootPath={rootPath}
                   style={{ position: 'absolute', inset: 0, borderRadius: '0 0 8px 8px' }}
                 />
-              ) : node.kind === 'vn_scene' && isVN ? (() => {
+              ) : node.kind === 'vn_scene' ? (() => {
                 const sc = (project as VNProject).scenes.find(s => s.id === node.id);
                 return sc ? <SceneThumbnail scene={sc} project={project} rootPath={rootPath} inheritedBg={node.bgImage} /> : null;
               })() : null}
@@ -346,7 +339,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
       {/* ── Ending Type Popover — rendered in canvas coordinate space so it moves with pan/zoom ── */}
       {endingMenuNodeId && (() => {
         const node = displayNodes.find(n => n.id === endingMenuNodeId);
-        const sc = isVN ? (project as VNProject).scenes?.find((s: any) => s.id === endingMenuNodeId) : null;
+        const sc = (project as VNProject).scenes?.find((s: any) => s.id === endingMenuNodeId);
         if (!node || !sc) return null;
         const CYCLE: Array<'good' | 'bad' | 'odd' | 'stuck' | 'true'> = ['good', 'bad', 'odd', 'stuck', 'true'];
         return (
@@ -374,7 +367,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
               return (
                 <button key={type}
                   onClick={() => {
-                    if (!onProjectChange || !isVN) return;
+                    if (!onProjectChange) return;
                     const p = project as VNProject;
                     onProjectChange({ ...p, scenes: p.scenes.map((s: any) => s.id === node.id ? { ...s, ending_type: type } : s) });
                     setEndingMenuNodeId(null);

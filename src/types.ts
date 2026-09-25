@@ -468,37 +468,9 @@ export interface VNMainMenu {
   };
 }
 
-// ─── Legacy Ren'Py Graph Types (read-only viewer) ────────────────────────────
+// ─── Canvas Graph Types ──────────────────────────────────────────────────────
 
-export type NodeKind = 'label' | 'menu' | 'init' | 'screen' | 'unknown';
 export type LinkType = 'jump' | 'call';
-
-export interface NodeLink {
-  target_label: string;
-  link_type: LinkType;
-}
-
-export interface SceneNode {
-  id: string;
-  label: string;
-  kind: NodeKind;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  file_path: string;
-  line_number: number;
-  links: NodeLink[];
-  content: string[];
-}
-
-export interface RpyProject {
-  root_path: string;
-  nodes: SceneNode[];
-  files: string[];
-}
-
-export type LayoutPositions = Record<string, [number, number]>;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -990,59 +962,4 @@ function defaultTransTpl(): TransTemplate {
 
 export function uid(len = 8): string {
   return Math.random().toString(36).slice(2, 2 + len).padEnd(len, '0');
-}
-
-// ─── RpyProject → VNProject Converter ────────────────────────────────────────
-// Lets the Legacy Ren'Py viewer load into the full VNEditor UI (read-only).
-
-export function rpyToVnProject(rpy: RpyProject): VNProject {
-  const now = Date.now();
-
-  const labelToId: Record<string, string> = {};
-  for (const node of rpy.nodes) {
-    labelToId[node.label] = node.id;
-  }
-
-  const scenes: VNScene[] = rpy.nodes.map(node => {
-    const events: VNEvent[] = [];
-
-    for (const line of node.content) {
-      if (line.trim()) {
-        events.push({ id: uid(), type: 'narration', text: line });
-      }
-    }
-
-    for (const link of node.links) {
-      const targetId = labelToId[link.target_label] ?? link.target_label;
-      events.push({ id: uid(), type: 'jump', scene_id: targetId, transition: 'dissolve' });
-    }
-
-    return { id: node.id, label: node.label, bg: null, music: null, events };
-  });
-
-  const layout: Record<string, [number, number]> = {};
-  for (const node of rpy.nodes) {
-    layout[node.id] = [node.x || 0, node.y || 0];
-  }
-
-  const folderName =
-    rpy.root_path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'Legacy Project';
-
-  return {
-    id: uid(),
-    title: folderName,
-    author: 'Legacy',
-    created: now,
-    updated: now,
-    cover: null,
-    resolution: [1920, 1080],
-    characters: [],
-    scenes,
-    folders: [],
-    start: scenes[0]?.id ?? null,
-    text_tpls: [defaultTextTpl()],
-    trans_tpls: [defaultTransTpl()],
-    layout,
-    _rootPath: rpy.root_path,
-  };
 }

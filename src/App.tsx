@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef, memo } from "react";
 import { StartScreen } from "./StartScreen";
 import { VNEditor } from "./VNEditor";
 import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir, allowProjectAssets } from "./tauriApi";
-import type { VNProject, RpyProject } from "./types";
-import { rpyToVnProject } from "./types";
+import type { VNProject } from "./types";
 import { ToastProvider, ToastManager } from "./toastContext";
 import { ToastStack } from "./Toast";
 import { MusicPlayerProvider } from "./musicPlayerContext";
@@ -18,7 +17,7 @@ const WebviewKeepalive = memo(function WebviewKeepalive() {
   return null;
 });
 
-type Route = "start" | "vnEditor" | "rpyViewer";
+type Route = "start" | "vnEditor";
 type BgLevel = 'darker' | 'default' | 'lighter';
 
 const bgMap: Record<BgLevel, string> = {
@@ -126,10 +125,6 @@ export default function App() {
               );
             }
             setVnvProject(p);
-            setRoute("vnEditor");
-          }}
-          onLoadRpy={(p: RpyProject) => {
-            setVnvProject(rpyToVnProject(p));
             setRoute("vnEditor");
           }}
         />

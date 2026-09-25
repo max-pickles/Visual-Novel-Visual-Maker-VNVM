@@ -14,10 +14,9 @@ interface UseAutoLayoutProps {
   onProjectChange?: (p: VNProject) => void;
   displayNodes: any[];
   canvasSize: { width: number; height: number };
-  isVN: boolean;
 }
 
-export function useAutoLayout({ project, onProjectChange, displayNodes, canvasSize, isVN }: UseAutoLayoutProps) {
+export function useAutoLayout({ project, onProjectChange, displayNodes, canvasSize }: UseAutoLayoutProps) {
   const { setPan, setZoom } = useCanvasStore(useShallow(s => ({ setPan: s.setPan, setZoom: s.setZoom })));
 
   const guessBestLayout = useCallback((p: VNProject): 'vn' | 'sugiyama' | 'rpg' => {
@@ -52,7 +51,7 @@ export function useAutoLayout({ project, onProjectChange, displayNodes, canvasSi
   }, []);
 
   const handleAutoLayout = useCallback((mode: 'vn' | 'sugiyama' | 'rpg' | 'auto' = 'auto') => {
-    if (!onProjectChange || !isVN) return;
+    if (!onProjectChange) return;
     const p = project;
     const actualMode = mode === 'auto' ? guessBestLayout(p) : mode;
     const newLayout = { ...p.layout };
@@ -277,7 +276,7 @@ export function useAutoLayout({ project, onProjectChange, displayNodes, canvasSi
     }
 
     return actualMode;
-  }, [project, onProjectChange, isVN, displayNodes, canvasSize, guessBestLayout, setPan, setZoom]);
+  }, [project, onProjectChange, displayNodes, canvasSize, guessBestLayout, setPan, setZoom]);
 
   return { handleAutoLayout, guessBestLayout };
 }
