@@ -4,6 +4,7 @@
  * Supports zoom (Ctrl+wheel or buttons) and always shows a 16:9 canvas.
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { renderRenpyText } from "./renpyText";
 import type { VNEvent, VNProject } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { GuiConfig } from "./guiParser";
@@ -80,38 +81,6 @@ function useResolvedImage(rootPath: string, name: string | null) {
 // ── State tracker ─────────────────────────────────────────────────────────────
 
 const RENPY_COLORS = new Set(["black", "white", "transparent"]);
-
-function parseRenpyRichText(text: string) {
-  if (!text) return "";
-  let html = text
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'")
-    .replace(/\\n/g, "<br/>")
-    .replace(/\{b\}/g, "<b>")
-    .replace(/\{\/b\}/g, "</b>")
-    .replace(/\{i\}/g, "<i>")
-    .replace(/\{\/i\}/g, "</i>")
-    .replace(/\{u\}/g, "<u>")
-    .replace(/\{\/u\}/g, "</u>")
-    .replace(/\{s\}/g, "<s>")
-    .replace(/\{\/s\}/g, "</s>")
-    .replace(/\{color=([^}]+)\}/g, "<span style='color:$1'>")
-    .replace(/\{\/color\}/g, "</span>")
-    .replace(/\{alpha=([^}]+)\}/g, "<span style='opacity:$1'>")
-    .replace(/\{\/alpha\}/g, "</span>")
-    .replace(/\{size=([^}]+)\}/g, "<span style='font-size:$1px'>")
-    .replace(/\{\/size\}/g, "</span>")
-    // Strip non-visual tags
-    .replace(/\{cps=[^}]+\}/g, "")
-    .replace(/\{\/cps\}/g, "")
-    .replace(/\{w(=\d*\.?\d+)?\}/g, "")
-    .replace(/\{p(=\d*\.?\d+)?\}/g, "")
-    .replace(/\{nw\}/g, "")
-    .replace(/\{fast\}/g, "");
-  return html;
-}
 
 // ── Font Injector ─────────────────────────────────────────────────────────────
 
@@ -706,14 +675,15 @@ export function ScenePreview({ events, selectedIdx, project, rootPath, inherited
               )}
               {/* Normal Dialogue / Narration / Choice Prompt */}
               {rawText ? (
-                <p 
-                  dangerouslySetInnerHTML={{ __html: parseRenpyRichText(rawText) }}
+                <p
                   style={{
                     fontSize: textboxImg.url ? dialSize : 22,
                     lineHeight: 1.5, color: textColor, fontFamily: "inherit", margin: 0,
                     textShadow: "none",
-                  }} 
-                />
+                  }}
+                >
+                  {renderRenpyText(rawText)}
+                </p>
               ) : (
                 <p style={{
                   fontSize: textboxImg.url ? dialSize : 22,
