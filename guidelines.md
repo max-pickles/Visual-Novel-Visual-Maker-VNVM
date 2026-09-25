@@ -27,7 +27,7 @@ The entire application state revolves around the `VNProject` object (defined in 
 *   **`characters`**: The cast of the game, including their specific name colors and associated voice directories.
 *   **`layout`**: A dictionary mapping scene IDs to their `[X, Y]` coordinates on the infinite canvas.
 
-**Important Rule:** The `VNProject` is fully serializable to a `.vnv` JSON file. *Never store domain state outside of the project object if it needs to be saved.*
+**Important Rule:** The `VNProject` is fully serializable to a `.vnvmaker` JSON file. *Never store domain state outside of the project object if it needs to be saved.* `migrateProject()` keeps fields it doesn't know about, so new optional fields survive a load → save round-trip without touching it.
 
 ---
 
@@ -56,7 +56,7 @@ The entire application state revolves around the `VNProject` object (defined in 
 VNV Maker supports extensive theming (Light mode, Dark mode, Solarized, Nord, etc.). 
 **Failure to follow these CSS rules will break theme consistency:**
 
-1.  **NO HARDCODED COLORS**: Never use raw hex codes (e.g., `#00d4c8`) or raw RGBA strings in components.
+1.  **NO HARDCODED COLORS**: Never use raw hex codes (e.g., `#00d4c8`) or raw RGBA strings in components. Many older components still do; convert them when you touch them.
 2.  **Semantic Variables**: Always use the CSS variables defined in `index.css`:
     *   `var(--bg0)` to `var(--bg4)`: Background elevations (darkest to lightest).
     *   `var(--text)`, `var(--dim)`, `var(--faint)`: Typography hierarchy.
@@ -75,7 +75,12 @@ VNV Maker supports extensive theming (Light mode, Dark mode, Solarized, Nord, et
 
 ---
 
-## 7. Interaction Patterns
+## 7. Security & Portability Rules
+*   **Project content is untrusted.** Projects are shared and imported, so never put project text into `dangerouslySetInnerHTML` (use `renderRenpyText` from `renpyText.tsx`) and never evaluate project expressions as JavaScript (use `evalPy` from `pyExpr.ts`). The production CSP in `tauri.conf.json` blocks inline scripts and `eval` as a second line of defense.
+*   **No machine-specific paths.** Resolve folders at runtime (Tauri path APIs, `BaseDirectory::Resource` for the bundled `Templet/`) instead of hardcoding them.
+*   **Never overwrite a folder you didn't create.** Creating, importing and exporting check that the destination is new (or ask first) and never the project itself.
+
+## 8. Interaction Patterns
 *   **The "Next" Methodology**: When pair programming, wait for the user to say "next" before automatically moving to the next uncompleted task in the `task.md` roadmap. 
 *   **Artifacts**: Maintain a `task.md` for task tracking and a `walkthrough.md` to document implemented features for user verification.
 

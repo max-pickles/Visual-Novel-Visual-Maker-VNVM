@@ -81,9 +81,9 @@ Ren'Py SDK runs the live preview
 ### Clone & Install
 
 ```bash
-git clone https://github.com/<your-org>/vnvmaker.git
-cd vnvmaker
-npm install
+git clone https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM.git
+cd Visual-Novel-Visual-Maker-VNVM
+npm ci
 ```
 
 ### Run in Development
@@ -100,7 +100,9 @@ The app opens automatically. Hot-module reload is active for the React frontend.
 npm run tauri build
 ```
 
-The installer is placed in `src-tauri/target/release/bundle/`.
+The installer is placed in `src-tauri/target/release/bundle/`. The Ren'Py project template in `Templet/game/` is bundled with the app and copied into every new project.
+
+New projects are created in `Documents/VNVMaker/games` by default; change the folder under **Preferences**.
 
 ---
 
@@ -110,7 +112,7 @@ VNV Maker needs to know where your Ren'Py SDK lives to launch previews.
 
 1. Open any project.
 2. Click the **⚙ gear icon** in the Scene Editor toolbar (or the SDK status badge).
-3. The **SDK Setup Wizard** will scan common paths automatically. If it doesn't find your SDK, click **Browse** and navigate to the folder containing `renpy.exe` (Windows) or `renpy.sh` (macOS/Linux).
+3. The **SDK Setup Wizard** will scan common paths automatically. If it doesn't find your SDK, click **Browse** and pick `renpy.exe` (Windows) or `renpy.sh` (macOS/Linux). In **Preferences** you can also pick the SDK folder itself.
 4. Click **Save** — your path is stored in `localStorage` and remembered across sessions.
 
 ---
@@ -172,13 +174,19 @@ Drop any existing Ren'Py project's `game/` folder into the import dialog. The im
 
 ---
 
+## 📦 Exporting
+
+**Export → Project folder** copies the project to a folder outside it and writes the compiled story as `game/script.rpy` plus one `game/scene_<id>.rpy` per scene. In the copy it removes `project.vnvmaker`, the live-preview script and any scripts the compiled story replaces (for imported games, the original story scripts). `gui.rpy`, `options.rpy`, `screens.rpy`, Translation Dashboard output and scripts you added yourself are kept. The export never runs on the project folder itself, and asks before replacing an existing folder.
+
+---
+
 ## 🧪 Tests
 
 ```bash
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the graph layout algorithm and project validator.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the Ren'Py text-tag renderer and the playtest's expression evaluator. CI (`.github/workflows/ci.yml`) also typechecks, builds the frontend and runs `cargo clippy`.
 
 ---
 
@@ -196,7 +204,7 @@ Tests live in `src/__tests__/` and cover the graph layout algorithm and project 
 |---|---|
 | `PascalCase.tsx` | React component |
 | `camelCase.ts` | Pure TypeScript module |
-| `*.test.ts` | Jest test file |
+| `*.test.ts` | Vitest test file |
 
 
 
