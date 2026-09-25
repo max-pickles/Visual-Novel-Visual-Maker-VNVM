@@ -1,12 +1,14 @@
 // VNVMaker — Tauri main.rs
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use serde::Serialize;
+use tauri::path::BaseDirectory;
+use tauri::Manager;
 use vnvmaker_lib::{
     parse_renpy_project, save_layout, load_layout, LayoutData,
     read_file, write_file, list_rpy_files,
-    list_assets, copy_dir_all, export_standalone, import_rpy_folder,
+    list_assets, copy_dir_all, import_rpy_folder,
     scaffold_from_template, apply_project_settings,
     validate_renpy_game,
     RpyProject,
@@ -86,21 +88,6 @@ fn copy_dir_recursive(src: String, dst: String) -> Result<(), String> {
     copy_dir_all(&PathBuf::from(&src), &PathBuf::from(&dst))
 }
 
-/// Export a fully compiled project as a standalone Ren'Py game in the SDK
-/// compiled_rpy: the compiled .rpy script text
-/// project_name: safe ASCII name (becomes the folder name in the SDK)
-/// project_title: display title
-/// asset_root: path to the project folder with images/ and audio/ inside
-#[tauri::command]
-fn export_to_sdk(
-    compiled_rpy: String,
-    project_name: String,
-    project_title: String,
-    asset_root: String,
-) -> Result<String, String> {
-    export_standalone(&compiled_rpy, &project_name, &project_title, &PathBuf::from(&asset_root))
-}
-
 /// Import an existing Ren'Py game folder into VNVMaker project JSON
 #[tauri::command]
 fn import_from_rpy(folder_path: String) -> Result<String, String> {
@@ -117,9 +104,14 @@ fn validate_renpy_project(folder_path: String) -> Result<String, String> {
 
 /// Scaffold a new blank project from the Templet — copies gui/, screens.rpy,
 /// options.rpy etc., patches the project title, leaves images/ and audio/ empty.
+/// The Templet ships with the app as a bundled resource (see tauri.conf.json).
 #[tauri::command]
-fn scaffold_new_project(project_root: String, project_title: String) -> Result<String, String> {
-    scaffold_from_template(&PathBuf::from(&project_root), &project_title)
+fn scaffold_new_project(app: tauri::AppHandle, project_root: String, project_title: String) -> Result<String, String> {
+    let template = app
+        .path()
+        .resolve("templet/game", BaseDirectory::Resource)
+        .map_err(|e| format!("Could not locate the project template: {}", e))?;
+    scaffold_from_template(&template, &PathBuf::from(&project_root), &project_title)
 }
 
 /// Patch gui.rpy + options.rpy with the user's chosen resolution and accent color.
@@ -160,6 +152,14 @@ fn delete_project_folder(folder_path: String) -> Result<(), String> {
     }
     if !path.is_dir() {
         return Err(format!("Path is not a folder: {}", folder_path));
+    }
+    // Only delete folders that look like a project, so a wrong path can't wipe
+    // out anything else.
+    if !path.join("project.vnvmaker").is_file() && !path.join("game").is_dir() {
+        return Err(format!(
+            "{} doesn't look like a VNVMaker or Ren'Py project, so it wasn't deleted.",
+            folder_path
+        ));
     }
     std::fs::remove_dir_all(path).map_err(|e| e.to_string())
 }
@@ -232,14 +232,10 @@ fn list_dir_entries(path: String) -> Result<Vec<DirEntry>, String> {
             // Detect VNVMaker projects and Ren'Py games:
             //  - project.vnvmaker  → VNVMaker project
             //  - project.json      → Ren'Py launcher project file
-            //  - log.txt           → Ren'Py runtime log
-            //  - .gitignore        → common in Ren'Py repos
             //  - game/ subfolder   → core Ren'Py structure
             let is_vnv_project = is_dir && (
                 p.join("project.vnvmaker").exists() ||
                 p.join("project.json").exists()      ||
-                p.join("log.txt").exists()            ||
-                p.join(".gitignore").exists()         ||
                 p.join("game").is_dir()
             );
             Some(DirEntry {
@@ -386,7 +382,7 @@ fn extract_rpy_quoted(s: &str) -> Option<String> {
     None
 }
 
-/// Return common quick-access paths (Desktop, Documents, Downloads, VNV Projects).
+/// Return common quick-access paths (Home, Desktop, Documents, Downloads).
 #[tauri::command]
 fn get_quick_access_paths() -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
@@ -410,23 +406,36 @@ fn get_quick_access_paths() -> std::collections::HashMap<String, String> {
     map.insert("Documents".into(), format!("{}/Documents", home));
     map.insert("Downloads".into(), format!("{}/Downloads", home));
 
-    // VNVMaker projects folder
-    let vnv_games = format!("{}/OneDrive/Desktop/VNVMAKER/games", home);
-    if std::path::Path::new(&vnv_games).exists() {
-        map.insert("VNV Projects".into(), vnv_games);
-    }
     map
 }
 
 // ─── Ren'Py SDK Launcher ─────────────────────────────────────────────────────────
 
+/// File names of the Ren'Py SDK launcher.
+const RENPY_LAUNCHERS: &[&str] = &["renpy.exe", "renpy.sh", "renpy"];
+
+/// Resolve a user-supplied SDK location: either the SDK folder or the launcher
+/// inside it. Anything else is ignored, so the setting can't be used to start
+/// some other program.
+fn renpy_exe_from_hint(hint: &str) -> Option<PathBuf> {
+    let p = Path::new(hint.trim());
+    if p.is_dir() {
+        return RENPY_LAUNCHERS.iter().map(|name| p.join(name)).find(|c| c.is_file());
+    }
+    let name = p.file_name()?.to_string_lossy().to_lowercase();
+    if p.is_file() && RENPY_LAUNCHERS.contains(&name.as_str()) {
+        Some(p.to_path_buf())
+    } else {
+        None
+    }
+}
+
 /// Search for the Ren'Py SDK launcher binary on this machine.
 /// Priority: caller hint → RENPY_SDK env var → versioned dirs in AppData/Local and C:\
 fn find_renpy_exe(hint: Option<&str>) -> Option<std::path::PathBuf> {
-    // 1. Caller-provided path (stored in IDE settings)
-    if let Some(p) = hint {
-        let pb = std::path::Path::new(p);
-        if pb.exists() { return Some(pb.to_path_buf()); }
+    // 1. Caller-provided path (stored in IDE settings): the SDK folder or its launcher
+    if let Some(exe) = hint.and_then(renpy_exe_from_hint) {
+        return Some(exe);
     }
     // 2. RENPY_SDK environment variable
     if let Ok(sdk) = std::env::var("RENPY_SDK") {
@@ -696,7 +705,6 @@ fn main() {
             write_text_file,
             list_asset_files,
             copy_dir_recursive,
-            export_to_sdk,
             import_from_rpy,
             validate_renpy_project,
             scaffold_new_project,

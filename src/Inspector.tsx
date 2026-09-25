@@ -5,7 +5,7 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { VNEvent, VNProject, VNChoiceOpt } from "./types";
 import { newOpt, VN_POSES, VN_SIDES, VN_TRANSITIONS, VN_EFFECTS } from "./types";
-import { listAssetFiles, launchRenpyPreview, DEFAULT_RENPY_SDK } from "./tauriApi";
+import { listAssetFiles } from "./tauriApi";
 import { compileSingleAnimationPreview } from "./compiler";
 import { convertFileSrc } from "@tauri-apps/api/core";
 

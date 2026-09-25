@@ -37,7 +37,10 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../Templet/game/": "templet/game/"
+    }
   },
   "plugins": {
     "shell": {

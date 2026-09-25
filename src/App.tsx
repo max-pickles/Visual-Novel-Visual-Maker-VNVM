@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, memo } from "react";
 import { StartScreen } from "./StartScreen";
 import { VNEditor } from "./VNEditor";
-import { setWindowSize, saveVnvProject, updateAppIcon } from "./tauriApi";
+import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir } from "./tauriApi";
 import type { VNProject, RpyProject } from "./types";
 import { rpyToVnProject } from "./types";
 import { ToastProvider, ToastManager } from "./toastContext";
@@ -63,7 +63,7 @@ export default function App() {
     return t === 'crimson' ? 'cherry' : t;
   });
   const [language, setLanguage]             = useState(() => localStorage.getItem('pref_language') || 'en');
-  const [gamesDir, setGamesDir]             = useState(() => localStorage.getItem('pref_games_dir') || 'C:/Users/maxcm/OneDrive/Desktop/VNVMAKER/games');
+  const [gamesDir, setGamesDir]             = useState(() => localStorage.getItem('pref_games_dir') || '');
   const [renpySdkPath, setRenpySdkPath]     = useState(() => localStorage.getItem('vnv_renpy_sdk_path') || '');
 
   useEffect(() => { 
@@ -79,7 +79,10 @@ export default function App() {
   }, [uiScale]);
   useEffect(() => { localStorage.setItem('pref_autosave', String(autoSave)); }, [autoSave]);
   useEffect(() => { localStorage.setItem('pref_language', language); }, [language]);
-  useEffect(() => { localStorage.setItem('pref_games_dir', gamesDir); }, [gamesDir]);
+  useEffect(() => {
+    if (gamesDir) localStorage.setItem('pref_games_dir', gamesDir);
+    else defaultGamesDir().then(setGamesDir).catch(e => console.warn("Could not resolve the default games folder:", e));
+  }, [gamesDir]);
   useEffect(() => { localStorage.setItem('vnv_renpy_sdk_path', renpySdkPath); }, [renpySdkPath]);
   useEffect(() => {
     localStorage.setItem('pref_theme', theme);

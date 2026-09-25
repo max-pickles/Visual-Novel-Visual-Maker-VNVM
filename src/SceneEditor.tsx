@@ -15,7 +15,7 @@ import { ScenePreview } from "./ScenePreview";
 import { AssetBrowser } from "./AssetBrowser";
 import { computeSceneBgs } from "./sceneGraphUtils";
 import { compilePreview, compileSingleAnimationPreview } from "./compiler";
-import { launchRenpyPreview, findRenpySdk, DEFAULT_RENPY_SDK, listAssetFiles } from "./tauriApi";
+import { launchRenpyPreview, findRenpySdk, listAssetFiles } from "./tauriApi";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { AnimPropertiesPanel, AnimActionsPanel, AnimTimelinePanel } from "./AnimationTrack";
 import { SdkSetupModal } from "./SdkSetupModal";
@@ -162,7 +162,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   // Picker modal opened from clicking bg/sprite in the preview
   const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" } | null>(null);
   // Ren'Py live preview
-  const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(LS_SDK_KEY) ?? DEFAULT_RENPY_SDK);
+  const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(LS_SDK_KEY) ?? "");
   const [showSdkModal, setShowSdkModal] = useState(false);
   const [previewState, setPreviewState] = useState<"idle" | "launching" | "ok" | "err">("idle");
   const [previewMsg, setPreviewMsg]   = useState("");

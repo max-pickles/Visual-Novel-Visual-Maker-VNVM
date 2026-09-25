@@ -3,7 +3,7 @@
  * Handles opening and creating projects, and recent files list.
  */
 import React, { useState, useEffect } from "react";
-import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, createProjectInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk } from "./tauriApi";
+import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk } from "./tauriApi";
 import { newProject, newDemoProject, migrateProject } from "./types";
 import { importFromRpyFiles } from "./rpyImporter";
 import type { VNProject, RpyProject } from "./types";
@@ -189,7 +189,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
 
   useEffect(() => {
     if (activeTab === 'open') {
-      listDirEntries(getGamesDir()).then(entries => {
+      getGamesDir().then(listDirEntries).then(entries => {
         const vnvProjects = entries
           .filter(e => e.is_vnv_project)
           .map(e => ({ path: `${e.path}/project.vnvmaker`, title: e.name }));
@@ -223,7 +223,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
       }
 
       // Step 2 — Copy entire source folder into GAMES_DIR
-      const destRoot = `${getGamesDir()}/${folderName}`;
+      const destRoot = `${await getGamesDir()}/${folderName}`;
       const vnvPath  = `${destRoot}/project.vnvmaker`;
       await copyDirRecursive(srcNorm, destRoot);
 
@@ -282,7 +282,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
         ? newDemoProject(newTitle, newAuthor, [w, h]) 
         : newProject(newTitle, newAuthor, [w, h]);
         
-      const rootPath = await createProjectInGamesDir(newTitle);
+      const rootPath = await projectRootInGamesDir(newTitle);
       proj._rootPath = rootPath;
       proj._filePath = rootPath + "/project.vnvmaker";
 

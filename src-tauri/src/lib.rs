@@ -299,8 +299,38 @@ pub fn list_assets(root: &Path, asset_type: &str) -> Vec<String> {
 
 // ─── Recursive Directory Copy ─────────────────────────────────────────────────
 
+/// True if `path` doesn't exist, or is a directory with nothing in it.
+pub fn dir_is_empty_or_missing(path: &Path) -> bool {
+    if !path.exists() {
+        return true;
+    }
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => false,
+    }
+}
+
+/// Absolute form of `p`, resolving symlinks for the part of the path that exists.
+fn absolute_path(p: &Path) -> std::path::PathBuf {
+    if let Ok(c) = p.canonicalize() {
+        return c;
+    }
+    match (p.parent(), p.file_name()) {
+        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => absolute_path(parent).join(name),
+        _ => p.to_path_buf(),
+    }
+}
+
 /// Recursively copy src directory into dst (dst is created if needed).
 pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
+    // Copying a folder onto itself truncates its files, and copying it into one
+    // of its own subfolders never finishes.
+    if absolute_path(dst).starts_with(absolute_path(src)) {
+        return Err(format!(
+            "Can't copy {} into itself. Choose a destination outside that folder.",
+            src.to_string_lossy().replace('\\', "/")
+        ));
+    }
     std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
     for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -331,113 +361,22 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-// ─── Standalone Export ────────────────────────────────────────────────────────
-
-pub const SDK_PATH: &str = r"C:\Users\maxcm\OneDrive\Desktop\bob\renpy-8.5.2-sdk - Copy";
-pub const THE_QUESTION_PATH: &str = r"C:\Users\maxcm\OneDrive\Desktop\vnvgames\game";
-pub const TEMPLATE_PATH: &str = r"C:\Users\maxcm\OneDrive\Desktop\VNVMAKER\Templet\game";
-
-/// Export a VNVMaker project as a standalone Ren'Py game inside the SDK.
-/// - compiled_rpy:  the full .rpy script text
-/// - project_name:  safe ASCII name for the output folder inside the SDK
-/// - project_title: display title (for config.name)
-/// - asset_root:    path to the VNVMaker project folder (we look for images/ and audio/ in root AND root/game/)
-pub fn export_standalone(
-    compiled_rpy: &str,
-    project_name: &str,
-    project_title: &str,
-    asset_root: &Path,
-) -> Result<String, String> {
-    let sdk = Path::new(SDK_PATH);
-    // Use the_question as our GUI template — it already has a proper gui/ scaffold
-    let template = Path::new(THE_QUESTION_PATH);
-    let out_dir = sdk.join(project_name);
-
-    if out_dir.exists() {
-        return Err(format!(
-            "Folder '{}' already exists in the SDK. Delete it first or choose a different name.",
-            project_name
-        ));
-    }
-    if !template.exists() {
-        return Err(format!(
-            "Ren'Py SDK template (the_question) not found at {:?}. Check your SDK installation.",
-            template
-        ));
-    }
-
-    // 1. Copy the_question template into new project (gives us gui/, screens.rpy, options.rpy etc.)
-    copy_dir_all(template, &out_dir.join("game"))?;
-    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
-
-    // Copy icon files from the_question parent
-    let q_parent = template.parent().unwrap_or(template);
-    for icon_name in &["icon.ico", "icon.icns", "android-icon_background.png", "android-icon_foreground.png"] {
-        let src = q_parent.join(icon_name);
-        if src.exists() {
-            let _ = std::fs::copy(&src, out_dir.join(icon_name));
-        }
-    }
-
-    // 2. Patch options.rpy
-    let options_path = out_dir.join("game").join("options.rpy");
-    if options_path.exists() {
-        let opts = std::fs::read_to_string(&options_path).map_err(|e| e.to_string())?;
-        let opts = Regex::new(r#"define config\.name = _\(".*?"\)"#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define config.name = _("{}")"#, project_title))
-            .to_string();
-        let opts = Regex::new(r#"define build\.name = ".*?""#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define build.name = "{}""#, project_name))
-            .to_string();
-        let opts = Regex::new(r#"define config\.save_directory = ".*?""#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define config.save_directory = "{}""#, project_name))
-            .to_string();
-        std::fs::write(&options_path, opts).map_err(|e| e.to_string())?;
-    }
-
-    // 3. Write compiled script — overwrites the_question's script.rpy
-    let script_path = out_dir.join("game").join("script.rpy");
-    write_file(&script_path, compiled_rpy)?;
-
-    // Remove compiled .rpyc files so Ren'Py recompiles from our new source
-    for entry in WalkDir::new(&out_dir.join("game"))
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpyc"))
-    {
-        let _ = std::fs::remove_file(entry.path());
-    }
-
-    // 4. Copy user assets from the project folder:
-    //    Try asset_root/game/images (if project uses game/ subdir)
-    //    Fall back to asset_root/images (flat layout)
-    for folder in &["images", "audio"] {
-        let candidates = [
-            asset_root.join("game").join(folder),
-            asset_root.join(folder),
-        ];
-        for src_folder in &candidates {
-            if src_folder.exists() {
-                let dst_folder = out_dir.join("game").join(folder);
-                copy_dir_all(src_folder, &dst_folder)?;
-                break;
-            }
-        }
-    }
-
-    Ok(out_dir.to_string_lossy().into_owned())
-}
-
 /// Scaffold a brand new blank project from the Templet folder.
 /// Copies gui/, options.rpy, screens.rpy, gui.rpy, and a starter script.rpy —
 /// but NO story images or audio. The images/ and audio/ dirs are created empty.
-pub fn scaffold_from_template(project_root: &Path, project_title: &str) -> Result<String, String> {
-    let template = Path::new(TEMPLATE_PATH);
-    if !template.exists() {
-        return Err(format!("Template not found at: {:?}. Create the Templet folder first.", template));
+///
+/// `template` is the Templet `game/` folder bundled with the app. Refuses to
+/// touch a `project_root` that already has files in it, so creating a project
+/// can never overwrite an existing one.
+pub fn scaffold_from_template(template: &Path, project_root: &Path, project_title: &str) -> Result<String, String> {
+    if !template.is_dir() {
+        return Err(format!("Project template not found at {:?}. Reinstall VNVMaker.", template));
+    }
+    if !dir_is_empty_or_missing(project_root) {
+        return Err(format!(
+            "A folder already exists at {}. Choose a different project title.",
+            project_root.to_string_lossy().replace('\\', "/")
+        ));
     }
     let game_dir = project_root.join("game");
     std::fs::create_dir_all(&game_dir).map_err(|e| e.to_string())?;

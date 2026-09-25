@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { documentDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { mkdir } from "@tauri-apps/plugin-fs";
 import type { VNProject, RpyProject, LayoutPositions } from "./types";
@@ -72,8 +73,15 @@ export async function pickNewProjectFolder(): Promise<string | null> {
 
 // ─── Games Directory ──────────────────────────────────────────────────────────
 
-export function getGamesDir(): string {
-  return localStorage.getItem("pref_games_dir") || "C:/Users/maxcm/OneDrive/Desktop/VNVMAKER/games";
+/** Where new projects go when the user hasn't picked a folder: Documents/VNVMaker/games. */
+export async function defaultGamesDir(): Promise<string> {
+  const docs = (await documentDir()).replace(/\\/g, "/").replace(/\/+$/, "");
+  return `${docs}/VNVMaker/games`;
+}
+
+/** The games folder from Preferences, or {@link defaultGamesDir}. */
+export async function getGamesDir(): Promise<string> {
+  return localStorage.getItem("pref_games_dir") || defaultGamesDir();
 }
 
 /** Sanitize a project title into a safe folder name. */
@@ -88,30 +96,12 @@ function safeFolderName(title: string): string {
 }
 
 /**
- * Creates GAMES_DIR/<SafeTitle>/ and all standard Ren'Py subfolders.
- * Returns the new project root path (forward slashes).
- * Throws if the folder already exists.
+ * Path of the folder a new project called `title` gets inside the games folder.
+ * Nothing is created here — `scaffoldNewProject` creates the folder and refuses
+ * to reuse one that already has files in it.
  */
-export async function createProjectInGamesDir(title: string): Promise<string> {
-  const name = safeFolderName(title);
-  const root = `${getGamesDir()}/${name}`;
-
-  // Create all required subdirs
-  const dirs = [
-    root,
-    `${root}/game`,
-    `${root}/game/images`,
-    `${root}/game/audio`,
-    `${root}/game/gui`,
-    `${root}/game/saves`,
-    `${root}/game/cache`,
-    `${root}/game/tl`,
-  ];
-  for (const dir of dirs) {
-    await mkdir(dir, { recursive: true });
-  }
-
-  return root;
+export async function projectRootInGamesDir(title: string): Promise<string> {
+  return `${await getGamesDir()}/${safeFolderName(title)}`;
 }
 
 
@@ -258,18 +248,6 @@ export async function applyProjectTheme(
   return invoke("apply_project_theme", { projectRoot, width, height, accentHex, bgHex });
 }
 
-// ─── Standalone Export ────────────────────────────────────────────────────────
-
-export async function exportToSdk(
-  compiledRpy: string,
-  projectName: string,
-  projectTitle: string,
-  assetRoot: string,
-): Promise<string> {
-  return invoke<string>("export_to_sdk", { compiledRpy, projectName, projectTitle, assetRoot });
-}
-
-
 // ─── Ren'Py Live Preview ──────────────────────────────────────────────────────
 
 /**
@@ -321,9 +299,6 @@ export async function deletePreviewRpy(projectRoot: string): Promise<void> {
   return invoke("delete_preview_rpy", { projectRoot: projectRoot.replace(/\\/g, "/") });
 }
 
-/** Default Ren'Py SDK path — bundled alongside VNVMaker. */
-export const DEFAULT_RENPY_SDK = "C:/Users/maxcm/OneDrive/Desktop/VNVMAKER/renpy-8.5.2/renpy.exe";
-
 /**
  * Compile the project, write vnv_preview.rpy starting from `sceneId`, and
  * spawn the Ren'Py SDK detached. Returns the sdk exe path used.
@@ -335,7 +310,7 @@ export async function playFromScene(
   sdkExePath?: string | null,
   renpyLanguage?: string | null,
 ): Promise<string> {
-  return launchRenpyPreview(projectRoot, previewRpy, sdkExePath || DEFAULT_RENPY_SDK, renpyLanguage);
+  return launchRenpyPreview(projectRoot, previewRpy, sdkExePath || null, renpyLanguage);
 }
 
 // ─── Import from .rpy ─────────────────────────────────────────────────────────
