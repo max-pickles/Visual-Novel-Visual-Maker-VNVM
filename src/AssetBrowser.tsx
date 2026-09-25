@@ -38,12 +38,6 @@ function extOf(f: string): string {
   return f.split(".").pop()?.toLowerCase() ?? "";
 }
 
-function sizeLabel(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
 // Count how many times a file path appears in the project events
 function countUsages(relPath: string, project?: VNProject): number {
   if (!project) return 0;

@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { renderRenpyText } from "./renpyText";
 import { evalPy, pyTruthy } from "./pyExpr";
-import type { VNEvent, VNProject, VNScene } from "./types";
+import type { VNEvent, VNProject } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "./translationContext";
 import { useMusicPlayer } from "./musicPlayerContext";
@@ -86,7 +86,7 @@ function evaluateAssignment(expr: string, vars: Record<string, any>): Record<str
   return newVars;
 }
 
-function SpriteRenderer({ spEv, rootPath, logW, logH, fitScale }: any) {
+function SpriteRenderer({ spEv, rootPath }: any) {
   const spriteImg = useResolvedImage(rootPath, spEv.image);
   if (!spriteImg.url) return null;
 
@@ -628,9 +628,6 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                 key={sp.id}
                 spEv={sp}
                 rootPath={rootPath}
-                logW={logW}
-                logH={logH}
-                fitScale={fitScale}
               />
             ))}
 

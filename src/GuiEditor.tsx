@@ -1,5 +1,5 @@
 /**
- * MainMenuEditor.tsx
+ * GuiEditor.tsx — The GUI tab: main menu and game menu screens.
  * Reads gui.rpy on mount, mirrors every UI change back to disk, and renders a
  * pixel-accurate WYSIWYG preview that matches the in-game main_menu screen.
  *
@@ -245,29 +245,6 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
     }
   };
 
-  const handleFontUpload = async (fontKey: 'text_font' | 'name_text_font' | 'interface_text_font') => {
-    if (!rootPath) return;
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: 'Fonts', extensions: ['ttf', 'otf', 'woff2'] }]
-      });
-      if (typeof selected === 'string') {
-        const ext = selected.split('.').pop();
-        const filename = `${fontKey}_${Date.now()}.${ext}`;
-        const destDir = `${rootPath}/game/gui/fonts`;
-        try { await mkdir(destDir, { recursive: true }); } catch(e) {}
-        const dest = `${destDir}/${filename}`;
-        await copyFile(selected, dest);
-        
-        // Apply patch
-        applyGuiPatch({ [fontKey]: `"gui/fonts/${filename}"` });
-      }
-    } catch (e) {
-      console.error('Failed to upload font:', e);
-    }
-  };
-
   const handleMagicPalette = () => {
     if (!rootPath) return;
     const imgUrl = convertFileSrc(`${rootPath}/game/gui/main_menu.png`) + `?t=${imgTick}`;
@@ -387,7 +364,6 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
   const idleColor  = guiCfg?.idle_color   ?? D_IDLE;
   const hoverColor = guiCfg?.hover_color  ?? D_HOVER;
   const accentColor = guiCfg?.accent_color ?? '#cc6600';
-  const navXpos    = guiCfg?.navigation_xpos ?? 40;
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden', background: 'var(--bg0)', flexDirection: 'column' }}>
@@ -496,25 +472,25 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
 
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#05080f', padding: 24, overflow: 'hidden' }}>
             {activeTab === 'main_menu' && (
-              <RenpyPreview menu={menu} cfg={guiCfg} optCfg={optCfg} scrCfg={scrCfg} rootPath={rootPath} resolution={project.resolution}
+              <RenpyPreview menu={menu} cfg={guiCfg} optCfg={optCfg} scrCfg={scrCfg} rootPath={rootPath}
                 selectedId={selectedId} onSelectBtn={setSelectedId} 
                 onGuiPatch={applyGuiPatch} onScrPatch={applyScrPatch}
                 imgTick={imgTick} />
             )}
             {activeTab === 'textbox' && (
-              <TextboxPreview cfg={guiCfg} rootPath={rootPath} resolution={project.resolution} imgTick={imgTick} />
+              <TextboxPreview cfg={guiCfg} rootPath={rootPath} imgTick={imgTick} />
             )}
             {activeTab === 'load' && (
-              <LoadScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} resolution={project.resolution} />
+              <LoadScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} />
             )}
             {activeTab === 'preferences' && (
-              <PreferencesScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} resolution={project.resolution} />
+              <PreferencesScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} />
             )}
             {activeTab === 'about' && (
-              <AboutScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} resolution={project.resolution} project={project} />
+              <AboutScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} project={project} />
             )}
             {activeTab === 'help' && (
-              <HelpScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} resolution={project.resolution} />
+              <HelpScreenPreview cfg={guiCfg} scrCfg={scrCfg} rootPath={rootPath} />
             )}
           </div>
         </div>
@@ -768,13 +744,12 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
 }
 
 // ─── Preview ──────────────────────────────────────────────────────────────────
-export function RenpyPreview({ menu, cfg, optCfg, scrCfg, rootPath, resolution, selectedId, onSelectBtn, onGuiPatch, onScrPatch, imgTick, isThumbnail }: {
+export function RenpyPreview({ menu, cfg, optCfg, scrCfg, rootPath, selectedId, onSelectBtn, onGuiPatch, onScrPatch, imgTick, isThumbnail }: {
   menu: VNMainMenu;
   cfg: GuiConfig | null;
   optCfg: OptionsConfig | null;
   scrCfg: ScreenConfig | null;
   rootPath: string;
-  resolution: [number, number];
   selectedId?: string | null;
   onSelectBtn?: (id: string | null) => void;
   onGuiPatch?: (patches: Record<string, string>) => void;
@@ -1019,8 +994,8 @@ function NavBtn({ btn, fontSize, idleColor, hoverColor, selected, onClick }: {
 }
 
 // ─── Shared game-menu bg wrapper ─────────────────────────────────────────────
-function GameMenuShell({ cfg, scrCfg, rootPath, resolution, children }: {
-  cfg: GuiConfig | null; scrCfg?: ScreenConfig | null; rootPath: string; resolution: [number, number]; children: React.ReactNode;
+function GameMenuShell({ cfg, scrCfg, rootPath, children }: {
+  cfg: GuiConfig | null; scrCfg?: ScreenConfig | null; rootPath: string; children: React.ReactNode;
 }) {
   const [bgOk, setBgOk] = useState(true);
   const [overlayOk, setOverlayOk] = useState(true);
@@ -1052,7 +1027,6 @@ function GameMenuShell({ cfg, scrCfg, rootPath, resolution, children }: {
   const interfaceTextSize = cfg?.interface_text_size ?? Math.round(H * 0.0305);
   const navSpacing = cfg?.navigation_spacing ?? Math.round(H * 0.0055);
   
-  const accentColor = cfg?.accent_color ?? '#cc6600';
   const idleColor   = cfg?.idle_color   ?? '#555555';
   const interfaceFont = cfg?.interface_text_font && cfg.interface_text_font !== "DejaVuSans.ttf" ? '"RenpyInterfaceFont", sans-serif' : '"DejaVu Sans", "Open Sans", sans-serif';
   const bgSrc      = rootPath ? convertFileSrc(`${rootPath}/game/gui/game_menu.png`)          : '';
@@ -1109,7 +1083,7 @@ function GameMenuShell({ cfg, scrCfg, rootPath, resolution, children }: {
 }
 
 // ─── Load screen preview ──────────────────────────────────────────────────────
-function LoadScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string; resolution: [number, number] }) {
+function LoadScreenPreview({ cfg, scrCfg, rootPath }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string }) {
   const [W, H] = [cfg?.init_width ?? 1280, cfg?.init_height ?? 720];
   const accentColor = cfg?.accent_color ?? '#cc6600';
   const textColor   = cfg?.interface_text_color ?? '#ffffff';
@@ -1118,7 +1092,7 @@ function LoadScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConf
   const interfaceTextSize = cfg?.interface_text_size ?? Math.round(H * (22/720));
   const interfaceFont = cfg?.interface_text_font && cfg.interface_text_font !== "DejaVuSans.ttf" ? '"RenpyInterfaceFont", sans-serif' : '"DejaVu Sans", "Open Sans", sans-serif';
   return (
-    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath} resolution={resolution}>
+    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath}>
       <div style={{ color: accentColor, fontSize: titleSize, fontWeight: 700, marginBottom: Math.round(H * 0.016), fontFamily: interfaceFont }}>Load</div>
       <div style={{ color: textColor, fontSize: labelSize, marginBottom: Math.round(H * 0.028), opacity: 0.8, fontFamily: interfaceFont }}>Page 1</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: Math.round(W * 0.0125) }}>
@@ -1136,7 +1110,7 @@ function LoadScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConf
 }
 
 // ─── Preferences screen preview ───────────────────────────────────────────────
-function PreferencesScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string; resolution: [number, number] }) {
+function PreferencesScreenPreview({ cfg, scrCfg, rootPath }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string }) {
   const [W, H] = [cfg?.init_width ?? 1280, cfg?.init_height ?? 720];
   const accentColor = cfg?.accent_color ?? '#cc6600';
   const textColor   = cfg?.interface_text_color ?? '#ffffff';
@@ -1156,7 +1130,7 @@ function PreferencesScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: 
   const rightSliders = ['Music Volume', 'Sound Volume'];
 
   return (
-    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath} resolution={resolution}>
+    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath}>
       <div style={{ color: accentColor, fontSize: titleSize, fontWeight: 700, marginBottom: Math.round(H * 0.028), fontFamily: interfaceFont }}>Preferences</div>
       
       {/* Top half: Radio buttons */}
@@ -1202,8 +1176,8 @@ function PreferencesScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: 
 }
 
 // ─── About screen preview ─────────────────────────────────────────────────────
-function AboutScreenPreview({ cfg, scrCfg, rootPath, resolution, project }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string; resolution: [number, number]; project: VNProject }) {
-  const [W, H] = [cfg?.init_width ?? 1280, cfg?.init_height ?? 720];
+function AboutScreenPreview({ cfg, scrCfg, rootPath, project }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string; project: VNProject }) {
+  const H = cfg?.init_height ?? 720;
   const accentColor = cfg?.accent_color ?? '#cc6600';
   const textColor   = cfg?.interface_text_color ?? '#ffffff';
   const titleSize   = cfg?.title_text_size ?? Math.round(H * (50/720));
@@ -1211,7 +1185,7 @@ function AboutScreenPreview({ cfg, scrCfg, rootPath, resolution, project }: { cf
   const interfaceTextSize = cfg?.interface_text_size ?? Math.round(H * (22/720));
   const interfaceFont = cfg?.interface_text_font && cfg.interface_text_font !== "DejaVuSans.ttf" ? '"RenpyInterfaceFont", sans-serif' : '"DejaVu Sans", "Open Sans", sans-serif';
   return (
-    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath} resolution={resolution}>
+    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath}>
       <div style={{ color: accentColor, fontSize: titleSize, fontWeight: 700, marginBottom: 10, fontFamily: interfaceFont }}>About</div>
       <div style={{ color: accentColor, fontSize: labelSize + 4, marginBottom: 16, opacity: 0.85, fontFamily: interfaceFont }}>{project.title}</div>
       <div style={{ color: textColor, fontSize: interfaceTextSize, opacity: 0.7, lineHeight: 1.8, fontFamily: interfaceFont }}>
@@ -1223,8 +1197,8 @@ function AboutScreenPreview({ cfg, scrCfg, rootPath, resolution, project }: { cf
 }
 
 // ─── Help screen preview ──────────────────────────────────────────────────────
-function HelpScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string; resolution: [number, number] }) {
-  const [W, H] = [cfg?.init_width ?? 1280, cfg?.init_height ?? 720];
+function HelpScreenPreview({ cfg, scrCfg, rootPath }: { cfg: GuiConfig | null; scrCfg: ScreenConfig | null; rootPath: string }) {
+  const H = cfg?.init_height ?? 720;
   const accentColor = cfg?.accent_color ?? '#cc6600';
   const textColor   = cfg?.interface_text_color ?? '#ffffff';
   const titleSize   = cfg?.title_text_size ?? Math.round(H * (50/720));
@@ -1233,7 +1207,7 @@ function HelpScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConf
   const labelWidth = scrCfg?.help_label_xsize ?? 250;
   const shortcuts = [['Enter, Space', 'Advance'], ['Ctrl', 'Skip'], ['Tab', 'Auto-forward'], ['Page Up', 'Roll back'], ['H', 'Hide interface'], ['S', 'Screenshot'], ['V', 'Accessibility']];
   return (
-    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath} resolution={resolution}>
+    <GameMenuShell cfg={cfg} scrCfg={scrCfg} rootPath={rootPath}>
       <div style={{ color: accentColor, fontSize: titleSize, fontWeight: 700, marginBottom: 20 }}>Help</div>
       <div style={{ color: accentColor, fontSize: labelSize, fontWeight: 700, marginBottom: 14 }}>Keyboard Shortcuts</div>
       {shortcuts.map(([key, action]) => (
@@ -1247,7 +1221,7 @@ function HelpScreenPreview({ cfg, scrCfg, rootPath, resolution }: { cfg: GuiConf
 }
 
 // ─── Textbox preview ──────────────────────────────────────────────────────────
-function TextboxPreview({ cfg, rootPath, resolution, imgTick }: { cfg: GuiConfig | null; rootPath: string; resolution: [number, number]; imgTick?: number }) {
+function TextboxPreview({ cfg, rootPath, imgTick }: { cfg: GuiConfig | null; rootPath: string; imgTick?: number }) {
   const [W, H] = [cfg?.init_width ?? 1280, cfg?.init_height ?? 720];
   const [boxOk, setBoxOk] = useState(true);
   const [nameOk, setNameOk] = useState(true);
@@ -1383,36 +1357,6 @@ function SliderRow({ value, min, max, onChange }: { value: number; min: number; 
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <input type="range" min={min} max={max} value={value} onChange={e => onChange(Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--teal)' }} />
       <span style={{ fontSize: 11, color: 'var(--dim)', width: 38, textAlign: 'right', fontFamily: 'var(--mono)' }}>{value}px</span>
-    </div>
-  );
-}
-
-// ─── Thumbnail for graph node card ────────────────────────────────────────────
-export function MainMenuThumbnail({ menu, title, rootPath, style }: {
-  menu?: VNMainMenu; title: string; rootPath?: string; style?: React.CSSProperties;
-}) {
-  const [cfg, setCfg] = useState<GuiConfig | null>(null);
-  const [optCfg, setOptCfg] = useState<OptionsConfig | null>(null);
-  const [scrCfg, setScrCfg] = useState<ScreenConfig | null>(null);
-
-  useEffect(() => {
-    if (!rootPath) return;
-    readGuiRpy(rootPath).then(t => t && setCfg(parseGuiRpy(t))).catch(() => {});
-    readOptionsRpy(rootPath).then(t => t && setOptCfg(parseOptionsRpy(t))).catch(() => {});
-    readScreensRpy(rootPath).then(t => t && setScrCfg(parseScreensRpy(t))).catch(() => {});
-  }, [rootPath]);
-
-  return (
-    <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 4, background: '#000', ...style }}>
-      <RenpyPreview
-        menu={menu || { title: title, buttons: [], style: {} }}
-        cfg={cfg}
-        optCfg={optCfg}
-        scrCfg={scrCfg}
-        rootPath={rootPath || ""}
-        resolution={[1280, 720]}
-        isThumbnail={true}
-      />
     </div>
   );
 }

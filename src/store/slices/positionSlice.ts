@@ -8,7 +8,7 @@ export type PositionSlice = {
   setPositions: (update: Record<string, [number, number]> | ((prev: Record<string, [number, number]>) => Record<string, [number, number]>)) => void;
 };
 
-export const createPositionSlice: Slice<PositionSlice> = (set, get) => ({
+export const createPositionSlice: Slice<PositionSlice> = (set) => ({
   positions: {},
   setPositions: (update) => set((s) => {
     s.positions = typeof update === 'function' ? update(s.positions) : update;

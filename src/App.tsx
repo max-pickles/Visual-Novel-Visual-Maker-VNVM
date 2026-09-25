@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect } from "react";
 import { StartScreen } from "./StartScreen";
 import { VNEditor } from "./VNEditor";
 import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir, allowProjectAssets } from "./tauriApi";
@@ -7,15 +7,6 @@ import { ToastProvider, ToastManager } from "./toastContext";
 import { ToastStack } from "./Toast";
 import { MusicPlayerProvider } from "./musicPlayerContext";
 import { TranslationProvider } from "./translationContext";
-
-// We no longer need a hacky repeating progress bar.
-// The root cause of Webview2 dropping input events when idle is focus state.
-// If the document body has focus, Chromium treats the app as "Reading Mode"
-// and throttles the OS message pump. By giving StoryCanvas tabIndex={0} and
-// auto-focusing it, Chromium treats it as "Typing/Input Mode" and never drops keys.
-const WebviewKeepalive = memo(function WebviewKeepalive() {
-  return null;
-});
 
 type Route = "start" | "vnEditor";
 type BgLevel = 'darker' | 'default' | 'lighter';
@@ -150,7 +141,6 @@ export default function App() {
     <TranslationProvider language={language}>
       <ToastProvider>
         <MusicPlayerProvider>
-          <WebviewKeepalive />
           <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: bg }}>
             {inner}
           </div>

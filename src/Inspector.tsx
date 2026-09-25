@@ -2,15 +2,11 @@
  * Inspector.tsx — Per-event property editor.
  * Mirrors vn_inspector.rpy from the legacy VNVMaker.
  */
-import React, { useRef, useEffect, useState, useCallback } from "react";
-import type { VNEvent, VNProject, VNChoiceOpt } from "./types";
+import React, { useRef, useEffect, useState } from "react";
+import type { VNEvent, VNProject } from "./types";
 import { newOpt, VN_POSES, VN_SIDES, VN_TRANSITIONS, VN_EFFECTS } from "./types";
-import { listAssetFiles } from "./tauriApi";
-import { compileSingleAnimationPreview } from "./compiler";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-import type { PaletteColor } from "./colorPalettes";
-import { useMusicPlayer } from "./musicPlayerContext";
 import { useTranslation } from "./translationContext";
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
@@ -40,105 +36,17 @@ function ChipRow({ options, value, onChange }: {
 }
 
 // ─── Asset Picker (image or audio) ────────────────────────────────────────────
-// Inspired by ActionEditor3's image_viewer: hover-preview, Tab-completion,
-// keyboard navigation (↑ ↓ Enter), and file count.
-
-/** Longest common prefix of an array of strings (for Tab completion). */
-function longestCommonPrefix(strs: string[]): string {
-  if (!strs.length) return "";
-  let prefix = strs[0];
-  for (let i = 1; i < strs.length; i++) {
-    while (!strs[i].startsWith(prefix)) prefix = prefix.slice(0, -1);
-    if (!prefix) return "";
-  }
-  return prefix;
-}
+// Shows the chosen file. Files are picked from the asset sidebar or the full
+// asset browser.
 
 export function AssetPicker({
-  rootPath, assetType, value, onChange, onOpenFullBrowser,
+  value, onChange, onOpenFullBrowser,
 }: {
-  rootPath: string;
-  assetType: "images" | "audio" | "video";
   value: string;
   onChange: (v: string) => void;
   onOpenFullBrowser?: () => void;
 }) {
-  const [files, setFiles]           = useState<string[]>([]);
-  const [search, setSearch]         = useState("");
-  const [focusedIdx, setFocusedIdx] = useState<number>(-1);
-  const [hov, setHov]               = useState("");
-  const [mousePos, setMousePos]     = useState({ x: 0, y: 0 });
-  const listRef                     = useRef<HTMLDivElement>(null);
-  const searchRef                   = useRef<HTMLInputElement>(null);
-  const music                       = useMusicPlayer();
-  const { t: tr }                   = useTranslation();
-
-  useEffect(() => {
-    if (!rootPath) return;
-    listAssetFiles(rootPath, assetType).then(setFiles).catch(() => setFiles([]));
-  }, [rootPath, assetType]);
-
-  // Reset focus when search changes
-  useEffect(() => { setFocusedIdx(-1); }, [search]);
-
-  const filtered = search
-    ? files.filter((f) => f.toLowerCase().includes(search.toLowerCase()))
-    : files;
-
-  // Move selected item to the top of the list
-  if (value && filtered.includes(value)) {
-    filtered.sort((a, b) => {
-      if (a === value) return -1;
-      if (b === value) return 1;
-      return 0;
-    });
-  }
-
-  // Scroll focused item into view
-  useEffect(() => {
-    if (focusedIdx < 0 || !listRef.current) return;
-    const item = listRef.current.children[focusedIdx] as HTMLElement | undefined;
-    item?.scrollIntoView({ block: "nearest" });
-  }, [focusedIdx]);
-
-  const playAudio = useCallback((path: string) => {
-    if (music.playing && music.track === path) {
-      music.pause();
-    } else {
-      music.play(path, rootPath);
-    }
-  }, [rootPath, music]);
-
-  // ── Keyboard handler (ActionEditor3-inspired) ──────────────────────────────
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setFocusedIdx(i => Math.min(filtered.length - 1, i + 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setFocusedIdx(i => Math.max(0, i - 1));
-    } else if (e.key === "Enter") {
-      if (focusedIdx >= 0 && filtered[focusedIdx]) {
-        onChange(filtered[focusedIdx]);
-        setSearch("");
-      }
-    } else if (e.key === "Tab") {
-      // Tab completion: fill to longest common prefix of filtered basenames
-      e.preventDefault();
-      if (!filtered.length) return;
-      const names = filtered.map(f => f.split("/").pop()!);
-      const lcp   = longestCommonPrefix(names);
-      if (lcp && lcp !== search) {
-        setSearch(lcp);
-      } else if (filtered.length === 1) {
-        onChange(filtered[0]);
-        setSearch("");
-      }
-    } else if (e.key === "Escape") {
-      setSearch("");
-      setFocusedIdx(-1);
-    }
-  };
+  const { t: tr } = useTranslation();
 
   return (
     <div className="col gap8">
@@ -555,10 +463,6 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
   const set = (key: string, val: unknown) => onChange({ ...ev, [key]: val });
   const t = ev.type;
   const { t: tr } = useTranslation();
-  // Build project colour palette from character colors
-  const projectColors: PaletteColor[] = project.characters
-    .filter((c) => c.color)
-    .map((c) => ({ hex: c.color, name: c.display }));
 
   return (
     <div className="col" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -639,7 +543,7 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
           </div>
           <div className="col gap4">
             <Label>{tr('inspector.voice')}</Label>
-            <AssetPicker assetType="audio" value={ev.voice ?? ""} onChange={(v) => set("voice", v)} rootPath={project._rootPath ?? ""} onOpenFullBrowser={() => openFullBrowser && openFullBrowser("audio", "voice")} />
+            <AssetPicker value={ev.voice ?? ""} onChange={(v) => set("voice", v)} onOpenFullBrowser={() => openFullBrowser && openFullBrowser("audio", "voice")} />
           </div>
         </>
       )}
@@ -873,7 +777,6 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
               <AudioPreview rootPath={rootPath} file={(t === "music" ? ev.music : ev.sfx) ?? ""} />
             </div>
             <AssetPicker
-              rootPath={rootPath} assetType="audio"
               value={(t === "music" ? ev.music : ev.sfx) ?? ""}
               onChange={(v) => set(t === "music" ? "music" : "sfx", v)}
             />
@@ -936,7 +839,6 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
           <div className="col gap4">
             <Label>{t === "bg" ? tr('inspector.bg_file') : t === "image" ? tr('inspector.image_file') : tr('inspector.video_file')}</Label>
             <AssetPicker
-              rootPath={rootPath} assetType={t === "movie" ? "video" : "images"}
               value={(t === "bg" ? ev.bg : t === "image" ? ev.image : ev.movie) ?? ""}
               onChange={(v) => set(t === "bg" ? "bg" : t === "image" ? "image" : "movie", v)}
             />
@@ -978,7 +880,6 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
           <div className="col gap4">
             <Label>{tr('inspector.image_sprite')}</Label>
             <AssetPicker
-              rootPath={rootPath} assetType="images"
               value={ev.image ?? ""}
               onChange={(v) => set("image", v)}
             />
@@ -1143,7 +1044,7 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
           ? ev.random_weights
           : slots.map(() => 1);
         const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
-        const isWeighted = weights.some((w, i) => w !== weights[0]);
+        const isWeighted = weights.some((w) => w !== weights[0]);
 
         const setSlot = (i: number, val: string) => {
           const next = [...slots]; next[i] = val;

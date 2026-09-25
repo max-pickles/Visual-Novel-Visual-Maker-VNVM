@@ -33,7 +33,6 @@ import AchievementManager from "./AchievementManager";
 import { ShortcutsModal } from "./ShortcutsModal";
 import BotAnalyzerPanel from "./BotAnalyzerPanel";
 import { autoTagProject } from "./botAnalyzer";
-import { MusicPlayerBar } from "./MusicPlayerBar";
 import { PlaytestEngine } from "./PlaytestEngine";
 import ScriptReader from "./ScriptReader";
 import { useMusicPlayer } from "./musicPlayerContext";
@@ -46,16 +45,6 @@ interface Props {
   /** The Preferences auto-save setting; the editor's toggle changes it too. */
   autoSave: boolean;
   onAutoSaveChange: (enabled: boolean) => void;
-}
-
-// ── Sidebar width presets ─────────────────────────────────────────────────────
-const SIDEBAR_COMPACT  = 64;
-const SIDEBAR_STANDARD = 64;   // default (icon + tiny label)
-const SIDEBAR_WIDE     = 160;  // icon + full label
-
-function loadSidebarWidth(): number {
-  const v = parseInt(localStorage.getItem("vnv_sidebar_width") ?? "", 10);
-  return isNaN(v) ? SIDEBAR_STANDARD : v;
 }
 
 export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveEnabled, onAutoSaveChange: setAutoSaveEnabled }: Props) {
@@ -563,7 +552,6 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
               project={project}
               onProjectChange={updateProject}
               rootPath={project._rootPath}
-              initialPositions={project.layout}
               onNodePositionsChange={(layout) => {
                 updateProject({ ...project, layout });
               }}
@@ -603,7 +591,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
           )}
           {activeTab === "tl" && <TranslationDashboard project={project} rootPath={project._rootPath ?? ""} onProjectChange={updateProject} />}
           {activeTab === "voice" && <VoiceDirector project={project} onProjectChange={updateProject} rootPath={project._rootPath ?? ""} />}
-          {activeTab === "achievements" && <AchievementManager project={project} onProjectChange={updateProject} rootPath={project._rootPath ?? ""} />}
+          {activeTab === "achievements" && <AchievementManager project={project} onProjectChange={updateProject} />}
           {activeTab === "gui" && (
             <GuiEditor project={project} onProjectChange={updateProject} />
           )}

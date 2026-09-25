@@ -12,7 +12,7 @@
  *  ✓ Slide-in from right on enter
  *  ✓ Tooltip support (shown on hover via native title)
  */
-import React, { useRef } from "react";
+import React from "react";
 import type { ToastMessage, ToastSeverity } from "./toastContext";
 import { useToast } from "./toastContext";
 

@@ -1,9 +1,9 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import type { VNProject } from "./types";
-import { compileProject, compileProjectToFiles, getProjectStats } from "./compiler";
+import { compileProjectToFiles, getProjectStats } from "./compiler";
 import { 
   pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile,
-  findRenpySdk, launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
+  launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
   dirHasFiles, isSameOrInside, declaredVarsInGame
 } from "./tauriApi";
 import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
@@ -41,7 +41,6 @@ export function ExportPanel({ project }: Props) {
 
   // Distribute State
   const [sdkPath, setSdkPath]       = useState<string>(() => localStorage.getItem("vnv_sdk_path") ?? "");
-  const [autoDetecting, setAutoDetecting] = useState(false);
   
   const stats = useMemo(() => getProjectStats(project), [project]);
   const validation = useMemo(() => validateProject(project), [project]);
@@ -203,18 +202,6 @@ export function ExportPanel({ project }: Props) {
 
     } catch (e) { setErr(String(e)); }
   }, [project, validation, exportName, exportParentDir, rootPath]);
-
-  const handleAutoDetect = useCallback(async () => {
-    setAutoDetecting(true);
-    try {
-      const found = await findRenpySdk(sdkPath || null);
-      if (found) {
-        setSdkPath(found);
-        localStorage.setItem("vnv_sdk_path", found);
-        ToastManager.success("SDK found: " + (found.split("/").pop() || ""));
-      } else { ToastManager.error("SDK not found"); }
-    } catch (e) { ToastManager.error(String(e)); } finally { setAutoDetecting(false); }
-  }, [sdkPath]);
 
   const handleLaunchRenpy = useCallback(async () => {
     if (!rootPath) { ToastManager.error("No project loaded"); return; }

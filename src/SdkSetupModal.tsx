@@ -12,7 +12,7 @@
  *  ✓ Download link if SDK is not installed
  *  ✓ "Remember this path" persists to localStorage
  */
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { findRenpySdk } from "./tauriApi";
 

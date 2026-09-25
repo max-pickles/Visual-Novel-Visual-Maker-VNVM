@@ -3,7 +3,7 @@
  * Premium redesign: trophy card grid sidebar with glow/unlock-status borders,
  * rich detail editor with icon preview, animated hidden toggle, and points field.
  */
-import React, { useState } from "react";
+import { useState } from "react";
 import { VNProject, VNAchievement, uid } from "./types";
 import { AssetPicker } from "./Inspector";
 import { useTranslation } from "./translationContext";
@@ -11,13 +11,7 @@ import { useTranslation } from "./translationContext";
 interface Props {
   project: VNProject;
   onProjectChange: (p: VNProject) => void;
-  rootPath: string;
 }
-
-const ENDING_COLORS: Record<string, string> = {
-  visible: "var(--teal)",
-  hidden:  "var(--warn)",
-};
 
 function AchievementCard({
   achievement,
@@ -114,7 +108,7 @@ function AchievementCard({
   );
 }
 
-export default function AchievementManager({ project, onProjectChange, rootPath }: Props) {
+export default function AchievementManager({ project, onProjectChange }: Props) {
   const achievements = project.achievements ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(achievements[0]?.id ?? null);
   const { t } = useTranslation();
@@ -363,8 +357,6 @@ export default function AchievementManager({ project, onProjectChange, rootPath 
                 border: "1px solid var(--bdr)",
               }}>
                 <AssetPicker
-                  rootPath={rootPath}
-                  assetType="images"
                   value={activeAch.icon ?? ""}
                   onChange={v => updateAchievement(activeAch.id, { icon: v })}
                 />

@@ -4,7 +4,7 @@
  * Parses the structured ### sections from runBotAnalysis()
  * and renders each as a distinct glass card with icons and copy support.
  */
-import React, { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { VNProject } from "./types";
 import { runBotAnalysis } from "./botAnalyzer";
 import { useTranslation } from "./translationContext";

@@ -52,7 +52,6 @@ const CHART_COLORS = ['#4b6cfb','#00d4c8','#9c6bf7','#eab308','#22c55e','#f97316
  */
 function makePieLabelRenderer(
   data: Array<{ name: string; value: number }>,
-  colors: string[],
 ) {
   const RADIAN    = Math.PI / 180;
   const ROW_H     = 32;    // vertical gap between right/left column rows
@@ -377,7 +376,7 @@ const StatsView: React.FC<StatsViewProps> = ({ project }) => {
                   outerRadius={150}
                   dataKey="value"
                   nameKey="name"
-                  label={makePieLabelRenderer(stats.eventTypePieData, CHART_COLORS)}
+                  label={makePieLabelRenderer(stats.eventTypePieData)}
                   labelLine={false}
                 >
                   {stats.eventTypePieData.map((entry, i) => (

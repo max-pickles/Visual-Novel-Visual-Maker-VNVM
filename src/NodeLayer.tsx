@@ -1,12 +1,10 @@
 import React from 'react';
 import type { VNProject } from './types';
-import { MainMenuThumbnail } from "./MainMenuEditor";
+import { MainMenuThumbnail } from "./MainMenuThumbnail";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useThumbnail } from "./useThumbnail";
 import { useDebounce } from "./useDebounce";
-
-export const MAIN_MENU_ID = 'main_menu';
-const FOLDER_COLOR = '#d4961e'; 
+import { MAIN_MENU_ID } from './hooks/useCanvasData';
 
 const EXTS = [".png", ".jpg", ".jpeg", ".webp"];
 function bgCandidates(rootPath: string, name: string): string[] {

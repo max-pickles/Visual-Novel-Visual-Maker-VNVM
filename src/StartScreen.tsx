@@ -2,15 +2,14 @@
  * StartScreen.tsx — App launch screen.
  * Handles opening and creating projects, and recent files list.
  */
-import React, { useState, useEffect } from "react";
-import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk, ProjectFileMissingError, pathExists, dirHasFiles, samePath } from "./tauriApi";
-import { newProject, newDemoProject, migrateProject } from "./types";
+import { useState, useEffect } from "react";
+import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, ProjectFileMissingError, pathExists, dirHasFiles, samePath } from "./tauriApi";
+import { newProject, newDemoProject } from "./types";
 import { importFromRpyFiles } from "./rpyImporter";
 import type { VNProject } from "./types";
 
 import type { AppPrefs } from "./App";
 import { useTranslation } from "./translationContext";
-import { ToastManager } from "./toastContext";
 
 interface Props {
   onLoadVnv: (project: VNProject) => void;

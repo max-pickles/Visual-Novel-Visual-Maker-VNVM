@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, useState, useEffect } from 'react';
+import React, { createContext, useContext, ReactNode, useState } from 'react';
 import { en } from './locales/en';
 import { es } from './locales/es';
 import { ja } from './locales/ja';

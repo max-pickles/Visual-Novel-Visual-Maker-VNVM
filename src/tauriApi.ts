@@ -289,20 +289,6 @@ export async function findRenpySdk(hint?: string | null): Promise<string | null>
   return invoke<string | null>("find_renpy_sdk", { hint: hint ?? null });
 }
 
-/**
- * Compile the project, write vnv_preview.rpy starting from `sceneId`, and
- * spawn the Ren'Py SDK detached. Returns the sdk exe path used.
- */
-export async function playFromScene(
-  projectRoot: string,
-  sceneId: string,
-  previewRpy: string,
-  sdkExePath?: string | null,
-  renpyLanguage?: string | null,
-): Promise<string> {
-  return launchRenpyPreview(projectRoot, previewRpy, sdkExePath || null, renpyLanguage);
-}
-
 // ─── Import from .rpy ─────────────────────────────────────────────────────────
 
 /**

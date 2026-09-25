@@ -7,7 +7,6 @@
  */
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import type { VNProject } from './types';
-import { useVirtualList } from './useVirtualList';
 import { invoke } from '@tauri-apps/api/core';
 import { ToastManager } from './toastContext';
 import { writeTextFile } from './tauriApi';
@@ -256,7 +255,6 @@ const TranslationDashboard: React.FC<TranslationDashboardProps> = ({ project, ro
     for (const s of strings) {
       const translated = currentLang.translations[s.id];
       if (!translated) continue; // only export completed strings
-      const charPrefix = s.charName ? `${s.charName} ` : '';
       lines.push(
         `    # ${s.sceneName} — ${s.type}`,
         `    old "${s.original.replace(/"/g, '\\"')}"`,

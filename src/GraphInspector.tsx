@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import ReactDOM from "react-dom";
-import type { VNProject, VNFolder } from "./types";
+import type { VNProject } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { computeSceneBgs } from "./sceneGraphUtils";
-import { MAIN_MENU_ID } from "./StoryCanvas";
+import { MAIN_MENU_ID } from "./hooks/useCanvasData";
 import { compilePreview } from "./compiler";
-import { playFromScene, declaredVarsInGame } from "./tauriApi";
+import { launchRenpyPreview, declaredVarsInGame } from "./tauriApi";
 import { ToastManager } from "./toastContext";
 import { SdkSetupModal } from "./SdkSetupModal";
 import { useTranslation } from "./translationContext";
@@ -221,7 +221,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
                     const sdk = localStorage.getItem("vnv_renpy_sdk_path") || undefined;
                     const declaredElsewhere = await declaredVarsInGame(rootPath);
                     const rpy = compilePreview(project, MAIN_MENU_ID, undefined, playMode, undefined, undefined, { declaredElsewhere });
-                    await playFromScene(rootPath, MAIN_MENU_ID, rpy, sdk);
+                    await launchRenpyPreview(rootPath, rpy, sdk);
                   } catch (e) {
                     const msg = String(e);
                     setPlayError(msg);
@@ -442,7 +442,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
                 const sdk = localStorage.getItem("vnv_renpy_sdk_path") || undefined;
                 const declaredElsewhere = await declaredVarsInGame(rootPath);
                 const rpy = compilePreview(project, scene.id, musicTrack ?? undefined, playMode, inheritedBg[scene.id] ?? undefined, inheritedSprite[scene.id] ?? undefined, { declaredElsewhere });
-                await playFromScene(rootPath, scene.id, rpy, sdk);
+                await launchRenpyPreview(rootPath, rpy, sdk);
               } catch (e) {
                 const msg = String(e);
                 setPlayError(msg);

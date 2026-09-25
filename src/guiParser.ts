@@ -121,22 +121,7 @@ export function parseGuiRpy(content: string): GuiConfig {
 // ─── Writer ───────────────────────────────────────────────────────────────────
 
 /**
- * Replace the value of a single `define gui.<key> = <value>` line in the
- * raw content and return the updated full file text.
- *
- * @param config  Current config (containing `_raw`).
- * @param key     gui.rpy key name (e.g. `"accent_color"`).
- * @param value   The new raw Ren'Py value string, already formatted —
- *                e.g. `"'#ff0000'"` for a color or `"50"` for a number.
- * @returns       New complete file content with the line replaced.
- */
-export function setGuiValue(config: GuiConfig, key: string, value: string): string {
-  return config._raw.map(line => replaceDefine(line, `gui.${key}`, value) ?? line).join('\n');
-}
-
-/**
- * Apply multiple key/value patches at once and return the new file text.
- * More efficient than calling `setGuiValue` in a loop (single pass).
+ * Apply key/value patches to `define gui.<key>` lines and return the new file text.
  */
 export function patchGuiRpy(rawContent: string, patches: Record<string, string>): string {
   const lines = rawContent.split('\n');

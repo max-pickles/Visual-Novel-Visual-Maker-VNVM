@@ -3,7 +3,7 @@
  * Provides presets (Night, Sepia, B&W, etc.) + fine-tune sliders.
  * Compiles to Ren'Py MatrixColor on bg events via the compiler.
  */
-import React, { useState } from "react";
+import { useState } from "react";
 import type { VNColorGrade } from "./types";
 
 // ─── Presets ──────────────────────────────────────────────────────────────────

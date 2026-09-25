@@ -30,7 +30,6 @@ interface Props {
   onSelect: (i: number) => void;
   onMove: (from: number, to: number) => void;
   onDelete: (i: number) => void;
-  onDuplicate: (i: number) => void;
   /** Set when a tool-button is armed (clicked) in the toolbar */
   armedToolType?: EventType | null;
   /** Called when the user drops/places a toolbar button in the list */
@@ -39,7 +38,7 @@ interface Props {
 
 export function EventList({
   events, project, selectedIdx,
-  onSelect, onMove, onDelete, onDuplicate,
+  onSelect, onMove, onDelete,
   armedToolType, onToolDrop,
 }: Props) {
   const { t } = useTranslation();
@@ -222,7 +221,7 @@ export function EventList({
                   setHoverGap(e.clientX < mid ? i : i + 1);
                 }
               }}
-              onDragLeave={e => {
+              onDragLeave={() => {
                 if (!armedToolType) setHoverGap(null);
               }}
               onDrop={e => {

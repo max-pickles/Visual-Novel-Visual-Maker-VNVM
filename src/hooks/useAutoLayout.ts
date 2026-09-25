@@ -6,8 +6,7 @@
 import { useCallback } from 'react';
 import type { VNProject } from '../types';
 import { useCanvasStore, useShallow } from '../store/canvasStore';
-
-export const MAIN_MENU_ID = 'main_menu';
+import { MAIN_MENU_ID } from './useCanvasData';
 
 interface UseAutoLayoutProps {
   project: VNProject;

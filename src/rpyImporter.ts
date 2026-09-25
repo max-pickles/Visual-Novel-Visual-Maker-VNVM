@@ -45,10 +45,10 @@
  */
 
 import type {
-  VNProject, VNScene, VNEvent, VNCharacter, VNChoiceOpt,
+  VNProject, VNScene, VNEvent, VNChoiceOpt,
 } from "./types";
 import {
-  newProject, newCharacter, newEvent,
+  newProject, newCharacter,
 } from "./types";
 import { autoLayoutProject } from "./sceneGraphUtils";
 

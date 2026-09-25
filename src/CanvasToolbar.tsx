@@ -2,8 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { VNProject } from './types';
 import { useCanvasStore, useShallow } from './store/canvasStore';
 import { useTranslation } from './translationContext';
-
-export const MAIN_MENU_ID = 'main_menu';
+import { MAIN_MENU_ID } from './hooks/useCanvasData';
 
 export interface CanvasToolbarProps {
   canvasRef: React.RefObject<HTMLDivElement>;
@@ -15,33 +14,26 @@ export interface CanvasToolbarProps {
   handleAddFolder: () => void;
   addStickyNote: () => void;
   handleAutoLayout: (mode?: 'vn' | 'sugiyama' | 'rpg' | 'auto') => 'vn' | 'sugiyama' | 'rpg' | void;
-  onEditScene?: (id: string) => void;
-  pushRecentScene: (id: string) => void;
-  handleNodeDoubleClick: (id: string, kind: string, label: string) => void;
-  handleDeleteSelected: () => void;
-  handleSetStart: () => void;
-  onGoScene?: (id: string) => void;
 }
 
 export function CanvasToolbar(props: CanvasToolbarProps) {
   const {
     canvasRef, displayNodes, project, handleFitToScreen,
     handleAddScene, handleAddScreen, handleAddFolder, addStickyNote,
-    handleAutoLayout, onEditScene, pushRecentScene, handleNodeDoubleClick,
-    handleDeleteSelected, handleSetStart, onGoScene
+    handleAutoLayout,
   } = props;
 
   const {
     folderStack, setFolderStack, setSelection, zoom, setZoom, setPan,
-    search, setSearch, charFilter, setCharFilter, tool, setTool, selection,
-    isConnectionMode, setIsConnectionMode, setCompositorKick, uiVisible, setUiVisible,
+    search, setSearch, charFilter, setCharFilter, tool, setTool,
+    isConnectionMode, setIsConnectionMode, setUiVisible,
   } = useCanvasStore(useShallow(s => ({
     folderStack: s.folderStack, setFolderStack: s.setFolderStack,
     setSelection: s.setSelection, zoom: s.zoom, setZoom: s.setZoom, setPan: s.setPan,
     search: s.search, setSearch: s.setSearch, charFilter: s.charFilter, setCharFilter: s.setCharFilter,
-    tool: s.tool, setTool: s.setTool, selection: s.selection,
+    tool: s.tool, setTool: s.setTool,
     isConnectionMode: s.isConnectionMode, setIsConnectionMode: s.setIsConnectionMode,
-    setCompositorKick: s.setCompositorKick, uiVisible: s.uiVisible, setUiVisible: s.setUiVisible,
+    setUiVisible: s.setUiVisible,
   })));
 
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
@@ -183,7 +175,6 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
               if (!prev && tool === 'pan') setTool('pointer');
               return !prev;
             });
-            setCompositorKick(prev => prev + 1);
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

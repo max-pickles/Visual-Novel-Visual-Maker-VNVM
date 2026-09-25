@@ -486,19 +486,6 @@ export const VN_EFFECTS: EffectKind[] = ['dissolve', 'fade', 'flash', 'pixellate
 
 export const VN_SIDES: Side[] = ['left', 'center', 'right'];
 
-export const VN_PALETTE: string[] = [
-  '#c8d0ff', '#f472b6', '#fb923c', '#facc15', '#4ade80',
-  '#22d3ee', '#818cf8', '#e879f9', '#f87171', '#34d399',
-  '#60a5fa', '#a78bfa', '#fbbf24', '#f9a8d4', '#6ee7b7',
-  '#93c5fd', '#c4b5fd', '#fca5a5', '#86efac', '#67e8f9',
-];
-
-export const VN_FONT_OPTIONS: string[] = [
-  'DejaVuSans.ttf',
-  'NotoSans-Regular.ttf',
-  'SourceHanSans.ttf',
-];
-
 // ─── Factory Functions ────────────────────────────────────────────────────────
 // Mirrors the vn_new_* constructors in vn_data.rpy
 
@@ -659,14 +646,6 @@ export function newOpt(text = 'Option'): VNChoiceOpt {
   return { id: uid(6), text, scene: null };
 }
 
-export function newTextTpl(name = 'Text Style'): TextTemplate {
-  return { ...defaultTextTpl(), id: uid(), name };
-}
-
-export function newTransTpl(name = 'Transition'): TransTemplate {
-  return { ...defaultTransTpl(), id: uid(), name };
-}
-
 // ─── Lookup Utilities ─────────────────────────────────────────────────────────
 // Mirrors vn_find_char, vn_find_scene, vn_char_sprite from vn_data.rpy
 
@@ -678,51 +657,6 @@ export function findChar(project: VNProject, charId: string | null | undefined):
 export function findScene(project: VNProject, sceneId: string | null | undefined): VNScene | null {
   if (!sceneId) return null;
   return project.scenes.find(s => s.id === sceneId) ?? null;
-}
-
-export function charSprite(project: VNProject, charId: string | null | undefined, pose: string): string | null {
-  const char = findChar(project, charId);
-  if (!char) return null;
-  return char.sprites[pose] || char.sprites['neutral'] || null;
-}
-
-/**
- * Find the effective background for a scene.
- * Checks scene.bg first, then scans events for a 'bg' event,
- * then walks incoming jump sources (mirrors vn_get_scene_bg).
- */
-export function getSceneBg(scene: VNScene, project?: VNProject, visited: Set<string> = new Set()): string | null {
-  if (visited.has(scene.id)) return null;
-  visited.add(scene.id);
-
-  if (scene.bg) return scene.bg;
-  for (const ev of scene.events) {
-    if (ev.type === 'bg' && ev.bg) return ev.bg;
-    // Check layer sub-events
-    for (let i = 1; i <= 9; i++) {
-      const layer = ev[`layer${i}`] as VNEvent | undefined;
-      if (layer?.type === 'bg' && layer.bg) return layer.bg;
-    }
-  }
-
-  // Walk incoming scenes
-  if (project) {
-    for (const other of project.scenes) {
-      if (other.id === scene.id) continue;
-      const isIncoming = other.events.some(ev => {
-        if (ev.type === 'jump' && ev.scene_id === scene.id) return true;
-        if (ev.type === 'choice') {
-          return (ev.opts ?? []).some(o => o.scene === scene.id);
-        }
-        return false;
-      });
-      if (isIncoming) {
-        const bg = getSceneBg(other, project, visited);
-        if (bg) return bg;
-      }
-    }
-  }
-  return null;
 }
 
 /**

@@ -9,11 +9,11 @@
  *    e.g. "eileen_001.ogg" → linked to Eileen's 1st unvoiced line
  */
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import type { VNProject, VNScene, VNEvent, VNCharacter } from "./types";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import type { VNProject, VNEvent, VNCharacter } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open, save, ask } from "@tauri-apps/plugin-dialog";
-import { readDir, writeFile, mkdir, exists, remove } from "@tauri-apps/plugin-fs";
+import { readDir, writeFile, mkdir, remove } from "@tauri-apps/plugin-fs";
 import { useTranslation } from "./translationContext";
 
 interface Props {
@@ -76,7 +76,6 @@ function LineRecorder({
   const [blobUrl, setBlobUrl]   = useState<string | null>(null);
   const [blob, setBlob]         = useState<Blob | null>(null);
   const [recErr, setRecErr]     = useState<string | null>(null);
-  const [filename, setFilename] = useState(`${charName.toLowerCase().replace(/\s+/g, "_")}_${String(lineIdx).padStart(3, "0")}`);
   const mrRef    = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef  = useRef<number>(0);

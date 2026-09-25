@@ -5,79 +5,24 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import type { VNProject, VNStickyNote } from './types';
 import { newScene } from './types';
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { GraphInspector } from "./GraphInspector";
 import { Minimap } from "./Minimap";
-import { CanvasNavControls } from "./CanvasNavControls";
 import { StickyNote } from "./StickyNote";
-import { useThumbnail } from "./useThumbnail";
-import { computeSceneBgs } from "./sceneGraphUtils";
-import { MainMenuThumbnail } from "./MainMenuEditor";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { NodeLayer } from "./NodeLayer";
-import { ConnectionLayer, CanvasLink, VNLinkKind } from "./ConnectionLayer";
+import { ConnectionLayer } from "./ConnectionLayer";
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { useCanvasStore, useShallow } from "./store/canvasStore";
 import { useTranslation } from './translationContext';
-import { useCanvasData } from "./hooks/useCanvasData";
+import { useCanvasData, MAIN_MENU_ID } from "./hooks/useCanvasData";
 import { useAutoLayout } from "./hooks/useAutoLayout";
 
-export const MAIN_MENU_ID = "main_menu";
-
-
-// ── Fuzzy BG thumbnail resolver ───────────────────────────────────────────────
-const EXTS = [".png", ".jpg", ".jpeg", ".webp"];
-function bgCandidates(rootPath: string, name: string): string[] {
-  if (!name || !rootPath) return [];
-  const norm = name.replace(/\s+/g, "_");
-  const urls: string[] = [];
-  for (const base of [name, norm]) {
-    if (/\.[a-zA-Z]{2,5}$/.test(base)) {
-      // Already has extension — try direct, game/images/, and images/ prefixes
-      urls.push(convertFileSrc(`${rootPath}/${base}`));
-      if (!base.startsWith('game/')) urls.push(convertFileSrc(`${rootPath}/game/images/${base}`));
-      if (!base.startsWith('images/')) urls.push(convertFileSrc(`${rootPath}/images/${base}`));
-    } else {
-      // No extension — try all combos of prefix + extension
-      for (const ext of EXTS) {
-        urls.push(convertFileSrc(`${rootPath}/game/images/${base}${ext}`));
-        urls.push(convertFileSrc(`${rootPath}/images/${base}${ext}`));
-        urls.push(convertFileSrc(`${rootPath}/${base}${ext}`));
-      }
-    }
-  }
-  return [...new Set(urls)];
-}
-
-function NodeBgThumb({ bgName, rootPath }: { bgName: string; rootPath: string }) {
-  const list = React.useMemo(() => bgCandidates(rootPath, bgName), [rootPath, bgName]);
-  const [idx, setIdx] = React.useState(0);
-  const [dead, setDead] = React.useState(false);
-  React.useEffect(() => { setIdx(0); setDead(false); }, [list.join("|")]); // eslint-disable-line
-  if (dead || list.length === 0) return null;
-  return (
-    <img
-      src={list[idx]}
-      alt=""
-      onError={() => { if (idx + 1 < list.length) setIdx(i => i + 1); else setDead(true); }}
-      style={{
-        position: 'absolute', inset: 0, width: '100%', height: '100%',
-        objectFit: 'cover', opacity: 0.55, borderRadius: 8,
-        pointerEvents: 'none',
-      }}
-    />
-  );
-}
 
 
 // ─── Colors & Constants ───────────────────────────────────────────────────────
 
 const ZOOM_MIN = 0.1, ZOOM_MAX = 5.0, LOD_THRESHOLD = 0.3;
 const TILE_SIZE = 100;
-const FOLDER_COLOR = '#d4961e'; // Amber for folders
-
-// Ending type cycle order — used by the badge popover
-const ENDING_CYCLE: Array<'good' | 'bad' | 'odd' | 'stuck'> = ['good', 'bad', 'odd', 'stuck'];
 
 
 
@@ -88,7 +33,6 @@ interface Props {
   onProjectChange?: (p: VNProject) => void;
   rootPath?: string;
   onNodePositionsChange: (positions: Record<string, [number, number]>) => void;
-  initialPositions?: Record<string, [number, number]>;
   onEditScene?: (id: string) => void;
   onGoScene?: (id: string) => void;
   /** Set by QuickOpen to fly the canvas to a specific scene */
@@ -101,17 +45,16 @@ interface Props {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function StoryCanvas({ project, onProjectChange, rootPath, onNodePositionsChange, initialPositions = {}, onEditScene, onGoScene, flyToSceneId, onFlyToComplete, onEnterMainMenu }: Props) {
+export function StoryCanvas({ project, onProjectChange, rootPath, onNodePositionsChange, onEditScene, onGoScene, flyToSceneId, onFlyToComplete, onEnterMainMenu }: Props) {
   // State from global store
   const {
-    charFilter, pan, setPan, zoom, setZoom,
+    pan, setPan, zoom, setZoom,
     positions, setPositions,
     selection, setSelection,
     folderStack, setFolderStack,
-    search, setSearch,
     renamingId, setRenamingId,
     renameVal, setRenameVal,
-    tool, setTool,
+    tool,
     recentSceneIds, setRecentSceneIds,
     showRecent, setShowRecent,
     ctxMenu, setCtxMenu,
@@ -119,23 +62,20 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     inspectorSide, setInspectorSide,
     displayedSide, setDisplayedSide,
     panelExiting, setPanelExiting,
-    isConnectionMode, setIsConnectionMode,
+    setIsConnectionMode,
     armedConnectionNode, setArmedConnectionNode,
     connMenu, setConnMenu,
-    hoverTargetId, setHoverTargetId,
-    compositorKick, setCompositorKick,
-    endingMenuNodeId, setEndingMenuNodeId,
+    setHoverTargetId,
     uiVisible, setUiVisible,
     triggerFitAll,
   } = useCanvasStore(useShallow((s) => ({
-    charFilter: s.charFilter, pan: s.pan, setPan: s.setPan, zoom: s.zoom, setZoom: s.setZoom,
+    pan: s.pan, setPan: s.setPan, zoom: s.zoom, setZoom: s.setZoom,
     positions: s.positions, setPositions: s.setPositions,
     selection: s.selection, setSelection: s.setSelection,
     folderStack: s.folderStack, setFolderStack: s.setFolderStack,
-    search: s.search, setSearch: s.setSearch,
     renamingId: s.renamingId, setRenamingId: s.setRenamingId,
     renameVal: s.renameVal, setRenameVal: s.setRenameVal,
-    tool: s.tool, setTool: s.setTool,
+    tool: s.tool,
     recentSceneIds: s.recentSceneIds, setRecentSceneIds: s.setRecentSceneIds,
     showRecent: s.showRecent, setShowRecent: s.setShowRecent,
     ctxMenu: s.ctxMenu, setCtxMenu: s.setCtxMenu,
@@ -143,12 +83,10 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     inspectorSide: s.inspectorSide, setInspectorSide: s.setInspectorSide,
     displayedSide: s.displayedSide, setDisplayedSide: s.setDisplayedSide,
     panelExiting: s.panelExiting, setPanelExiting: s.setPanelExiting,
-    isConnectionMode: s.isConnectionMode, setIsConnectionMode: s.setIsConnectionMode,
+    setIsConnectionMode: s.setIsConnectionMode,
     armedConnectionNode: s.armedConnectionNode, setArmedConnectionNode: s.setArmedConnectionNode,
     connMenu: s.connMenu, setConnMenu: s.setConnMenu,
-    hoverTargetId: s.hoverTargetId, setHoverTargetId: s.setHoverTargetId,
-    compositorKick: s.compositorKick, setCompositorKick: s.setCompositorKick,
-    endingMenuNodeId: s.endingMenuNodeId, setEndingMenuNodeId: s.setEndingMenuNodeId,
+    setHoverTargetId: s.setHoverTargetId,
     uiVisible: s.uiVisible, setUiVisible: s.setUiVisible,
     triggerFitAll: s.triggerFitAll,
   })));
@@ -177,7 +115,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
   const activeSelection = selection.size > 0 ? selection : prevSelectionRef.current;
 
-  // Removed redundant initialPositions effect — displayNodes correctly falls back to p.layout
   const inspectorDragRef = useRef<{ startX: number; startY: number; startPX: number; startPY: number } | null>(null);
   const panelTransitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -316,7 +253,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       if (e.shiftKey && e.key.toLowerCase() === 'x') {
         e.preventDefault();
         setIsConnectionMode(prev => !prev);
-        setCompositorKick(prev => prev + 1);
       }
 
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'h') {
@@ -326,11 +262,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [setIsConnectionMode, setCompositorKick, setUiVisible, uiVisible]);
+  }, [setIsConnectionMode, setUiVisible, uiVisible]);
 
 
   // ─── Unified Data Model (via hook) ──────────────────────────────────────────
-  const { nodes, links, displayNodes: rawDisplayNodes } = useCanvasData({ project, rootPath });
+  const { links, displayNodes: rawDisplayNodes } = useCanvasData({ project, rootPath });
 
   // Merge external position overrides into nodes
   const displayNodes = useMemo(() => {
@@ -937,16 +873,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     setPositions(newLayout);
   };
 
-  const handleSetStart = () => {
-    if (!onProjectChange || selection.size !== 1) return;
-    const p = project;
-    const id = Array.from(selection)[0];
-    const node = displayNodes.find(n => n.id === id);
-    if (node?.kind === 'vn_scene') {
-      onProjectChange({ ...p, start: id });
-    }
-  };
-
   // ─── Fit to Screen ────────────────────────────────────────────────────────────
   const handleFitToScreen = useCallback(() => {
     if (!displayNodes.length || !canvasSize.width || !canvasSize.height) return;
@@ -1035,16 +961,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     }
   }, [triggerFitAll, displayNodes, handleFitToScreen]);
 
-  const handleGoToStart = useCallback(() => {
-    if (!canvasSize.width || !canvasSize.height) return;
-    const startNode = displayNodes.find((n) => n.isStart);
-    if (!startNode) return;
-    setPan({
-      x: canvasSize.width  / 2 - (startNode.x + startNode.w / 2) * zoom,
-      y: canvasSize.height / 2 - (startNode.y + startNode.h / 2) * zoom,
-    });
-  }, [displayNodes, canvasSize, zoom]);
-
   // ── Fly-to-scene (triggered by QuickOpen Ctrl+P) ──────────────────────────
   // Animates pan+zoom so the target node is centred and at a comfortable zoom.
   useEffect(() => {
@@ -1116,288 +1032,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     onProjectChange({ ...p, sticky_notes: stickyNotes.filter((n) => n.id !== id) });
   };
 
-  const guessBestLayout = (p: VNProject): 'vn' | 'sugiyama' | 'rpg' => {
-    if (!p.scenes || p.scenes.length === 0) return 'sugiyama';
-    let totalChoices = 0;
-    let maxOutDegree = 0;
-    const inDeg: Record<string, number> = {};
-    p.scenes.forEach(s => inDeg[s.id] = 0);
-    
-    p.scenes.forEach(s => {
-      let outCount = 0;
-      s.events.forEach(ev => {
-        if (ev.type === 'jump' && ev.scene_id) {
-          outCount++;
-          inDeg[ev.scene_id] = (inDeg[ev.scene_id] || 0) + 1;
-        } else if (ev.type === 'choice') {
-          ev.opts?.forEach(opt => {
-            if (opt.scene) {
-              totalChoices++;
-              outCount++;
-              inDeg[opt.scene] = (inDeg[opt.scene] || 0) + 1;
-            }
-          });
-        }
-      });
-      if (outCount > maxOutDegree) maxOutDegree = outCount;
-    });
-
-    const branchingRatio = totalChoices / Math.max(1, p.scenes.length);
-    const convergenceCount = Object.values(inDeg).filter(d => d > 1).length;
-
-    if (maxOutDegree >= 4 && branchingRatio > 1.0) return 'rpg';
-    
-    // Default to Sugiyama as the standard layout
-    return 'sugiyama';
-  };
-
-  const handleAutoLayout = (mode: 'vn' | 'sugiyama' | 'rpg' | 'auto' = 'auto') => {
-    if (!onProjectChange) return;
-    const p = project;
-    const actualMode = mode === 'auto' ? guessBestLayout(p) : mode;
-    const newLayout = { ...p.layout };
-    
-    const adj: Record<string, string[]> = {};
-    const inDegrees: Record<string, number> = {};
-    const childOrder: Record<string, number> = {};
-    const childScore: Record<string, number> = {};
-
-    p.scenes.forEach(s => { adj[s.id] = []; inDegrees[s.id] = 0; });
-    
-    p.scenes.forEach(s => {
-      let orderCounter = 0;
-      const addTarget = (targetId: string, score: number) => {
-        if (!targetId) return;
-        adj[s.id].push(targetId);
-        inDegrees[targetId] = (inDegrees[targetId] || 0) + 1;
-        if (childOrder[targetId] === undefined) childOrder[targetId] = orderCounter++;
-        if (childScore[targetId] === undefined || score < childScore[targetId]) {
-          childScore[targetId] = score;
-        }
-      };
-
-      s.events.forEach(ev => {
-        if (ev.type === 'jump' && ev.scene_id) {
-          addTarget(ev.scene_id, 2);
-        } else if (ev.type === 'choice') {
-          ev.opts?.forEach(opt => {
-            const score = opt.is_correct ? 1 : (opt.is_incorrect ? 3 : 2);
-            if (opt.scene) addTarget(opt.scene, score);
-          });
-        } else if (ev.type === 'if') {
-          if (ev.scene_true) addTarget(ev.scene_true, 1);
-          if (ev.scene_false) addTarget(ev.scene_false, 3);
-        }
-      });
-    });
-
-    p.scenes.forEach(s => {
-      const et = s.ending_type;
-      if (et === 'good' || et === 'true') childScore[s.id] = 1;
-      else if (et === 'bad' || et === 'stuck') childScore[s.id] = 3;
-    });
-    
-    const roots = p.scenes.filter(s => inDegrees[s.id] === 0);
-    if (roots.length === 0 && p.scenes.length > 0) roots.push(p.scenes[0]);
-
-    const sceneIndex = Object.fromEntries(p.scenes.map(s => [s.id, s]));
-
-    if (actualMode === 'vn') {
-      const spacingX = 350;
-      const spacingY = 180;
-      const visited = new Set<string>();
-      
-      const layoutNode = (scId: string, level: number, yOffset: number): number => {
-        if (visited.has(scId)) return yOffset;
-        visited.add(scId);
-        newLayout[scId] = [100 + level * spacingX, yOffset];
-        const sc = sceneIndex[scId];
-        if (!sc) return yOffset;
-        
-        let nextY = yOffset;
-        sc.events.forEach(ev => {
-          if (ev.type === 'jump' && ev.scene_id) {
-            nextY = layoutNode(ev.scene_id, level + 1, nextY);
-          } else if (ev.type === 'choice') {
-            ev.opts?.forEach(opt => {
-              if (opt.scene) nextY = layoutNode(opt.scene, level + 1, nextY);
-            });
-          }
-        });
-        return Math.max(yOffset + spacingY, nextY);
-      };
-      
-      let rootY = 100;
-      roots.forEach(r => { rootY = layoutNode(r.id, 0, rootY); });
-      p.scenes.forEach(s => { if (!visited.has(s.id)) rootY = layoutNode(s.id, 0, rootY); });
-
-    } else if (actualMode === 'sugiyama') {
-      const maxDepth: Record<string, number> = {};
-      const isBackEdge = new Set<string>();
-      const state: Record<string, 'visiting' | 'visited'> = {};
-      
-      // DFS cycle detection to prevent infinite depth loops
-      const detectCycleDfs = (u: string) => {
-        state[u] = 'visiting';
-        (adj[u] || []).forEach(v => {
-          if (state[v] === 'visiting') {
-            isBackEdge.add(`${u}->${v}`);
-          } else if (state[v] !== 'visited') {
-            detectCycleDfs(v);
-          }
-        });
-        state[u] = 'visited';
-      };
-      
-      p.scenes.forEach(s => {
-        if (state[s.id] !== 'visited') detectCycleDfs(s.id);
-      });
-      
-      // Calculate in-degrees ignoring back-edges to form a clean DAG
-      const dagInDegree: Record<string, number> = {};
-      p.scenes.forEach(s => dagInDegree[s.id] = 0);
-      p.scenes.forEach(u => {
-        (adj[u.id] || []).forEach(v => {
-          if (!isBackEdge.has(`${u.id}->${v}`)) {
-            dagInDegree[v]++;
-          }
-        });
-      });
-      
-      p.scenes.forEach(s => maxDepth[s.id] = 0);
-      const longestPathParent: Record<string, string> = {};
-      const q: string[] = [];
-      p.scenes.forEach(s => {
-        if (dagInDegree[s.id] === 0) q.push(s.id);
-      });
-      
-      // Calculate max depth for layered layout safely
-      while (q.length > 0) {
-        const u = q.shift()!;
-        (adj[u] || []).forEach(v => {
-          if (isBackEdge.has(`${u}->${v}`)) return;
-          
-          const depthIncrement = 1;
-          
-          if (maxDepth[u] + depthIncrement > maxDepth[v]) {
-            maxDepth[v] = maxDepth[u] + depthIncrement;
-            longestPathParent[v] = u;
-          }
-          dagInDegree[v]--;
-          if (dagInDegree[v] === 0) {
-            q.push(v);
-          }
-        });
-      }
-      
-      const layers: string[][] = [];
-      Object.entries(maxDepth).forEach(([id, depth]) => {
-        if (!layers[depth]) layers[depth] = [];
-        layers[depth].push(id);
-      });
-      p.scenes.forEach(s => {
-        if (maxDepth[s.id] === undefined) {
-          if (!layers[0]) layers[0] = [];
-          layers[0].push(s.id);
-        }
-      });
-      
-      // Identify the Main Trunk
-      let deepestNode = p.scenes[0]?.id;
-      let maxD = -1;
-      Object.entries(maxDepth).forEach(([id, d]) => {
-        if (d > maxD) {
-          maxD = d;
-          deepestNode = id;
-        }
-      });
-      const isTrunk = new Set<string>();
-      let curr: string | undefined = deepestNode;
-      while (curr) {
-        isTrunk.add(curr);
-        curr = longestPathParent[curr];
-      }
-      
-      const spacingX = 400;
-      const spacingY = 250;
-      
-      layers.forEach((layerNodes, depth) => {
-        // Perfectly center all layers vertically around Y=1000
-        const totalHeight = layerNodes.length * spacingY;
-        const startY = 1000 - (totalHeight / 2) + (spacingY / 2);
-        layerNodes.forEach((id, i) => {
-          newLayout[id] = [100 + depth * spacingX, startY + i * spacingY];
-        });
-      });
-
-    } else if (actualMode === 'rpg') {
-      const spacingX = 350;
-      const spacingY = 250;
-      const visited = new Set<string>();
-      
-      const layoutNode = (scId: string, xOffset: number, level: number): number => {
-        if (visited.has(scId)) return xOffset;
-        visited.add(scId);
-        newLayout[scId] = [xOffset, 100 + level * spacingY];
-        
-        let nextX = xOffset;
-        const children = adj[scId] || [];
-        children.forEach((childId, idx) => {
-          nextX = layoutNode(childId, nextX + (idx > 0 ? spacingX : 0), level + 1);
-        });
-        return Math.max(xOffset, nextX);
-      };
-      
-      let rootX = 100;
-      roots.forEach(r => { rootX = layoutNode(r.id, rootX, 0) + spacingX; });
-      p.scenes.forEach(s => { if (!visited.has(s.id)) rootX = layoutNode(s.id, rootX, 0) + spacingX; });
-    }
-
-    let maxLayoutY = 100;
-    Object.values(newLayout).forEach(pos => { if (pos[1] > maxLayoutY) maxLayoutY = pos[1]; });
-
-    let folderX = 100;
-    let folderY = maxLayoutY + 300;
-    p.folders.forEach(f => {
-      newLayout[f.id] = [folderX, folderY];
-      folderX += 400;
-    });
-    
-    if (p.start && newLayout[p.start]) {
-      if (actualMode === 'rpg') {
-        newLayout[MAIN_MENU_ID] = [newLayout[p.start][0], newLayout[p.start][1] - 250];
-      } else {
-        const spacingX = actualMode === 'sugiyama' ? 400 : 350;
-        newLayout[MAIN_MENU_ID] = [newLayout[p.start][0] - spacingX, newLayout[p.start][1]];
-      }
-    }
-    
-    onProjectChange({ ...p, layout: newLayout });
-    
-    // Fit to screen synchronously using newLayout to prevent stale closure bugs
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    displayNodes.forEach((n) => {
-      const nx = newLayout[n.id]?.[0] ?? n.x;
-      const ny = newLayout[n.id]?.[1] ?? n.y;
-      minX = Math.min(minX, nx); minY = Math.min(minY, ny);
-      maxX = Math.max(maxX, nx + n.w); maxY = Math.max(maxY, ny + n.h);
-    });
-    if (minX !== Infinity && canvasSize.width && canvasSize.height) {
-      const cw = maxX - minX || 1;
-      const ch = maxY - minY || 1;
-      const pad = 80;
-      const newZoom = Math.min(
-        Math.min(3, (canvasSize.width - pad * 2) / cw),
-        Math.min(3, (canvasSize.height - pad * 2) / ch)
-      );
-      setPan({
-        x: (canvasSize.width  - cw * newZoom) / 2 - minX * newZoom,
-        y: (canvasSize.height - ch * newZoom) / 2 - minY * newZoom,
-      });
-      setZoom(newZoom);
-    }
-    return actualMode;
-  };
+  const { handleAutoLayout } = useAutoLayout({ project, onProjectChange, displayNodes, canvasSize });
 
   // ─── Rendering Helpers ──────────────────────────────────────────────────────
 
@@ -1538,9 +1173,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         handleFitToScreen={handleFitToScreen} handleAddScene={handleAddScene}
         handleAddScreen={handleAddScreen} handleAddFolder={handleAddFolder}
         addStickyNote={addStickyNote} handleAutoLayout={handleAutoLayout}
-        onEditScene={onEditScene} pushRecentScene={pushRecentScene}
-        handleNodeDoubleClick={handleNodeDoubleClick} handleDeleteSelected={handleDeleteSelected}
-        handleSetStart={handleSetStart} onGoScene={onGoScene}
       />
       {/* ── Canvas Area ── */}
       <div ref={canvasRef}

@@ -1,10 +1,7 @@
-import React from 'react';
 import type { VNProject } from './types';
-
-export const MAIN_MENU_ID = 'main_menu';
-
 import { useCanvasStore, useShallow } from './store/canvasStore';
 import { useTranslation } from './translationContext';
+import { MAIN_MENU_ID } from './hooks/useCanvasData';
 
 export interface CanvasContextMenuProps {
   displayNodes: any[];
