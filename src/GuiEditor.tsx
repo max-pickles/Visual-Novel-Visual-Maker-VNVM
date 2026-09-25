@@ -1346,12 +1346,34 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** Colors Ren'Py accepts: #rgb, #rgba, #rrggbb or #rrggbbaa. */
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/** The #rrggbb form an `<input type="color">` needs. */
+function colorInputValue(color: string): string {
+  if (!HEX_COLOR.test(color)) return '#000000';
+  const hex = color.slice(1);
+  return hex.length <= 4 ? '#' + [...hex.slice(0, 3)].map(c => c + c).join('') : '#' + hex.slice(0, 6);
+}
+
+/**
+ * A swatch plus a hex field. Typing only reaches `onChange` once the text is a
+ * valid color, so gui.rpy never holds a half-typed value.
+ */
 function ColorRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <input type="color" value={value} onChange={e => onChange(e.target.value)}
+      <input type="color" value={colorInputValue(value)} onChange={e => onChange(e.target.value)}
         style={{ width: 32, height: 32, border: '1px solid var(--bdr)', borderRadius: 4, cursor: 'pointer', background: 'var(--bg0)', padding: 2, flexShrink: 0 }} />
-      <input className="inspector-input" value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} />
+      <input className="inspector-input" value={draft}
+        onChange={e => {
+          setDraft(e.target.value);
+          const color = e.target.value.trim();
+          if (HEX_COLOR.test(color)) onChange(color);
+        }}
+        style={{ flex: 1, ...(HEX_COLOR.test(draft.trim()) ? {} : { borderColor: 'var(--err)' }) }} />
     </div>
   );
 }

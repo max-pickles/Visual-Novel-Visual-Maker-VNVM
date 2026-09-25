@@ -6,6 +6,8 @@
  * serialised back without touching comments or whitespace.
  */
 
+import { parsePyString, pyString, readDefine, replaceDefine } from './rpyValue';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface GuiConfig {
@@ -69,29 +71,14 @@ export function parseGuiRpy(content: string): GuiConfig {
   }
 
   const getString = (key: string, fallback: string): string => {
-    const re = new RegExp(`^\\s*define\\s+gui\\.${key}\\s*=\\s*(.+)`);
-    for (const line of lines) {
-      const m = line.match(re);
-      if (m) {
-        const val = m[1].trim().replace(/\s*#.*$/, ''); // strip inline comments
-        // Unquote strings
-        const unquoted = val.replace(/^['"]|['"]$/g, '');
-        return unquoted;
-      }
-    }
-    return fallback;
+    const value = readDefine(lines, `gui.${key}`);
+    if (value === null) return fallback;
+    return parsePyString(value) ?? value;
   };
 
   const getNum = (key: string, fallback: number): number => {
-    const re = new RegExp(`^\\s*define\\s+gui\\.${key}\\s*=\\s*([\\d.]+)`);
-    for (const line of lines) {
-      const m = line.match(re);
-      if (m) {
-        const n = parseFloat(m[1]);
-        return isNaN(n) ? fallback : n;
-      }
-    }
-    return fallback;
+    const value = readDefine(lines, `gui.${key}`);
+    return value !== null && /^-?(?:\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : fallback;
   };
 
   return {
@@ -144,14 +131,7 @@ export function parseGuiRpy(content: string): GuiConfig {
  * @returns       New complete file content with the line replaced.
  */
 export function setGuiValue(config: GuiConfig, key: string, value: string): string {
-  const re = new RegExp(`^(\\s*define\\s+gui\\.${key}\\s*=\\s*)(.+?)\\s*(#.*)?$`);
-  const newLines = config._raw.map(line => {
-    const m = line.match(re);
-    if (!m) return line;
-    const comment = m[3] ? `  ${m[3]}` : '';
-    return `${m[1]}${value}${comment}`;
-  });
-  return newLines.join('\n');
+  return config._raw.map(line => replaceDefine(line, `gui.${key}`, value) ?? line).join('\n');
 }
 
 /**
@@ -162,12 +142,8 @@ export function patchGuiRpy(rawContent: string, patches: Record<string, string>)
   const lines = rawContent.split('\n');
   const result = lines.map(line => {
     for (const [key, value] of Object.entries(patches)) {
-      const re = new RegExp(`^(\\s*define\\s+gui\\.${key}\\s*=\\s*)(.+?)\\s*(#.*)?$`);
-      const m = line.match(re);
-      if (m) {
-        const comment = m[3] ? `  ${m[3]}` : '';
-        return `${m[1]}${value}${comment}`;
-      }
+      const patched = replaceDefine(line, `gui.${key}`, value);
+      if (patched !== null) return patched;
     }
     return line;
   });
@@ -179,4 +155,4 @@ export const rpyColor = (hex: string) => `'${hex}'`;
 /** Format a number for insertion into gui.rpy — e.g. `"50"` */
 export const rpyNum   = (n: number)  => String(n);
 /** Format a quoted string for gui.rpy — e.g. `'"gui/main_menu.png"'` */
-export const rpyStr   = (s: string)  => `"${s}"`;
+export const rpyStr   = (s: string)  => pyString(s);

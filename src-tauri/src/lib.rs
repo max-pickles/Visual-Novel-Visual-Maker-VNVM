@@ -1,5 +1,5 @@
 // VNVMaker — Rust core
-// Lean, fast Ren'Py project parser and save system.
+// Project files, scaffolding from the Ren'Py template, and path checks.
 
 use std::path::Path;
 
@@ -195,14 +195,12 @@ pub fn scaffold_from_template(template: &Path, project_root: &Path, project_titl
         let _ = std::fs::remove_file(entry.path());
     }
 
-    // Patch options.rpy to use the project title
+    // Name the game after the project, as Ren'Py's launcher does
     let opts_path = game_dir.join("options.rpy");
     if opts_path.exists() {
         let opts = std::fs::read_to_string(&opts_path).map_err(|e| e.to_string())?;
-        let opts = Regex::new(r#"define config\.name = _\(".*?"\)"#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define config.name = _("{}")"#, project_title))
-            .to_string();
+        let opts = set_define(&opts, "config.name", &format!("_({})", py_quote(project_title)));
+        let opts = set_define(&opts, "build.name", &py_quote(&simple_name(project_title)));
         std::fs::write(&opts_path, opts).map_err(|e| e.to_string())?;
     }
 
@@ -215,6 +213,37 @@ pub fn scaffold_from_template(template: &Path, project_root: &Path, project_titl
 }
 
 
+
+// ─── Ren'Py define helpers ────────────────────────────────────────────────────
+
+/// `s` as a double-quoted Python string literal.
+fn py_quote(s: &str) -> String {
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n");
+    format!("\"{}\"", escaped)
+}
+
+/// The ASCII letters, digits, `-` and `_` of `title`, or "game" if it has
+/// none. Ren'Py's launcher derives build.name and the save directory this way,
+/// since they may not contain spaces, colons or semicolons.
+fn simple_name(title: &str) -> String {
+    let name: String = title
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if name.is_empty() { "game".to_string() } else { name }
+}
+
+/// Set the value of every `define <name> = …` line in `text`. `value` is
+/// inserted verbatim; a trailing comment on the line is dropped.
+fn set_define(text: &str, name: &str, value: &str) -> String {
+    let re = Regex::new(&format!(r"(?m)^([ \t]*define[ \t]+{}[ \t]*=[ \t]*)[^\r\n]*", regex::escape(name))).unwrap();
+    re.replace_all(text, |caps: &regex::Captures| format!("{}{}", &caps[1], value))
+        .into_owned()
+}
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
@@ -245,50 +274,31 @@ pub fn apply_project_settings(
 ) -> Result<(), String> {
     let game_dir = project_root.join("game");
 
-    // Derive muted/hover-muted colors as darkened tints of the accent
-    let (muted_hex, hover_muted_hex) = if let Some((r, g, b)) = hex_to_rgb(accent_hex) {
-        (rgb_to_hex(r * 0.25, g * 0.25, b * 0.25),
-         rgb_to_hex(r * 0.40, g * 0.40, b * 0.40))
-    } else {
-        (bg_hex.to_string(), bg_hex.to_string())
-    };
-
     // --- gui.rpy ---------------------------------------------------------------
     let gui_path = game_dir.join("gui.rpy");
     if gui_path.exists() {
         let text = std::fs::read_to_string(&gui_path).map_err(|e| e.to_string())?;
 
         // Resolution: gui.init(1280, 720) → gui.init(W, H)
-        let text = Regex::new(r"gui\.init\(\d+,\s*\d+\)")
+        let mut text = Regex::new(r"gui\.init\(\d+,\s*\d+\)")
             .unwrap()
-            .replace(&text, &format!("gui.init({}, {})", width, height))
-            .to_string();
+            .replace(&text, format!("gui.init({}, {})", width, height).as_str())
+            .into_owned();
 
-        // Accent color — template uses double-quoted strings
-        let text = Regex::new(r#"define gui\.accent_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!("define gui.accent_color = \"{}\"", accent_hex))
-            .to_string();
-
-        // hover_color — template uses Color(gui.accent_color).tint(.6); keep that form
-        // so Ren'Py auto-derives it from whatever accent_color is set to above.
-        // Only replace if it was accidentally a string literal.
-        let text = Regex::new(r#"define gui\.hover_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, "define gui.hover_color = Color(gui.accent_color).tint(.6)")
-            .to_string();
-
-        // muted_color — double-quoted in template
-        let text = Regex::new(r#"define gui\.muted_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!("define gui.muted_color = \"{}\"", muted_hex))
-            .to_string();
-
-        // hover_muted_color — double-quoted in template
-        let text = Regex::new(r#"define gui\.hover_muted_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!("define gui.hover_muted_color = \"{}\"", hover_muted_hex))
-            .to_string();
+        // Accent color, plus the colors derived from it: hover is the accent tinted
+        // toward white (as Ren'Py's launcher does), the muted colors are darkened
+        // shades. Colors that aren't #rrggbb are ignored so gui.rpy stays valid.
+        let quoted = |r: f64, g: f64, b: f64| format!("'{}'", rgb_to_hex(r, g, b));
+        if let Some((r, g, b)) = hex_to_rgb(accent_hex) {
+            let tint = |c: f64| c * 0.6 + 0.4;
+            text = set_define(&text, "gui.accent_color", &quoted(r, g, b));
+            text = set_define(&text, "gui.hover_color", &quoted(tint(r), tint(g), tint(b)));
+            text = set_define(&text, "gui.muted_color", &quoted(r * 0.25, g * 0.25, b * 0.25));
+            text = set_define(&text, "gui.hover_muted_color", &quoted(r * 0.40, g * 0.40, b * 0.40));
+        } else if let Some((r, g, b)) = hex_to_rgb(bg_hex) {
+            text = set_define(&text, "gui.muted_color", &quoted(r, g, b));
+            text = set_define(&text, "gui.hover_muted_color", &quoted(r, g, b));
+        }
 
         std::fs::write(&gui_path, text).map_err(|e| e.to_string())?;
     }
@@ -304,10 +314,8 @@ pub fn apply_project_settings(
         let proj_name = project_root.file_name()
             .unwrap_or_default()
             .to_string_lossy();
-        let text = Regex::new(r#"define config\.save_directory\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!(r#"define config.save_directory = "{}-{}""#, proj_name, ts))
-            .to_string();
+        let save_dir = format!("{}-{}", simple_name(&proj_name), ts);
+        let text = set_define(&text, "config.save_directory", &py_quote(&save_dir));
         std::fs::write(&opts_path, text).map_err(|e| e.to_string())?;
     }
 
@@ -460,6 +468,63 @@ mod tests {
         // A second project with the same folder must not overwrite the first.
         assert!(scaffold_from_template(&template, &fresh, "Other").is_err());
         assert!(fs::read_to_string(fresh.join("game/options.rpy")).unwrap().contains("_(\"My Game\")"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn scaffold_writes_titles_ren_py_can_parse() {
+        let dir = temp_dir("title");
+        let template = dir.join("template/game");
+        fs::create_dir_all(&template).unwrap();
+        fs::write(
+            template.join("options.rpy"),
+            "define config.name = _(\"Templet\")\ndefine build.name = \"Templet\"\n",
+        )
+        .unwrap();
+        let project = dir.join("Quoted");
+        scaffold_from_template(&template, &project, r#"Tom's "Big" $1 Game\"#).unwrap();
+        let opts = fs::read_to_string(project.join("game/options.rpy")).unwrap();
+        assert!(opts.contains(r#"define config.name = _("Tom's \"Big\" $1 Game\\")"#), "{}", opts);
+        assert!(opts.contains(r#"define build.name = "TomsBig1Game""#), "{}", opts);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn simple_names_are_safe_for_build_name() {
+        assert_eq!(simple_name("My Game: Part 2"), "MyGamePart2");
+        assert_eq!(simple_name("my-game_2"), "my-game_2");
+        assert_eq!(simple_name("日本語"), "game");
+    }
+
+    #[test]
+    fn applies_the_wizard_theme_to_the_template() {
+        let dir = temp_dir("theme");
+        let game = dir.join("Project/game");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(
+            game.join("gui.rpy"),
+            "init python:\n    gui.init(1920, 1080)\n\
+             define gui.accent_color = '#0099cc'\n\
+             define gui.hover_color = '#66c1e0'\n\
+             define gui.muted_color = '#003d51'\n\
+             define gui.hover_muted_color = '#005b7a'\n",
+        )
+        .unwrap();
+        fs::write(game.join("options.rpy"), "define config.save_directory = \"Templet-1\"\n").unwrap();
+
+        apply_project_settings(&dir.join("Project"), 1280, 720, "#ff0000", "#000000").unwrap();
+        let gui = fs::read_to_string(game.join("gui.rpy")).unwrap();
+        assert!(gui.contains("gui.init(1280, 720)"), "{}", gui);
+        assert!(gui.contains("define gui.accent_color = '#ff0000'"), "{}", gui);
+        assert!(gui.contains("define gui.hover_color = '#ff6666'"), "{}", gui);
+        assert!(gui.contains("define gui.muted_color = '#400000'"), "{}", gui);
+        assert!(gui.contains("define gui.hover_muted_color = '#660000'"), "{}", gui);
+        let opts = fs::read_to_string(game.join("options.rpy")).unwrap();
+        assert!(opts.starts_with("define config.save_directory = \"Project-"), "{}", opts);
+
+        // Anything that isn't a #rrggbb color leaves the colors alone.
+        apply_project_settings(&dir.join("Project"), 1280, 720, "'); import os #", "nope").unwrap();
+        assert_eq!(fs::read_to_string(game.join("gui.rpy")).unwrap(), gui);
         fs::remove_dir_all(&dir).unwrap();
     }
 }
