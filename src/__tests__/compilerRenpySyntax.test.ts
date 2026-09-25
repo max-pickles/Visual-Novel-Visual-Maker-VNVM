@@ -142,6 +142,14 @@ describe("image names", () => {
     expect(compileProject(proj)).toContain("show Eileen neutral at center");
   });
 
+  it("keeps the normal main menu in the preview file written on save", () => {
+    const proj = makeProj();
+    const out = compilePreview(proj, "main_menu");
+    expect(out).not.toContain("label main_menu:");
+    expect(out).toContain(`define config.label_overrides = {"start": "vnv_preview_entry"}`);
+    expect(out).toContain(`jump vns_scene_${proj.start}`);
+  });
+
   it("defines sprite images in the live preview too", () => {
     const proj = makeProj();
     addSpeaker(proj, "Bob", "bob.png");

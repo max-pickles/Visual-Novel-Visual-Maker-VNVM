@@ -136,6 +136,8 @@ export default function App() {
           <VNEditor
             project={vnvProject}
             onClose={() => setRoute("start")}
+            autoSave={autoSave}
+            onAutoSaveChange={setAutoSave}
           />
         </div>
       );
