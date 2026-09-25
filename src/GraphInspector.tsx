@@ -5,7 +5,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { computeSceneBgs } from "./sceneGraphUtils";
 import { MAIN_MENU_ID } from "./StoryCanvas";
 import { compilePreview } from "./compiler";
-import { playFromScene } from "./tauriApi";
+import { playFromScene, declaredVarsInGame } from "./tauriApi";
 import { ToastManager } from "./toastContext";
 import { SdkSetupModal } from "./SdkSetupModal";
 import { useTranslation } from "./translationContext";
@@ -219,7 +219,8 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
                   setPlaying(true); setPlayError(null);
                   try {
                     const sdk = localStorage.getItem("vnv_renpy_sdk_path") || undefined;
-                    const rpy = compilePreview(project, MAIN_MENU_ID, undefined, playMode);
+                    const declaredElsewhere = await declaredVarsInGame(rootPath);
+                    const rpy = compilePreview(project, MAIN_MENU_ID, undefined, playMode, undefined, undefined, { declaredElsewhere });
                     await playFromScene(rootPath, MAIN_MENU_ID, rpy, sdk);
                   } catch (e) {
                     const msg = String(e);
@@ -439,7 +440,8 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
               setPlaying(true); setPlayError(null);
               try {
                 const sdk = localStorage.getItem("vnv_renpy_sdk_path") || undefined;
-                const rpy = compilePreview(project, scene.id, musicTrack ?? undefined, playMode, inheritedBg[scene.id] ?? undefined, inheritedSprite[scene.id] ?? undefined);
+                const declaredElsewhere = await declaredVarsInGame(rootPath);
+                const rpy = compilePreview(project, scene.id, musicTrack ?? undefined, playMode, inheritedBg[scene.id] ?? undefined, inheritedSprite[scene.id] ?? undefined, { declaredElsewhere });
                 await playFromScene(rootPath, scene.id, rpy, sdk);
               } catch (e) {
                 const msg = String(e);

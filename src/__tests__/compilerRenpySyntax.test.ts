@@ -9,7 +9,8 @@
  * because vite.config.ts sets `test.globals: true`.
  */
 
-import { compileProject, compilePreview, charImageTag, imageNameComponent } from "../compiler";
+import { compileProject, compileProjectToFiles, compilePreview, charImageTag, imageNameComponent } from "../compiler";
+import { declaredVarNames } from "../rpyDeclarations";
 import { newProject, newCharacter, newEvent, extractVars, conditionVarNames } from "../types";
 import { validateProject } from "../validator";
 import type { VNProject, VNCharacter } from "../types";
@@ -281,5 +282,33 @@ describe("validator – Ren'Py syntax rules", () => {
     expect(out).not.toContain(`Variable "len"`);
     expect(out).not.toContain(`Variable "x"`);
     expect(out).toContain(`Variable "inventory"`);
+  });
+});
+
+// ─── Defaults already declared by other scripts ──────────────────────────────
+
+describe("declared variables", () => {
+  it("finds default and define names, including store. and priority forms", () => {
+    const names = declaredVarNames([
+      "default affection = 0\ndefine -1 flag = False\n    default store.money = 10\ndefine gui.accent_color = '#fff'\n",
+      "label start:\n    $ not_declared = 1\n    # default commented = 1\n",
+    ]);
+    expect([...names].sort()).toEqual(["affection", "flag", "money"]);
+  });
+
+  it("skips defaults for variables the game's other scripts already declare", () => {
+    const proj = makeProj();
+    setvar(proj, "affection", "affection + 1");
+    setvar(proj, "met", "True");
+    const declaredElsewhere = new Set(["affection"]);
+    for (const out of [
+      compileProject(proj, { asExport: true, declaredElsewhere }),
+      compilePreview(proj, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere }),
+      compileProjectToFiles(proj, { declaredElsewhere }).map(f => f.content).join("\n"),
+    ]) {
+      expect(out).not.toContain("default affection");
+      expect(out).toContain("default met = False");
+      expect(out).toContain("$ affection = affection + 1");
+    }
   });
 });

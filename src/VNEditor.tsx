@@ -14,7 +14,7 @@ import { AssetBrowser } from "./AssetBrowser";
 import { ExportPanel } from "./ExportPanel";
 import { SearchPanel } from "./SearchPanel";
 import { QuickOpen } from "./QuickOpen";
-import { saveVnvProject, writeTextFile } from "./tauriApi";
+import { saveVnvProject, writeTextFile, declaredVarsInGame } from "./tauriApi";
 import { compilePreview } from "./compiler";
 import { ToastManager } from "./toastContext";
 import { useTabHistory } from "./useHistory";
@@ -133,7 +133,8 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
       // Ren'Py. Written in main-menu mode, so launching the game folder from the
       // Ren'Py launcher still shows the main menu and Start begins at the start scene.
       try {
-        const previewRpy = compilePreview(current, "main_menu");
+        const declaredElsewhere = await declaredVarsInGame(current._rootPath);
+        const previewRpy = compilePreview(current, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere });
         await writeTextFile(`${current._rootPath}/game/vnv_preview.rpy`, previewRpy);
       } catch (compileErr) {
         ToastManager.warning(t('toasts.preview_compile_failed'), String(compileErr));

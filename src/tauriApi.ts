@@ -3,6 +3,7 @@ import { documentDir, homeDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { VNProject } from "./types";
 import { migrateProject } from "./types";
+import { declaredVarNames } from "./rpyDeclarations";
 
 // ─── Monitor / Window ─────────────────────────────────────────────────────────
 
@@ -314,6 +315,17 @@ export async function validateRenpyProject(folderPath: string): Promise<string> 
 // ─── .rpy Importer (client-side) ─────────────────────────────────────────────
 // Reads all .rpy files from a folder using existing Tauri commands,
 // then passes file contents to the pure-TS importer in rpyImporter.ts.
+
+/**
+ * Variables the scripts in a game folder already declare with `default` or
+ * `define`, so a script generated next to them can leave those out (Ren'Py
+ * won't start if a variable gets a `default` twice). The live-preview script
+ * is skipped, since it's the file being regenerated.
+ */
+export async function declaredVarsInGame(rootPath: string): Promise<Set<string>> {
+  const scripts = await readRpyFolder(rootPath);
+  return declaredVarNames(scripts.filter(s => !s.name.endsWith("vnv_preview.rpy")).map(s => s.content));
+}
 
 export async function readRpyFolder(
   folderPath: string,

@@ -558,10 +558,31 @@ function compileScene(sc: VNScene, proj: VNProject, lines: string[]): void {
   lines.push(``);
 }
 
+// ─── Story variables ──────────────────────────────────────────────────────────
+
+/** Options for scripts that will sit next to other `.rpy` files in a game folder. */
+export interface DefaultsOptions {
+  /**
+   * Variables the game's other scripts already declare with `default` or
+   * `define` (see `declaredVarNames`). No `default` is emitted for these:
+   * Ren'Py refuses to start if a variable gets a `default` twice.
+   */
+  declaredElsewhere?: ReadonlySet<string>;
+}
+
+/** Append a `default` line for each auto-discovered story variable. */
+function compileDefaults(proj: VNProject, lines: string[], opts: DefaultsOptions = {}): void {
+  const vars = extractVars(proj).filter(v => !opts.declaredElsewhere?.has(v.name));
+  if (!vars.length) return;
+  lines.push(`## Story Variables (auto-discovered)`);
+  for (const v of vars) lines.push(`default ${v.name} = ${v.default_val}`);
+  lines.push(``);
+}
+
 // ─── Main compiler ────────────────────────────────────────────────────────────
 
 /** Options that control how the top-level `compileProject` entry point is emitted. */
-export interface CompileOptions {
+export interface CompileOptions extends DefaultsOptions {
   /**
    * When `true`, emits `label start:` as the Ren'Py entry point, which is
    * the convention for a standalone game. When `false` (default), a
@@ -607,14 +628,7 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
   lines.push(``);
 
   // ── Auto-discovered story variables ─────────────────────────────────────────
-  const vars = extractVars(proj);
-  if (vars.length) {
-    lines.push(`## Story Variables (auto-discovered)`);
-    for (const v of vars) {
-      lines.push(`default ${v.name} = ${v.default_val}`);
-    }
-    lines.push(``);
-  }
+  compileDefaults(proj, lines, opts);
 
   // ── Achievements ────────────────────────────────────────────────────────────
   if (proj.achievements && proj.achievements.length) {
@@ -663,9 +677,10 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
  * - `scene_<id>.rpy`: A separate file for each scene in the graph.
  *
  * @param proj - The project to compile.
+ * @param opts - Pass `declaredElsewhere` when other scripts stay next to these.
  * @returns Array of file objects with filename and string content.
  */
-export function compileProjectToFiles(proj: VNProject): { filename: string, content: string }[] {
+export function compileProjectToFiles(proj: VNProject, opts: DefaultsOptions = {}): { filename: string, content: string }[] {
   const files: { filename: string, content: string }[] = [];
   const scriptLines: string[] = [
     `## ═══════════════════════════════════════════════`,
@@ -685,14 +700,7 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
   scriptLines.push(``);
 
   // ── Auto-discovered story variables ─────────────────────────────────────────
-  const vars = extractVars(proj);
-  if (vars.length) {
-    scriptLines.push(`## Story Variables (auto-discovered)`);
-    for (const v of vars) {
-      scriptLines.push(`default ${v.name} = ${v.default_val}`);
-    }
-    scriptLines.push(``);
-  }
+  compileDefaults(proj, scriptLines, opts);
 
   // ── Achievements ────────────────────────────────────────────────────────────
   if (proj.achievements && proj.achievements.length) {
@@ -753,6 +761,8 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
  *
  * @param proj          - The project to compile.
  * @param targetSceneId - Scene id to jump to on `label start:`.
+ * @param opts          - `declaredElsewhere`: variables the game's other scripts
+ *                        already declare (the preview always sits next to them).
  * @returns Multi-line Ren'Py `.rpy` string.
  */
 export function compilePreview(
@@ -761,7 +771,8 @@ export function compilePreview(
   inheritedMusic?: string,
   playMode?: 'windowed' | 'fullscreen',
   inheritedBg?: string,
-  inheritedSprite?: string
+  inheritedSprite?: string,
+  opts: DefaultsOptions = {},
 ): string {
   if (!targetSceneId) {
     targetSceneId = proj.scenes[0]?.id ?? "start";
@@ -780,12 +791,7 @@ export function compilePreview(
   compileCharacters(proj, lines);
 
   // Auto-discovered story variables
-  const vars = extractVars(proj);
-  if (vars.length) {
-    lines.push(`## Story Variables (auto-discovered)`);
-    for (const v of vars) lines.push(`default ${v.name} = ${v.default_val}`);
-    lines.push(``);
-  }
+  compileDefaults(proj, lines, opts);
 
   // All scene labels — same format as the full export so cross-scene jumps resolve
   lines.push(`## Scenes`);
