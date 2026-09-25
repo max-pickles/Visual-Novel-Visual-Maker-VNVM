@@ -14,11 +14,7 @@
  */
 import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { findRenpySdk } from "./tauriApi";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const LS_KEY = "vnv_renpy_sdk_path";
+import { findRenpySdk, SDK_PATH_KEY } from "./tauriApi";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -89,7 +85,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
   const handleConfirm = () => {
     const p = sdkPath.trim();
     if (!p) return;
-    localStorage.setItem(LS_KEY, p);
+    localStorage.setItem(SDK_PATH_KEY, p);
     onConfirm(p);
   };
 

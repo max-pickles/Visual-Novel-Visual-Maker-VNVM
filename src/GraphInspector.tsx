@@ -5,7 +5,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { computeSceneBgs } from "./sceneGraphUtils";
 import { MAIN_MENU_ID } from "./hooks/useCanvasData";
 import { compilePreview } from "./compiler";
-import { launchRenpyPreview, declaredVarsInGame } from "./tauriApi";
+import { launchRenpyPreview, declaredVarsInGame, SDK_PATH_KEY } from "./tauriApi";
 import { ToastManager } from "./toastContext";
 import { SdkSetupModal } from "./SdkSetupModal";
 import { useTranslation } from "./translationContext";
@@ -116,9 +116,9 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
   const sdkModalJsx = showSdkModal
     ? ReactDOM.createPortal(
         <SdkSetupModal
-          initialPath={localStorage.getItem("vnv_renpy_sdk_path") ?? ""}
+          initialPath={localStorage.getItem(SDK_PATH_KEY) ?? ""}
           onConfirm={(path) => {
-            localStorage.setItem("vnv_renpy_sdk_path", path);
+            localStorage.setItem(SDK_PATH_KEY, path);
             setShowSdkModal(false);
             setPlayError(null);
             const pending = sdkPendingRef.current;
@@ -218,7 +218,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
                 onClick={async () => {
                   setPlaying(true); setPlayError(null);
                   try {
-                    const sdk = localStorage.getItem("vnv_renpy_sdk_path") || undefined;
+                    const sdk = localStorage.getItem(SDK_PATH_KEY) || undefined;
                     const declaredElsewhere = await declaredVarsInGame(rootPath);
                     const rpy = compilePreview(project, MAIN_MENU_ID, undefined, playMode, undefined, undefined, { declaredElsewhere });
                     await launchRenpyPreview(rootPath, rpy, sdk);
@@ -439,7 +439,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
             onClick={async () => {
               setPlaying(true); setPlayError(null);
               try {
-                const sdk = localStorage.getItem("vnv_renpy_sdk_path") || undefined;
+                const sdk = localStorage.getItem(SDK_PATH_KEY) || undefined;
                 const declaredElsewhere = await declaredVarsInGame(rootPath);
                 const rpy = compilePreview(project, scene.id, musicTrack ?? undefined, playMode, inheritedBg[scene.id] ?? undefined, inheritedSprite[scene.id] ?? undefined, { declaredElsewhere });
                 await launchRenpyPreview(rootPath, rpy, sdk);

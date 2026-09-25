@@ -282,6 +282,13 @@ export async function launchRenpyLauncher(
 }
 
 /**
+ * localStorage key for the Ren'Py SDK setting: the SDK folder, or its
+ * renpy.exe / renpy.sh. Preferences, the scene editor, the graph inspector
+ * and the export panel all share it.
+ */
+export const SDK_PATH_KEY = "vnv_renpy_sdk_path";
+
+/**
  * Ask the backend to search common locations for the Ren'Py SDK executable.
  * Returns the path string if found, or `null` if not found.
  */

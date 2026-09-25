@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { StartScreen } from "./StartScreen";
 import { VNEditor } from "./VNEditor";
-import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir, allowProjectAssets } from "./tauriApi";
+import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir, allowProjectAssets, SDK_PATH_KEY } from "./tauriApi";
 import type { VNProject } from "./types";
 import { ToastProvider, ToastManager } from "./toastContext";
 import { ToastStack } from "./Toast";
@@ -54,7 +54,7 @@ export default function App() {
   });
   const [language, setLanguage]             = useState(() => localStorage.getItem('pref_language') || 'en');
   const [gamesDir, setGamesDir]             = useState(() => localStorage.getItem('pref_games_dir') || '');
-  const [renpySdkPath, setRenpySdkPath]     = useState(() => localStorage.getItem('vnv_renpy_sdk_path') || '');
+  const [renpySdkPath, setRenpySdkPath]     = useState(() => localStorage.getItem(SDK_PATH_KEY) || '');
 
   useEffect(() => { 
     localStorage.setItem('pref_bg', bgLevel); 
@@ -73,7 +73,7 @@ export default function App() {
     if (gamesDir) localStorage.setItem('pref_games_dir', gamesDir);
     else defaultGamesDir().then(setGamesDir).catch(e => console.warn("Could not resolve the default games folder:", e));
   }, [gamesDir]);
-  useEffect(() => { localStorage.setItem('vnv_renpy_sdk_path', renpySdkPath); }, [renpySdkPath]);
+  useEffect(() => { localStorage.setItem(SDK_PATH_KEY, renpySdkPath); }, [renpySdkPath]);
   useEffect(() => {
     localStorage.setItem('pref_theme', theme);
     document.documentElement.setAttribute('data-theme', theme);

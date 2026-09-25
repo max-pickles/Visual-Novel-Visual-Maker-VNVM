@@ -4,7 +4,7 @@ import { compileProjectToFiles, getProjectStats } from "./compiler";
 import { 
   pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile,
   launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
-  dirHasFiles, isSameOrInside, declaredVarsInGame
+  dirHasFiles, isSameOrInside, declaredVarsInGame, SDK_PATH_KEY,
 } from "./tauriApi";
 import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
 import { validateProject } from "./validator";
@@ -40,7 +40,9 @@ export function ExportPanel({ project }: Props) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Distribute State
-  const [sdkPath, setSdkPath]       = useState<string>(() => localStorage.getItem("vnv_sdk_path") ?? "");
+  // The same SDK setting Preferences and the scene editor use. Older versions kept a
+  // separate one for this panel, so fall back to it.
+  const [sdkPath, setSdkPath]       = useState<string>(() => localStorage.getItem(SDK_PATH_KEY) || localStorage.getItem("vnv_sdk_path") || "");
   
   const stats = useMemo(() => getProjectStats(project), [project]);
   const validation = useMemo(() => validateProject(project), [project]);
@@ -370,27 +372,27 @@ export function ExportPanel({ project }: Props) {
                 <div className="label">REN'PY SDK CONFIG</div>
               </div>
               <div className="col gap4">
-                <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK Executable (renpy.exe / renpy.sh)</div>
+                <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK folder, or renpy.exe / renpy.sh</div>
                 <div className="row gap8">
                   <input className="input mono" style={{ flex: 1, fontSize: 11, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--dim)' }} value={sdkPath} onChange={e => {
                     const p = e.target.value;
                     setSdkPath(p);
-                    localStorage.setItem("vnv_sdk_path", p);
-                  }} placeholder="e.g. C:/renpy-8.5/renpy.exe" />
+                    localStorage.setItem(SDK_PATH_KEY, p);
+                  }} placeholder="e.g. C:/renpy-8.5-sdk" />
                   <button className="btn btn-ghost" onClick={async () => {
                     const { open } = await import('@tauri-apps/plugin-dialog');
                     const file = await open({ filters: [{ name: "Executable", extensions: ["exe", "sh", "py", "app"] }] });
                     if (file && typeof file === 'string') {
                       const p = file.replace(/\\/g, '/');
                       setSdkPath(p);
-                      localStorage.setItem("vnv_sdk_path", p);
+                      localStorage.setItem(SDK_PATH_KEY, p);
                     }
                   }} style={{ fontSize: 12, padding: '0 16px', border: '1px solid var(--bdr)', borderRadius: 6 }}>Find</button>
                 </div>
               </div>
               {!sdkPath && (
                 <div style={{ fontSize: 11, color: "var(--warn)", background: "rgba(245,158,11,0.08)", padding: "8px 10px", borderRadius: 6, lineHeight: 1.5 }}>
-                  ⚠ No SDK path set. Enter the path to <code>renpy.exe</code>.
+                  ⚠ No SDK path set. Enter the SDK folder or the path to <code>renpy.exe</code>.
                 </div>
               )}
             </div>

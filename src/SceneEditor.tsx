@@ -15,7 +15,7 @@ import { ScenePreview } from "./ScenePreview";
 import { AssetBrowser } from "./AssetBrowser";
 import { computeSceneBgs } from "./sceneGraphUtils";
 import { compilePreview, compileSingleAnimationPreview } from "./compiler";
-import { launchRenpyPreview, findRenpySdk, listAssetFiles, declaredVarsInGame } from "./tauriApi";
+import { launchRenpyPreview, findRenpySdk, listAssetFiles, declaredVarsInGame, SDK_PATH_KEY } from "./tauriApi";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { AnimPropertiesPanel, AnimActionsPanel, AnimTimelinePanel } from "./AnimationTrack";
 import { SdkSetupModal } from "./SdkSetupModal";
@@ -26,7 +26,6 @@ import { parseGuiRpy } from "./guiParser";
 import type { GuiConfig } from "./guiParser";
 import { useTranslation } from "./translationContext";
 
-const LS_SDK_KEY = "vnv_renpy_sdk_path";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -162,7 +161,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   // Picker modal opened from clicking bg/sprite in the preview
   const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" } | null>(null);
   // Ren'Py live preview
-  const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(LS_SDK_KEY) ?? "");
+  const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(SDK_PATH_KEY) ?? "");
   const [showSdkModal, setShowSdkModal] = useState(false);
   const [previewState, setPreviewState] = useState<"idle" | "launching" | "ok" | "err">("idle");
   const [previewMsg, setPreviewMsg]   = useState("");
@@ -213,10 +212,10 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
 
   // Auto-detect Ren'Py SDK on first mount
   useEffect(() => {
-    const saved = localStorage.getItem(LS_SDK_KEY);
+    const saved = localStorage.getItem(SDK_PATH_KEY);
     if (!saved) {
       findRenpySdk().then(found => {
-        if (found) { setSdkPath(found); localStorage.setItem(LS_SDK_KEY, found); }
+        if (found) { setSdkPath(found); localStorage.setItem(SDK_PATH_KEY, found); }
       }).catch(() => { /* ignore */ });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -399,7 +398,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
       const envLang = RENPY_LANGS[prefLang] || "";
       const usedPath = await launchRenpyPreview(rootPath, script, sdk || null, envLang);
       // Cache the confirmed path
-      setSdkPath(usedPath); localStorage.setItem(LS_SDK_KEY, usedPath);
+      setSdkPath(usedPath); localStorage.setItem(SDK_PATH_KEY, usedPath);
       setPreviewState("ok"); setPreviewMsg("Launched!");
       setTimeout(() => setPreviewState("idle"), 3000);
     } catch (err) {
@@ -556,7 +555,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
           initialPath={sdkPath}
           onConfirm={(path) => {
             setSdkPath(path);
-            localStorage.setItem(LS_SDK_KEY, path);
+            localStorage.setItem(SDK_PATH_KEY, path);
             setShowSdkModal(false);
             // If we were triggered by a Play button, re-fire preview
             const root = pendingLaunchRef.current;
