@@ -71,6 +71,34 @@ export async function pickNewProjectFolder(): Promise<string | null> {
   return result as string | null;
 }
 
+// ─── Paths ────────────────────────────────────────────────────────────────────
+
+/** Whether a file or folder exists. */
+export async function pathExists(path: string): Promise<boolean> {
+  return invoke<boolean>("path_exists", { path });
+}
+
+/** Whether `path` is a folder that already has something in it. */
+export async function dirHasFiles(path: string): Promise<boolean> {
+  return invoke<boolean>("dir_has_files", { path });
+}
+
+/** Paths compared the way Windows treats them: separators and letter case don't matter. */
+function comparablePath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+export function samePath(a: string, b: string): boolean {
+  return comparablePath(a) === comparablePath(b);
+}
+
+/** True if `path` is `folder` itself or somewhere inside it. */
+export function isSameOrInside(path: string, folder: string): boolean {
+  const p = comparablePath(path);
+  const f = comparablePath(folder);
+  return p === f || p.startsWith(`${f}/`);
+}
+
 // ─── Games Directory ──────────────────────────────────────────────────────────
 
 /** Where new projects go when the user hasn't picked a folder: Documents/VNVMaker/games. */
@@ -169,9 +197,23 @@ export async function saveVnvProject(path: string, project: VNProject): Promise<
   return invoke("save_vnv_project", { path, content: json });
 }
 
+/** Thrown by {@link loadVnvProject} when there is no project file at the path. */
+export class ProjectFileMissingError extends Error {}
+
 export async function loadVnvProject(path: string): Promise<VNProject> {
-  const json = await invoke<string>("load_vnv_project", { path });
-  const raw = JSON.parse(json) as Record<string, unknown>;
+  let json: string;
+  try {
+    json = await invoke<string>("load_vnv_project", { path });
+  } catch (e) {
+    if (!(await pathExists(path))) throw new ProjectFileMissingError(String(e));
+    throw e;
+  }
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(json) as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(`The project file is damaged and couldn't be opened (${String(e)}). It hasn't been changed.`);
+  }
   // migrateProject fills in any missing fields from old/partial saves
   const proj = migrateProject(raw, path);
   const parts = path.replace(/\\/g, "/").split("/");

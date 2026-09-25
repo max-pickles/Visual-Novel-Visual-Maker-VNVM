@@ -421,6 +421,13 @@ export interface VNProject {
   translations?: Record<string, Record<string, string>>;
   /** The original source language of the game's text (e.g., 'English', 'Japanese') */
   originalLanguage?: string;
+  /**
+   * Scripts (relative to the project folder, e.g. "game/script.rpy") copied in
+   * when the project was imported from an existing Ren'Py game. A project-folder
+   * export replaces these with the compiled story and keeps any other scripts.
+   * Missing on projects saved before this was tracked.
+   */
+  imported_scripts?: string[];
 }
 
 // ─── Main Menu Configuration ──────────────────────────────────────────────────
@@ -545,6 +552,7 @@ export function newProject(
     scenes: [startScene],
     folders: [],
     achievements: [],
+    imported_scripts: [],
     start: startScene.id,
     text_tpls: [defaultTextTpl()],
     trans_tpls: [defaultTransTpl()],

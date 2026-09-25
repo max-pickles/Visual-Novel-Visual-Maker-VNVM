@@ -3,7 +3,7 @@
  * Handles opening and creating projects, and recent files list.
  */
 import React, { useState, useEffect } from "react";
-import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk } from "./tauriApi";
+import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk, ProjectFileMissingError, pathExists, dirHasFiles, samePath } from "./tauriApi";
 import { newProject, newDemoProject, migrateProject } from "./types";
 import { importFromRpyFiles } from "./rpyImporter";
 import type { VNProject, RpyProject } from "./types";
@@ -222,10 +222,26 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
         return;
       }
 
-      // Step 2 — Copy entire source folder into GAMES_DIR
+      // Step 2 — Copy entire source folder into GAMES_DIR (unless it's already there).
+      // Never copy over a different folder that happens to have the same name.
       const destRoot = `${await getGamesDir()}/${folderName}`;
       const vnvPath  = `${destRoot}/project.vnvmaker`;
-      await copyDirRecursive(srcNorm, destRoot);
+      if (!samePath(srcNorm, destRoot)) {
+        if (await dirHasFiles(destRoot)) {
+          alert(`❌ Cannot import — your games folder already has a folder named "${folderName}". Rename or move it first.`);
+          setLoading(false);
+          return;
+        }
+        await copyDirRecursive(srcNorm, destRoot);
+      }
+
+      // Already a VNVMaker project: open it rather than re-importing over it.
+      if (await pathExists(vnvPath)) {
+        const existing = await loadVnvProject(vnvPath);
+        setLoading(false);
+        onLoadVnv(existing);
+        return;
+      }
 
       // Step 3 — Build VNVMaker project from the copied scripts.
       // Translate gameDirPath (points at src) -> equivalent path under destRoot.
@@ -237,6 +253,10 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
       const { project, warnings } = importFromRpyFiles(files, rpyRoot, folderName, "Author", images);
       project._rootPath = destRoot;
       project._filePath = vnvPath;
+      // Remember which scripts came from the original game, so export can replace
+      // them with the compiled story while keeping scripts added later.
+      const rpyRel = rpyRoot.slice(destRoot.length).replace(/^\/+/, "");
+      project.imported_scripts = files.map(f => (rpyRel ? `${rpyRel}/${f.name}` : f.name));
 
       // Step 4 — Save .vnvmaker and update recent list
       if (warnings.length) setImportResult({ warnings, title: project.title });
@@ -254,14 +274,17 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
       try {
         const proj = await loadVnvProject(p.path);
         onLoadVnv(proj);
-      } catch (_) {
-        // Fallback: it's a Ren'Py project that hasn't been imported yet
+      } catch (loadErr) {
+        // Only a missing project file means "Ren'Py game that hasn't been imported
+        // yet". A damaged one must never be replaced by a fresh import.
+        if (!(loadErr instanceof ProjectFileMissingError)) throw loadErr;
         const folder = p.path.replace(/\/[^/]+$/, ""); // parent dir
         const files = await readRpyFolder(folder);
         const images = await listAssetFiles(folder, "images");
         const { project } = importFromRpyFiles(files, folder, p.title, "Author", images);
         project._rootPath = folder;
         project._filePath = p.path;
+        project.imported_scripts = files.map(f => f.name);
         setLoading(false);
         onLoadVnv(project);
       }

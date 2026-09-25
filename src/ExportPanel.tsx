@@ -3,11 +3,14 @@ import type { VNProject } from "./types";
 import { compileProject, compileProjectToFiles, getProjectStats } from "./compiler";
 import { 
   pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile,
-  findRenpySdk, launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive
+  findRenpySdk, launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
+  dirHasFiles, isSameOrInside
 } from "./tauriApi";
+import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
 import { validateProject } from "./validator";
 import { ToastManager } from "./toastContext";
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "@tauri-apps/plugin-dialog";
 
 interface Props {
   project: VNProject;
@@ -137,10 +140,26 @@ export function ExportPanel({ project }: Props) {
   const handleExportProjectFolder = useCallback(async () => {
     if (!validation.ok) { setErr("Cannot export project with errors."); return; }
     if (!exportParentDir) { ToastManager.error("Please set an export destination folder."); return; }
+    const targetDir = `${exportParentDir.replace(/\\/g, "/").replace(/\/+$/, "")}/${exportName}`;
+
+    // The export clears VNVMaker's files and old scripts out of the copy, so it
+    // must never run on the project itself or on a folder that contains it.
+    if (!rootPath || isSameOrInside(targetDir, rootPath) || isSameOrInside(rootPath, targetDir)) {
+      setErr("Choose an export folder outside the project folder.");
+      return;
+    }
     try {
+      const targetExists = await dirHasFiles(targetDir);
+      if (targetExists) {
+        const overwrite = await ask(
+          `${targetDir} already exists. Replace the exported game in it?`,
+          { title: "Export project", kind: "warning" },
+        );
+        if (!overwrite) return;
+      }
       setRun("Exporting project folder...");
-      const targetDir = `${exportParentDir.replace(/\\/g, "/")}/${exportName}`;
-      
+      const sourceScripts = await getRpyFiles(rootPath);
+
       // 1. Copy the entire project folder
       await copyDirRecursive(rootPath, targetDir);
 
@@ -148,18 +167,18 @@ export function ExportPanel({ project }: Props) {
       try { await deleteFile(`${targetDir}/project.vnvmaker`); } catch (e) { /* ignore */ }
       try { await deleteFile(`${targetDir}/game/vnv_preview.rpy`); } catch (e) { /* ignore */ }
 
-      // 3. Clean up old .rpy scripts in the game/ folder EXCEPT core gui/options
-      try {
-        const copiedRpyFiles = await getRpyFiles(targetDir);
-        for (const file of copiedRpyFiles) {
-          const filename = file.split("/").pop() || file;
-          // Keep the core Ren'Py configuration and UI definitions
-          if (filename !== "gui.rpy" && filename !== "options.rpy" && filename !== "screens.rpy") {
-            await deleteFile(`${targetDir.replace(/\\/g, '/')}/${file}`);
-          }
+      // 3. Remove the scripts the compiled story replaces: generated ones, scripts
+      //    that came with an imported game, and scene files left by an earlier export.
+      const replaced = sourceScripts.filter(f => isReplacedByExport(f, project.imported_scripts));
+      const staleScenes = targetExists
+        ? (await getRpyFiles(targetDir)).filter(f => isGeneratedScript(f) && !replaced.includes(f))
+        : [];
+      for (const file of [...replaced, ...staleScenes]) {
+        try {
+          await deleteFile(`${targetDir}/${file}`);
+        } catch (e) {
+          console.warn(`Failed to remove ${file} from the export`, e);
         }
-      } catch (e) {
-        console.warn("Failed to clean up old .rpy files in export", e);
       }
 
       // 4. Generate and write out the separate multi-file scripts
@@ -168,7 +187,10 @@ export function ExportPanel({ project }: Props) {
         await writeTextFile(`${targetDir}/game/${script.filename}`, script.content);
       }
 
-      setOk(`Exported to ${targetDir}`);
+      const dropped = replaced.filter(f => !isGeneratedScript(f));
+      setOk(dropped.length
+        ? `Exported to ${targetDir}. Replaced by the compiled story: ${dropped.join(", ")}`
+        : `Exported to ${targetDir}`);
       ToastManager.success(`Project exported to ${exportName}`);
       
       // Give them the option to open the exported folder
@@ -177,7 +199,7 @@ export function ExportPanel({ project }: Props) {
       }, 500);
 
     } catch (e) { setErr(String(e)); }
-  }, [project, validation, exportName, rootPath]);
+  }, [project, validation, exportName, exportParentDir, rootPath]);
 
   const handleAutoDetect = useCallback(async () => {
     setAutoDetecting(true);

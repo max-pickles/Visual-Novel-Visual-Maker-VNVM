@@ -8,7 +8,7 @@ use tauri::Manager;
 use vnvmaker_lib::{
     parse_renpy_project, save_layout, load_layout, LayoutData,
     read_file, write_file, list_rpy_files,
-    list_assets, copy_dir_all, import_rpy_folder,
+    list_assets, copy_dir_all, dir_is_empty_or_missing, import_rpy_folder,
     scaffold_from_template, apply_project_settings,
     validate_renpy_game,
     RpyProject,
@@ -141,6 +141,18 @@ fn show_in_explorer(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Whether a file or folder exists at `path`.
+#[tauri::command]
+fn path_exists(path: String) -> bool {
+    Path::new(&path).exists()
+}
+
+/// Whether `path` is a folder that already has something in it.
+#[tauri::command]
+fn dir_has_files(path: String) -> bool {
+    !dir_is_empty_or_missing(Path::new(&path))
 }
 
 /// Permanently delete a project folder and all its contents.
@@ -714,6 +726,8 @@ fn main() {
             show_in_explorer,
             delete_project_folder,
             delete_file,
+            path_exists,
+            dir_has_files,
             list_dir_entries,
             get_drives,
             get_quick_access_paths,
