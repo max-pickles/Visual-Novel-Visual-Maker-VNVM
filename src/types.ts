@@ -782,6 +782,10 @@ export function extractVars(project: VNProject): VNVariable[] {
  * Migrate a raw JSON object loaded from disk into a valid VNProject,
  * filling in any missing fields with safe defaults.
  * Mirrors _vn_migrate_project from vn_data.rpy.
+ *
+ * Fields that aren't listed here are carried over untouched, so data saved by
+ * newer features (or fields this function doesn't know about) survives a
+ * load → save round-trip.
  */
 export function migrateProject(raw: Record<string, unknown>, filePath?: string): VNProject {
   const now = Date.now();
@@ -796,7 +800,11 @@ export function migrateProject(raw: Record<string, unknown>, filePath?: string):
 
   const start = (raw.start as string | null) ?? scenes[0]?.id ?? null;
 
+  // Runtime-only paths are never restored from the file contents.
+  const { _rootPath: _ignoredRoot, _filePath: _ignoredFile, ...rest } = raw;
+
   return {
+    ...(rest as Partial<VNProject>),
     id,
     title: (raw.title as string) ?? 'Untitled Project',
     author: (raw.author as string) ?? 'Author',
@@ -833,6 +841,7 @@ export function migrateProject(raw: Record<string, unknown>, filePath?: string):
 
 function migrateScene(raw: Partial<VNScene>): VNScene {
   return {
+    ...raw,
     id: raw.id ?? uid(),
     label: raw.label ?? 'Scene',
     bg: raw.bg ?? null,
@@ -853,6 +862,7 @@ function migrateEvent(raw: Partial<VNEvent>): VNEvent {
 
 function migrateCharacter(raw: Partial<VNCharacter>): VNCharacter {
   return {
+    ...raw,
     id: raw.id ?? uid(),
     name: raw.name ?? 'Character',
     display: raw.display ?? raw.name ?? 'Character',
