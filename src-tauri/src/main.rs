@@ -114,15 +114,23 @@ fn apply_project_theme(
 
 // ─── System Info ──────────────────────────────────────────────────────────────
 
-/// Open Windows Explorer inside the given folder, showing its contents.
+/// `path` with the platform's own separators, for handing to other programs.
+fn native_path(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    if cfg!(windows) { path.replace('/', "\\") } else { path.into_owned() }
+}
+
+/// Open the given folder in the system file manager.
 #[tauri::command]
 fn show_in_explorer(path: String) -> Result<(), String> {
-    // Explorer opens files with their default program, so only accept folders.
-    if !Path::new(&path).is_dir() {
-        return Err(format!("Not a folder: {}", path));
+    // File managers open files with their default program, so only accept folders.
+    let path = Path::new(&path);
+    if !path.is_dir() {
+        return Err(format!("Not a folder: {}", path.display()));
     }
-    std::process::Command::new("explorer")
-        .arg(path.replace("/", "\\"))
+    let opener = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    std::process::Command::new(opener)
+        .arg(native_path(path))
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -451,7 +459,7 @@ fn launch_renpy_preview(
         }
     }
     
-    cmd.arg(root_path.to_string_lossy().replace('/', "\\"))
+    cmd.arg(native_path(root_path))
         .spawn()
         .map_err(|e| format!("Failed to launch Ren'Py: {}", e))?;
 
@@ -475,7 +483,7 @@ fn launch_renpy_launcher(
         })?;
 
     std::process::Command::new(&exe)
-        .env("RENPY_PROJECTS_DIR", projects_dir.to_string_lossy().replace('/', "\\"))
+        .env("RENPY_PROJECTS_DIR", native_path(projects_dir))
         .spawn()
         .map_err(|e| format!("Failed to launch Ren'Py SDK: {}", e))?;
 
