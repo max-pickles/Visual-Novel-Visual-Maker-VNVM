@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir } from "@tauri-apps/api/path";
+import { documentDir, homeDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { VNProject } from "./types";
 import { migrateProject } from "./types";
@@ -71,8 +71,14 @@ export function isSameOrInside(path: string, folder: string): boolean {
 
 /** Where new projects go when the user hasn't picked a folder: Documents/VNVMaker/games. */
 export async function defaultGamesDir(): Promise<string> {
-  const docs = (await documentDir()).replace(/\\/g, "/").replace(/\/+$/, "");
-  return `${docs}/VNVMaker/games`;
+  let docs: string;
+  try {
+    docs = await documentDir();
+  } catch {
+    // Linux without XDG user directories has no known Documents folder.
+    docs = `${(await homeDir()).replace(/\\/g, "/").replace(/\/+$/, "")}/Documents`;
+  }
+  return `${docs.replace(/\\/g, "/").replace(/\/+$/, "")}/VNVMaker/games`;
 }
 
 /** The games folder from Preferences, or {@link defaultGamesDir}. */
