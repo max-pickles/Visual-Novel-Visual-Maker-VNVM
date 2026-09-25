@@ -17,6 +17,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { copyFile, mkdir, readDir } from "@tauri-apps/plugin-fs";
 import { readGuiRpy, writeGuiRpy, readOptionsRpy, writeOptionsRpy, readScreensRpy, writeScreensRpy } from "./tauriApi";
 import { parseGuiRpy, patchGuiRpy, rpyColor, rpyNum, rpyStr, type GuiConfig } from "./guiParser";
+import { paletteFromPixels } from "./imagePalette";
 import { parseOptionsRpy, patchOptionsRpy, type OptionsConfig } from "./optionsParser";
 import { parseScreensRpy, patchScreensRpy, type ScreenConfig } from "./screenParser";
 import { RenpyFonts } from "./ScenePreview";
@@ -269,7 +270,7 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
 
   const handleMagicPalette = () => {
     if (!rootPath) return;
-    const imgUrl = convertFileSrc(`${rootPath}/game/gui/main_menu.png`) + `?t=\${imgTick}`;
+    const imgUrl = convertFileSrc(`${rootPath}/game/gui/main_menu.png`) + `?t=${imgTick}`;
     const img = new Image();
     img.crossOrigin = "Anonymous";
     img.onload = () => {
@@ -279,40 +280,11 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      
-      let maxSaturation = 0;
-      let accent = [204, 102, 0];
-      
-      let rSum = 0, gSum = 0, bSum = 0, count = 0;
-
-      for (let i = 0; i < data.length; i += 400) {
-        const r = data[i], g = data[i+1], b = data[i+2];
-        rSum += r; gSum += g; bSum += b; count++;
-
-        const max = Math.max(r, g, b), min = Math.min(r, g, b);
-        const l = (max + min) / 2;
-        let s = 0;
-        if (max !== min) {
-          s = l > 127 ? (max - min) / (510 - max - min) : (max - min) / (max + min);
-        }
-        if (s > maxSaturation && l > 50 && l < 200) {
-          maxSaturation = s;
-          accent = [r, g, b];
-        }
-      }
-
-      const avg = [Math.floor(rSum / count), Math.floor(gSum / count), Math.floor(bSum / count)];
-      const toHex = (c: number) => Math.min(255, Math.max(0, c)).toString(16).padStart(2, '0');
-      
-      const accentHex = `#\${toHex(accent[0])}\${toHex(accent[1])}\${toHex(accent[2])}`;
-      const idleHex = `#\${toHex(avg[0])}\${toHex(avg[1])}\${toHex(avg[2])}`;
-      const hoverHex = `#\${toHex(accent[0] + 50)}\${toHex(accent[1] + 50)}\${toHex(accent[2] + 50)}`;
-
+      const palette = paletteFromPixels(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
       applyGuiPatch({
-        accent_color: `"\${accentHex}"`,
-        idle_color: `"\${idleHex}"`,
-        hover_color: `"\${hoverHex}"`,
+        accent_color: rpyColor(palette.accent),
+        idle_color: rpyColor(palette.idle),
+        hover_color: rpyColor(palette.hover),
       });
     };
     img.src = imgUrl;

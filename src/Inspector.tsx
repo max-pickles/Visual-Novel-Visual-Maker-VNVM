@@ -466,7 +466,7 @@ function TransitionPicker({ value, onChange }: { value: string | null | undefine
         {VN_TRANSITIONS.map((o) => (
           <button 
             key={o} 
-            className={`legacy-tool-btn \${value === o ? "active" : ""}`} 
+            className={`legacy-tool-btn ${value === o ? "active" : ""}`}
             onClick={() => onChange(o)}
             onMouseEnter={() => setHovTrans(o)}
             onMouseLeave={() => setHovTrans(null)}
