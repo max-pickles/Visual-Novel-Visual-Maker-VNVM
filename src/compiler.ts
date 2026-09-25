@@ -22,7 +22,7 @@
  * No Rust/Tauri required — pure string generation from VNProject JSON.
  */
 
-import type { VNProject, VNEvent, VNScene } from "./types";
+import type { VNProject, VNEvent, VNScene, VNCharacter } from "./types";
 import { extractVars, findChar, findScene } from "./types";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -36,6 +36,47 @@ import { extractVars, findChar, findScene } from "./types";
  */
 function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+}
+
+/**
+ * Python single-quoted string literal for `s` (used for Character() arguments).
+ */
+function pyStr(s: string): string {
+  return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n")}'`;
+}
+
+/** Colors Ren'Py accepts: #rgb, #rgba, #rrggbb or #rrggbbaa. */
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/** Words the Ren'Py parser won't accept as part of an image name. */
+const IMAGE_NAME_KEYWORDS = new Set([
+  "as", "at", "behind", "call", "expression", "hide", "if", "in", "image", "init",
+  "jump", "menu", "onlayer", "python", "return", "scene", "show", "with", "while",
+  "zorder", "transform",
+]);
+
+/**
+ * Turn free text (a character or pose name) into one Ren'Py image-name
+ * component: letters, digits and underscores, never a statement keyword.
+ * `"Dr. O'Brien"` → `"Dr_O_Brien"`. Returns `""` if nothing usable is left.
+ */
+export function imageNameComponent(text: string): string {
+  const cleaned = text
+    .trim()
+    .replace(/[^0-9A-Za-z_\u00c0-\ud7ff\ue000-\uffef]/gu, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return IMAGE_NAME_KEYWORDS.has(cleaned) ? `${cleaned}_` : cleaned;
+}
+
+/** Image tag for a character's sprites and side images (`show <tag> <pose>`). */
+export function charImageTag(char: VNCharacter): string {
+  return imageNameComponent(char.name ?? "") || `char_${imageNameComponent(char.id) || "unnamed"}`;
+}
+
+/** A position for `at`: the given transform name, or `center` if it isn't a valid name. */
+function atPosition(side: string | undefined): string {
+  return side && /^[A-Za-z_][A-Za-z0-9_]*$/.test(side) ? side : "center";
 }
 
 /**
@@ -113,7 +154,7 @@ function compileEvent(
     const side = ev.side ?? "center";
     const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
     if (ev.atl_code) {
-      lines.push(`${prefix}show expression "${img}" at ${side}:`);
+      lines.push(`${prefix}show expression "${img}" at ${atPosition(side)}:`);
       compileAtl(ev.atl_code, lines, prefix + "    ");
     } else {
       lines.push(`${prefix}show expression "${img}"${at}`);
@@ -241,9 +282,9 @@ function compileEvent(
         }
       }
 
-      if (hasSprite) {
-        const side = ev.side ?? "center";
-        lines.push(`${prefix}show ${char.name} ${pose} at ${side}`);
+      const poseAttr = imageNameComponent(pose);
+      if (hasSprite && poseAttr) {
+        lines.push(`${prefix}show ${charImageTag(char)} ${poseAttr} at ${atPosition(ev.side)}`);
       }
     }
 
@@ -358,19 +399,16 @@ function compileEvent(
     const roll = ev.camera_roll ?? 0;
     const dur = ev.camera_dur ?? 1.0;
 
-    const props = [];
-    if (x) props.push(`xpos ${x}`);
-    if (y) props.push(`ypos ${y}`);
-    if (z) props.push(`zpos ${z}`);
-    if (zoom !== 1.0) props.push(`zoom ${zoom}`);
-    if (pitch) props.push(`matrixcolor InvertMatrix(${pitch})`); // Approximated for 3D stage if enabled
-    if (yaw) props.push(`matrixcolor InvertMatrix(${yaw})`);
-    if (roll) props.push(`matrixcolor InvertMatrix(${roll})`); // Actually camera 3D uses camera properties, but we'll emit camera transforms
+    // Pitch/yaw/roll rotate the camera around the x/y/z axes (Ren'Py 8 3D stage).
+    const rotation = [
+      pitch ? ` xrotate ${pitch}` : "",
+      yaw ? ` yrotate ${yaw}` : "",
+      roll ? ` zrotate ${roll}` : "",
+    ].join("");
 
-    // Ren'Py 7.4+ camera syntax
     lines.push(`${prefix}camera:`);
     lines.push(`${prefix}    perspective True`);
-    lines.push(`${prefix}    ease ${dur} xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}`);
+    lines.push(`${prefix}    ease ${dur} xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}${rotation}`);
   }
 
   // ── Achievement grant ─────────────────────────────────────────────────────
@@ -422,6 +460,61 @@ function compileEvent(
     const dur = parseFloat(String(ev.duration ?? 0));
     if (!isNaN(dur) && dur > 0) lines.push(`${prefix}pause ${dur}`);
   }
+}
+
+// ─── Character definitions ────────────────────────────────────────────────────
+
+/**
+ * Append a `define vnc_<id> = Character(...)` line for every character, plus the
+ * side images and the pose images that dialogue events `show`.
+ *
+ * Strings go through {@link pyStr} (so names like O'Brien stay valid Python) and
+ * image names through {@link charImageTag} / {@link imageNameComponent}.
+ */
+function compileCharacters(proj: VNProject, lines: string[]): void {
+  if (!proj.characters.length) return;
+  lines.push(`## Characters`);
+  for (const char of proj.characters) {
+    const tag = charImageTag(char);
+    const sideImages = Object.entries(char.side_images ?? {}).filter(([, img]) => img);
+
+    const args: string[] = [pyStr(char.display ?? "")];
+    if (char.color && HEX_COLOR.test(char.color)) args.push(`color=${pyStr(char.color)}`);
+    if (char.name_prefix)     args.push(`who_prefix=${pyStr(char.name_prefix)}`);
+    if (char.name_suffix)     args.push(`who_suffix=${pyStr(char.name_suffix)}`);
+    if (char.dialogue_prefix) args.push(`what_prefix=${pyStr(char.dialogue_prefix)}`);
+    if (char.dialogue_suffix) args.push(`what_suffix=${pyStr(char.dialogue_suffix)}`);
+    if (sideImages.length > 0) args.push(`image=${pyStr(tag)}`);
+    lines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
+
+    for (const [pose, imgPath] of sideImages) {
+      const attr = imageNameComponent(pose);
+      const poseSuffix = pose === 'neutral' || !attr ? '' : ` ${attr}`;
+      lines.push(`image side ${tag}${poseSuffix} = "${esc(imgPath)}"`);
+    }
+
+    for (const pose of char.poses ?? []) {
+      const attr = imageNameComponent(pose);
+      if (!attr) continue;
+      if (char.is_layered && char.layered_sprites && char.layer_order) {
+        const poseLayers = char.layered_sprites[pose] || {};
+        const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
+        if (activeLayers.length === 1) {
+          lines.push(`image ${tag} ${attr} = "${esc(activeLayers[0])}"`);
+        } else if (activeLayers.length > 1) {
+          lines.push(`image ${tag} ${attr} = Fixed(`);
+          for (const file of activeLayers) {
+            lines.push(`    "${esc(file)}",`);
+          }
+          lines.push(`    fit_first=True`);
+          lines.push(`)`);
+        }
+      } else if (char.sprites?.[pose]) {
+        lines.push(`image ${tag} ${attr} = "${esc(char.sprites[pose])}"`);
+      }
+    }
+  }
+  lines.push(``);
 }
 
 // ─── Scene compiler ───────────────────────────────────────────────────────────
@@ -534,55 +627,7 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
   }
 
   // ── Character definitions ────────────────────────────────────────────────────────
-  if (proj.characters.length) {
-    lines.push(`## Characters`);
-    for (const char of proj.characters) {
-      const args: string[] = [`'${char.display}'`, `color='${char.color}'`];
-      if (char.name_prefix)     args.push(`who_prefix='${char.name_prefix}'`);
-      if (char.name_suffix)     args.push(`who_suffix='${char.name_suffix}'`);
-      if (char.dialogue_prefix) args.push(`what_prefix='${char.dialogue_prefix}'`);
-      if (char.dialogue_suffix) args.push(`what_suffix='${char.dialogue_suffix}'`);
-      if (char.side_images && Object.keys(char.side_images).length > 0) {
-        args.push(`image='${char.name}'`);
-      }
-      lines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
-
-      if (char.side_images) {
-        for (const [pose, imgPath] of Object.entries(char.side_images)) {
-          if (imgPath) {
-            const poseSuffix = pose === 'neutral' ? '' : ` ${pose}`;
-            lines.push(`image side ${char.name}${poseSuffix} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-
-      if (char.is_layered && char.layered_sprites && char.layer_order) {
-        for (const pose of char.poses) {
-          const poseLayers = char.layered_sprites[pose] || {};
-          const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
-          
-          if (activeLayers.length === 1) {
-            lines.push(`image ${char.name} ${pose} = "${esc(activeLayers[0])}"`);
-          } else if (activeLayers.length > 1) {
-            lines.push(`image ${char.name} ${pose} = Fixed(`);
-            for (const file of activeLayers) {
-              lines.push(`    "${esc(file)}",`);
-            }
-            lines.push(`    fit_first=True`);
-            lines.push(`)`);
-          }
-        }
-      } else if (char.sprites) {
-        for (const pose of char.poses) {
-          const imgPath = char.sprites[pose];
-          if (imgPath) {
-            lines.push(`image ${char.name} ${pose} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-    }
-    lines.push(``);
-  }
+  compileCharacters(proj, lines);
 
   // ── Scene labels ────────────────────────────────────────────────────────────
   lines.push(`## Scenes`);
@@ -660,55 +705,7 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
   }
 
   // ── Character definitions ────────────────────────────────────────────────────────
-  if (proj.characters.length) {
-    scriptLines.push(`## Characters`);
-    for (const char of proj.characters) {
-      const args: string[] = [`'${char.display}'`, `color='${char.color}'`];
-      if (char.name_prefix)     args.push(`who_prefix='${char.name_prefix}'`);
-      if (char.name_suffix)     args.push(`who_suffix='${char.name_suffix}'`);
-      if (char.dialogue_prefix) args.push(`what_prefix='${char.dialogue_prefix}'`);
-      if (char.dialogue_suffix) args.push(`what_suffix='${char.dialogue_suffix}'`);
-      if (char.side_images && Object.keys(char.side_images).length > 0) {
-        args.push(`image='${char.name}'`);
-      }
-      scriptLines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
-
-      if (char.side_images) {
-        for (const [pose, imgPath] of Object.entries(char.side_images)) {
-          if (imgPath) {
-            const poseSuffix = pose === 'neutral' ? '' : ` ${pose}`;
-            scriptLines.push(`image side ${char.name}${poseSuffix} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-
-      if (char.is_layered && char.layered_sprites && char.layer_order) {
-        for (const pose of char.poses) {
-          const poseLayers = char.layered_sprites[pose] || {};
-          const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
-          
-          if (activeLayers.length === 1) {
-            scriptLines.push(`image ${char.name} ${pose} = "${esc(activeLayers[0])}"`);
-          } else if (activeLayers.length > 1) {
-            scriptLines.push(`image ${char.name} ${pose} = Fixed(`);
-            for (const file of activeLayers) {
-              scriptLines.push(`    "${esc(file)}",`);
-            }
-            scriptLines.push(`    fit_first=True`);
-            scriptLines.push(`)`);
-          }
-        }
-      } else if (char.sprites) {
-        for (const pose of char.poses) {
-          const imgPath = char.sprites[pose];
-          if (imgPath) {
-            scriptLines.push(`image ${char.name} ${pose} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-    }
-    scriptLines.push(``);
-  }
+  compileCharacters(proj, scriptLines);
 
   // ── Entry point ─────────────────────────────────────────────────────────────
   const startScene = proj.start
@@ -780,30 +777,7 @@ export function compilePreview(
   ];
 
   // Character definitions
-  if (proj.characters.length) {
-    lines.push(`## Characters`);
-    for (const char of proj.characters) {
-      const args: string[] = [`'${char.display}'`, `color='${char.color}'`];
-      if (char.name_prefix)     args.push(`who_prefix='${char.name_prefix}'`);
-      if (char.name_suffix)     args.push(`who_suffix='${char.name_suffix}'`);
-      if (char.dialogue_prefix) args.push(`what_prefix='${char.dialogue_prefix}'`);
-      if (char.dialogue_suffix) args.push(`what_suffix='${char.dialogue_suffix}'`);
-      if (char.side_images && Object.keys(char.side_images).length > 0) {
-        args.push(`image='${char.name}'`);
-      }
-      lines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
-
-      if (char.side_images) {
-        for (const [pose, imgPath] of Object.entries(char.side_images)) {
-          if (imgPath) {
-            const poseSuffix = pose === 'neutral' ? '' : ` ${pose}`;
-            lines.push(`image side ${char.name}${poseSuffix} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-    }
-    lines.push(``);
-  }
+  compileCharacters(proj, lines);
 
   // Auto-discovered story variables
   const vars = extractVars(proj);

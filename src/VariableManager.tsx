@@ -5,6 +5,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import type { VNProject, VNVariable } from './types';
+import { conditionVarNames, extractVars } from './types';
 import { useVirtualList } from './useVirtualList';
 import { useTranslation } from './translationContext';
 
@@ -31,6 +32,8 @@ function inferType(val: string): 'boolean' | 'number' | 'string' {
 
 function buildDerivedVars(project: VNProject): DerivedVar[] {
   const varMap = new Map<string, DerivedVar>();
+  // The defaults the compiled game actually starts with
+  const defaults = new Map(extractVars(project).map(v => [v.name, v.default_val]));
 
   // Seed from VNVariable array if the project shape includes it
   const existingVars: VNVariable[] = (project as any).variables ?? [];
@@ -51,23 +54,24 @@ function buildDerivedVars(project: VNProject): DerivedVar[] {
         vars.push({ name: ev.var_name, mode: 'write' });
       }
       if (ev.type === 'if' && ev.condition) {
-        const matches = ev.condition.match(/\b([a-zA-Z_]\w*)\b/g);
-        if (matches) {
-          for (const m of matches) {
-            if (!['True','False','None','and','or','not','is','in'].includes(m) && isNaN(Number(m))) {
-              vars.push({ name: m, mode: 'read' });
-            }
+        for (const name of conditionVarNames(ev.condition)) vars.push({ name, mode: 'read' });
+      }
+      if (ev.type === 'choice') {
+        for (const opt of ev.opts ?? []) {
+          if (opt.condition) {
+            for (const name of conditionVarNames(opt.condition)) vars.push({ name, mode: 'read' });
           }
         }
       }
 
       for (const { name, mode } of vars) {
         if (!varMap.has(name)) {
+          const default_val = defaults.get(name) ?? ev.var_val ?? 'False';
           varMap.set(name, {
             name,
-            default_val: ev.var_val ?? 'False',
+            default_val,
             usageCount: 0,
-            inferredType: inferType(ev.var_val ?? 'False'),
+            inferredType: inferType(default_val),
             usages: [],
           });
         }

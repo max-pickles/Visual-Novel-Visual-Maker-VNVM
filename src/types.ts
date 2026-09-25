@@ -754,34 +754,118 @@ export function getSceneBg(scene: VNScene, project?: VNProject, visited: Set<str
 }
 
 /**
- * Scan all setvar and if events in a project to collect auto-initializable variables.
+ * Names that must never get an auto-generated `default`: Python keywords and
+ * builtins, and the Ren'Py objects that conditions and generated code rely on.
+ * `default renpy = False` or `default len = False` would break the game.
+ */
+export const RESERVED_VAR_NAMES = new Set([
+  // Python keywords and constants
+  'True', 'False', 'None', 'and', 'or', 'not', 'is', 'in', 'if', 'else', 'elif',
+  'for', 'while', 'lambda', 'return', 'def', 'class', 'import', 'from', 'as',
+  'with', 'pass', 'del', 'global', 'nonlocal', 'try', 'except', 'finally',
+  'raise', 'yield', 'assert', 'break', 'continue', 'async', 'await',
+  // Python builtins
+  'len', 'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple', 'min',
+  'max', 'abs', 'sum', 'any', 'all', 'range', 'round', 'sorted', 'reversed',
+  'enumerate', 'zip', 'map', 'filter', 'isinstance', 'hasattr', 'getattr',
+  'type', 'print', 'object', 'id', 'hash', 'chr', 'ord', 'divmod', 'pow',
+  // Ren'Py objects and names used by the generated script
+  'renpy', 'config', 'persistent', 'store', 'gui', 'preferences', 'achievement',
+  'build', 'style', 'ui', 'im', 'layout', 'narrator', 'centered', 'extend',
+  'nvl', 'adv', 'Character', 'Transform', 'Fixed', 'Solid', 'Dissolve', 'Fade',
+  'Pixellate',
+]);
+
+const PY_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Names of story variables a Python condition reads.
+ *
+ * Skips attribute names (`persistent.seen` → neither), words inside string
+ * literals, names starting with `_`, and everything in {@link RESERVED_VAR_NAMES}.
+ * Names that are called, indexed or have attributes read (`f(x)`, `inv["key"]`,
+ * `player.hp`) are skipped too unless `allReads` is set: they aren't plain
+ * values, so they can't safely default to `False`.
+ */
+export function conditionVarNames(condition: string, { allReads = false } = {}): string[] {
+  // Blank out string literals so words inside them aren't mistaken for names.
+  const code = condition.replace(/(["'])(?:\\.|(?!\1)[^\\])*\1/g, '""');
+  const names: string[] = [];
+  for (const m of code.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
+    const name = m[0];
+    const start = m.index ?? 0;
+    const before = code.slice(0, start);
+    const after = code.slice(start + name.length).trimStart();
+    if (/[0-9.]$/.test(before) || before.trimEnd().endsWith('.')) continue; // 1e5, 0xff, obj.attr
+    if (!allReads && /^[.([]/.test(after)) continue;                        // obj.x, f(), x[0]
+    if (name.startsWith('_') || RESERVED_VAR_NAMES.has(name)) continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+type ValueKind = 'bool' | 'number' | 'string' | 'list' | 'dict' | 'none' | 'unknown';
+
+/** Rough Python type of a setvar value such as `True`, `3`, `"Bob"` or `points + 1`. */
+function valueKind(raw: string): ValueKind {
+  const v = raw.trim();
+  if (v === 'True' || v === 'False') return 'bool';
+  if (v === 'None') return 'none';
+  if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(v)) return 'number';
+  if (/^[rRuUbBfF]?(["'])[\s\S]*\1$/.test(v) && !/["']\s*[-+*/%]/.test(v)) return 'string';
+  if (v.startsWith('[')) return 'list';
+  if (v.startsWith('{')) return 'dict';
+  if (/^not\b/.test(v) || /==|!=|<=|>=|<|>|\band\b|\bor\b/.test(v)) return 'bool';
+  if (/[-+*/%]\s*[\d.]/.test(v) || /[\d.]\s*[-+*/%]/.test(v)) return 'number';
+  return 'unknown';
+}
+
+const DEFAULT_FOR_KIND: Record<ValueKind, string> = {
+  bool: 'False', number: '0', string: '""', list: '[]', dict: '{}', none: 'None', unknown: 'None',
+};
+
+/**
+ * Scan all setvar, if and choice-condition events in a project to collect
+ * auto-initializable variables.
+ *
+ * The default is the "empty" value of the variable's type — `False`, `0`,
+ * `""`, `[]` — not the first value it is assigned: a flag set to `True` on one
+ * branch must still start out `False`, and `points = points + 1` can't be its
+ * own default. Names only read by conditions default to `False`.
  * Mirrors _vn_extract_vars from vn_compile.rpy.
  */
 export function extractVars(project: VNProject): VNVariable[] {
-  const keywords = new Set(['True', 'False', 'None', 'and', 'or', 'not', 'is', 'in']);
-  const found = new Map<string, string>();
+  const assigned = new Map<string, string[]>();
+  const read = new Set<string>();
 
   for (const sc of project.scenes) {
     for (const ev of sc.events) {
       if (ev.type === 'setvar' && ev.var_name?.trim()) {
         const name = ev.var_name.trim();
-        if (!found.has(name)) {
-          // Infer type from value
-          const val = ev.var_val ?? 'False';
-          found.set(name, val);
-        }
+        const values = assigned.get(name) ?? [];
+        values.push(ev.var_val ?? 'False');
+        assigned.set(name, values);
       } else if (ev.type === 'if' && ev.condition) {
-        const tokens = ev.condition.match(/\b([a-zA-Z_]\w*)\b/g) ?? [];
-        for (const t of tokens) {
-          if (!keywords.has(t) && !found.has(t)) {
-            found.set(t, 'False');
-          }
+        conditionVarNames(ev.condition).forEach(n => read.add(n));
+      } else if (ev.type === 'choice') {
+        for (const opt of ev.opts ?? []) {
+          if (opt.condition) conditionVarNames(opt.condition).forEach(n => read.add(n));
         }
       }
     }
   }
 
+  const found = new Map<string, string>();
+  for (const [name, values] of assigned) {
+    const kind = values.map(valueKind).find(k => k !== 'unknown') ?? 'unknown';
+    found.set(name, DEFAULT_FOR_KIND[kind]);
+  }
+  for (const name of read) {
+    if (!found.has(name)) found.set(name, 'False');
+  }
+
   return [...found.entries()]
+    .filter(([name]) => PY_IDENT.test(name) && !RESERVED_VAR_NAMES.has(name))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, default_val]) => ({ name, default_val }));
 }
