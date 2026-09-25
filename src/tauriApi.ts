@@ -47,6 +47,14 @@ export async function pathExists(path: string): Promise<boolean> {
   return invoke<boolean>("path_exists", { path });
 }
 
+/**
+ * Let the editor load a project's images, audio and fonts through the asset
+ * protocol, whose scope starts empty. Call before showing the project.
+ */
+export async function allowProjectAssets(rootPath: string): Promise<void> {
+  return invoke("allow_project_assets", { projectRoot: rootPath });
+}
+
 /** Whether `path` is a folder that already has something in it. */
 export async function dirHasFiles(path: string): Promise<boolean> {
   return invoke<boolean>("dir_has_files", { path });

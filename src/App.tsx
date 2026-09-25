@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, memo } from "react";
 import { StartScreen } from "./StartScreen";
 import { VNEditor } from "./VNEditor";
-import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir } from "./tauriApi";
+import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir, allowProjectAssets } from "./tauriApi";
 import type { VNProject, RpyProject } from "./types";
 import { rpyToVnProject } from "./types";
 import { ToastProvider, ToastManager } from "./toastContext";
@@ -111,7 +111,13 @@ export default function App() {
       return (
         <StartScreen
           prefs={prefs}
-          onLoadVnv={(p) => {
+          onLoadVnv={async (p) => {
+            // The asset protocol only serves folders of projects that are open.
+            if (p._rootPath) {
+              await allowProjectAssets(p._rootPath).catch((e) =>
+                ToastManager.warning("Images and audio from this project can't be shown", String(e))
+              );
+            }
             // Auto-save immediately on any first load (new / open / import / recent)
             // so the .vnvmaker file always exists on disk before we enter the editor.
             if (p._filePath) {

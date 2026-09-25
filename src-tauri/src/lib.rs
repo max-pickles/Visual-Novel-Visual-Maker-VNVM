@@ -73,6 +73,32 @@ pub fn list_assets(root: &Path, asset_type: &str) -> Vec<String> {
         .collect()
 }
 
+// ─── Path checks ──────────────────────────────────────────────────────────────
+// The frontend passes paths to these commands, so each command checks the path
+// is the kind of file or folder it exists for.
+
+/// True for a folder that looks like a VNVMaker project or a Ren'Py game.
+pub fn looks_like_project(path: &Path) -> bool {
+    path.join("project.vnvmaker").is_file() || path.join("game").is_dir()
+}
+
+/// True if `path` has the extension `ext` (case-insensitive).
+pub fn has_extension(path: &Path, ext: &str) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext))
+}
+
+/// True if `path` is a file inside some game/ folder, or a project.vnvmaker
+/// in a project folder: the only files the app ever deletes.
+pub fn is_deletable_project_file(path: &Path) -> bool {
+    let in_game_dir = path
+        .ancestors()
+        .skip(1)
+        .any(|a| a.file_name().is_some_and(|n| n.eq_ignore_ascii_case("game")));
+    let is_project_file = path.file_name().is_some_and(|n| n == "project.vnvmaker")
+        && path.parent().is_some_and(looks_like_project);
+    in_game_dir || is_project_file
+}
+
 // ─── Recursive Directory Copy ─────────────────────────────────────────────────
 
 /// True if `path` doesn't exist, or is a directory with nothing in it.

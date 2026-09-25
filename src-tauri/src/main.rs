@@ -8,6 +8,7 @@ use tauri::Manager;
 use vnvmaker_lib::{
     read_file, write_file, list_rpy_files,
     list_assets, copy_dir_all, dir_is_empty_or_missing,
+    looks_like_project, has_extension, is_deletable_project_file,
     scaffold_from_template, apply_project_settings,
     validate_renpy_game,
 };
@@ -16,7 +17,11 @@ use vnvmaker_lib::{
 
 #[tauri::command]
 fn read_rpy_file(path: String) -> Result<String, String> {
-    read_file(&PathBuf::from(&path))
+    let path = PathBuf::from(&path);
+    if !has_extension(&path, "rpy") {
+        return Err("Only .rpy files can be read here.".to_string());
+    }
+    read_file(&path)
 }
 
 #[tauri::command]
@@ -29,19 +34,32 @@ fn get_rpy_files(root_path: String) -> Vec<String> {
 /// Save a .vnvmaker JSON project file
 #[tauri::command]
 fn save_vnv_project(path: String, content: String) -> Result<(), String> {
-    write_file(&PathBuf::from(&path), &content)
+    let path = PathBuf::from(&path);
+    if !has_extension(&path, "vnvmaker") {
+        return Err("Projects can only be saved as .vnvmaker files.".to_string());
+    }
+    write_file(&path, &content)
 }
 
 /// Load a .vnvmaker JSON project file → returns raw JSON string
 #[tauri::command]
 fn load_vnv_project(path: String) -> Result<String, String> {
-    read_file(&PathBuf::from(&path))
+    let path = PathBuf::from(&path);
+    if !has_extension(&path, "vnvmaker") {
+        return Err("Only .vnvmaker project files can be opened.".to_string());
+    }
+    read_file(&path)
 }
 
 /// Write any text file (used by compiler output, options.rpy patching, etc.)
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
-    write_file(&PathBuf::from(&path), &content)
+    let path = PathBuf::from(&path);
+    // Everything the app writes this way is a Ren'Py script.
+    if !has_extension(&path, "rpy") {
+        return Err("Only .rpy files can be written.".to_string());
+    }
+    write_file(&path, &content)
 }
 
 /// Scan a directory for asset files and return relative paths
@@ -54,7 +72,12 @@ fn list_asset_files(root_path: String, asset_type: String) -> Vec<String> {
 /// Recursively copy a directory
 #[tauri::command]
 fn copy_dir_recursive(src: String, dst: String) -> Result<(), String> {
-    copy_dir_all(&PathBuf::from(&src), &PathBuf::from(&dst))
+    let src = PathBuf::from(&src);
+    // Imports and exports copy a Ren'Py game or VNVMaker project folder.
+    if !looks_like_project(&src) {
+        return Err(format!("{} isn't a Ren'Py game or VNVMaker project folder.", src.to_string_lossy()));
+    }
+    copy_dir_all(&src, &PathBuf::from(&dst))
 }
 
 /// Validate that a folder is a Ren'Py game (has game/ subdir + .rpy files).
@@ -94,11 +117,31 @@ fn apply_project_theme(
 /// Open Windows Explorer inside the given folder, showing its contents.
 #[tauri::command]
 fn show_in_explorer(path: String) -> Result<(), String> {
+    // Explorer opens files with their default program, so only accept folders.
+    if !Path::new(&path).is_dir() {
+        return Err(format!("Not a folder: {}", path));
+    }
     std::process::Command::new("explorer")
         .arg(path.replace("/", "\\"))
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Let the webview load files from a project folder through the asset protocol
+/// (images, audio, fonts). The asset scope starts empty; only folders that look
+/// like a project are added.
+#[tauri::command]
+fn allow_project_assets(app: tauri::AppHandle, project_root: String) -> Result<(), String> {
+    let root = Path::new(&project_root);
+    if !looks_like_project(root) {
+        return Err(format!("{} isn't a Ren'Py game or VNVMaker project folder.", project_root));
+    }
+    // The asset protocol matches canonical paths (\\?\C:\… on Windows).
+    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    app.asset_protocol_scope()
+        .allow_directory(&root, true)
+        .map_err(|e| e.to_string())
 }
 
 /// Whether a file or folder exists at `path`.
@@ -125,7 +168,7 @@ fn delete_project_folder(folder_path: String) -> Result<(), String> {
     }
     // Only delete folders that look like a project, so a wrong path can't wipe
     // out anything else.
-    if !path.join("project.vnvmaker").is_file() && !path.join("game").is_dir() {
+    if !looks_like_project(path) {
         return Err(format!(
             "{} doesn't look like a VNVMaker or Ren'Py project, so it wasn't deleted.",
             folder_path
@@ -458,6 +501,9 @@ fn delete_file(path: String) -> Result<(), String> {
     if p.is_dir() {
         return Err(format!("Path is a directory, not a file: {}", path));
     }
+    if !is_deletable_project_file(p) {
+        return Err(format!("{} isn't a file in a game folder, so it wasn't deleted.", path));
+    }
     std::fs::remove_file(p).map_err(|e| e.to_string())
 }
 
@@ -529,6 +575,7 @@ fn main() {
             delete_file,
             path_exists,
             dir_has_files,
+            allow_project_assets,
             list_dir_entries,
             set_window_size,
             update_app_icon,

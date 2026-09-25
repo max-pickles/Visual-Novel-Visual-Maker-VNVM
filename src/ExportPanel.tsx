@@ -129,8 +129,9 @@ export function ExportPanel({ project }: Props) {
     try {
       const scriptFile = generatedScripts.find(s => s.filename === saveTarget);
       if (!scriptFile) return;
-      const path = await pickSavePath(scriptFile.filename);
-      if (path) {
+      const picked = await pickSavePath(scriptFile.filename);
+      if (picked) {
+        const path = /\.rpy$/i.test(picked) ? picked : `${picked}.rpy`;
         await writeTextFile(path, scriptFile.content);
         ToastManager.success(`Saved ${scriptFile.filename} successfully`);
       }
