@@ -43,3 +43,41 @@ jobs:
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy --locked
+
+  renpy:
+    name: Ren'Py lint and playthrough
+    runs-on: ubuntu-24.04
+    env:
+      RENPY_TAG: 8.5.2.26010301
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Ren'Py build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3.12-dev libassimp-dev libavcodec-dev libavformat-dev \
+            libswresample-dev libswscale-dev libharfbuzz-dev libfreetype6-dev libfribidi-dev \
+            libsdl2-dev libsdl2-image-dev libsdl2-gfx-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+            libjpeg-dev pkg-config xvfb
+          pipx install uv
+      - name: Cache the Ren'Py build
+        id: renpy-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/renpy
+          key: renpy-${{ env.RENPY_TAG }}-ubuntu-24.04
+      - name: Build Ren'Py
+        if: steps.renpy-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$RENPY_TAG" https://github.com/renpy/renpy "$RUNNER_TEMP/renpy"
+          cd "$RUNNER_TEMP/renpy"
+          uv sync --python /usr/bin/python3.12
+          ./run.sh --build
+      - name: Lint and play compiled projects
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a scripts/check-renpy.sh "$RUNNER_TEMP/renpy"

@@ -188,6 +188,8 @@ npm test
 
 Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the Ren'Py text-tag renderer and the playtest's expression evaluator. CI (`.github/workflows/ci.yml`) also typechecks, builds the frontend and runs `cargo clippy`.
 
+`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, and each playable one must play through to the end. CI runs it against Ren'Py 8.5.2 built from source.
+
 ---
 
 ## 🤝 Contributing
