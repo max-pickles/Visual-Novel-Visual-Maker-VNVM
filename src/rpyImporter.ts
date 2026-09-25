@@ -132,15 +132,17 @@ export function importFromRpyFiles(
   }
 
   // ── 2. Parse character definitions: define e = Character("Eileen") ────────
+  // The name may be wrapped for translation: Character(_("Eileen"), …).
   const charVarMap: Record<string, string> = {}; // varname → char.id
-  const charDefRe = /^define\s+(\w+)\s*=\s*Character\s*\(\s*["']([^"']+)["']/;
+  const charDefRe = /^\s*define\s+(\w+)\s*=\s*Character\s*\(\s*(?:_\(\s*)?(["'])((?:\\.|(?!\2).)+)\2/;
   const charColorRe = /color\s*=\s*["']([^"']+)["']/;
 
   const fullText = allLines.join("\n");
   for (const line of allLines) {
     const m = line.match(charDefRe);
     if (m) {
-      const [, varname, charname] = m;
+      const [, varname, , quotedName] = m;
+      const charname = quotedName.replace(/\\(.)/g, "$1");
       const ch = newCharacter(charname);
       ch.name = varname; // use the variable name as the script id
       ch.poses = [];     // clear template poses — only discovered images will populate these

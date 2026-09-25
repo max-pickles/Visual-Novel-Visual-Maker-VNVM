@@ -28,6 +28,21 @@ describe("rpyImporter – character definitions", () => {
     expect(project.characters[0].display).toBe("Eileen");
   });
 
+  it("parses names wrapped for translation, like the_question's Character(_(\"Sylvie\"))", () => {
+    const { project } = imp(`define s = Character(_("Sylvie"), color="#c8ffc8")\ndefine m = Character( _( 'Me' ) )`);
+    expect(project.characters.map(c => [c.name, c.display, c.color])).toEqual([
+      ["s", "Sylvie", "#c8ffc8"],
+      ["m", "Me", "#c8d0ff"],
+    ]);
+  });
+
+  it("attributes dialogue to characters defined with _()", () => {
+    const { project } = imp(`define s = Character(_("Sylvie"))\nlabel start:\n    s "Hi!"`);
+    const ev = project.scenes.flatMap(sc => sc.events).find(e => e.text === "Hi!");
+    expect(ev?.type).toBe("dialogue");
+    expect(ev?.char_id).toBe(project.characters[0].id);
+  });
+
   it("captures the variable name as VNCharacter.name", () => {
     const { project } = imp(`define mc = Character("Hero")`);
     expect(project.characters[0].name).toBe("mc");
