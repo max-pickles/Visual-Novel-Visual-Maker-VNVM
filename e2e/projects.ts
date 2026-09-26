@@ -26,6 +26,23 @@ export const markupProject = project("Markup", {
   layout: { start: [200, 200] },
 });
 
+/** Events that each take a different kind of file, and a jump, which takes none. */
+export const assetsProject = project("Assets", {
+  scenes: [
+    scene("start", [
+      { id: "sfx", type: "sfx", sfx: "" },
+      { id: "music", type: "music", music: "" },
+      { id: "line", type: "narration", text: "A voiced line" },
+      { id: "movie", type: "movie", movie: "" },
+      { id: "bg", type: "bg", bg: "" },
+      { id: "jump", type: "jump", scene_id: "end", transition: "dissolve" },
+    ]),
+    scene("end", [{ id: "end1", type: "narration", text: "The end" }]),
+  ],
+  start: "start",
+  layout: { start: [0, 0], end: [300, 0] },
+});
+
 /** Variables and a condition that the playtest has to evaluate to pick a branch. */
 export const logicProject = project("Logic", {
   scenes: [

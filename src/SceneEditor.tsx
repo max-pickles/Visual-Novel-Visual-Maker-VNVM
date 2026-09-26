@@ -25,6 +25,7 @@ import { parseGuiRpy } from "./guiParser";
 import type { GuiConfig } from "./guiParser";
 import { useTranslation } from "./translationContext";
 import { SidebarAssetBrowser } from "./SidebarAssetBrowser";
+import { assetFieldFor, assetFieldValue, assetKindFor } from "./eventAssets";
 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -637,26 +638,14 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                           </div>
                         </>
                       ) : (
-                        <SidebarAssetBrowser 
-                          project={project} 
-                          mode={leftMode as any} 
-                          onPick={path => {
-                            if (selEvent && selIdx !== null) {
-                              const key = leftMode === "images" ? (selEvent.type === "bg" ? "bg" : "image") : (leftMode === "audio" ? "music" : "");
-                              if (key) {
-                                const updated = { ...selEvent, [key]: path } as VNEvent;
-                                const newScenes = project.scenes.map(sc => {
-                                  if (scene && sc.id === scene.id) {
-                                    const copy = JSON.parse(JSON.stringify(sc)) as VNScene;
-                                    copy.events[selIdx] = updated;
-                                    return copy;
-                                  }
-                                  return sc;
-                                });
-                                onProjectChange({ ...project, scenes: newScenes });
-                                refresh();
-                              }
-                            }
+                        // A movie event takes a video, so the images tab lists videos while one is selected.
+                        <SidebarAssetBrowser
+                          project={project}
+                          mode={leftMode === "images" && selEvent && assetKindFor(selEvent.type) === "video" ? "video" : leftMode}
+                          onPick={(path, kind) => {
+                            if (!selEvent) return;
+                            const field = assetFieldFor(selEvent.type, kind);
+                            if (field) onEventChange({ ...selEvent, [field]: assetFieldValue(field, path) });
                           }}
                         />
                       )}
