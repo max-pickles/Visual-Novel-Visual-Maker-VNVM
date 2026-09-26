@@ -16,6 +16,7 @@ import { useCanvasStore, useShallow } from "./store/canvasStore";
 import { useTranslation } from './translationContext';
 import { useCanvasData, MAIN_MENU_ID } from "./hooks/useCanvasData";
 import { useAutoLayout } from "./hooks/useAutoLayout";
+import { ConnectionMenu, ChoiceBuilderMenu, EdgeLegend, HideUiButton, RecentScenesHud, type ChoiceBuilderState, type LegendItem } from "./CanvasOverlays";
 
 
 
@@ -230,15 +231,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   
   const [suppressAnim, setSuppressAnim] = useState(true);
   
-  const [choiceBuilder, setChoiceBuilder] = useState<{
-    sourceNodeId: string;
-    screenX: number;
-    screenY: number;
-    canvasX: number;
-    canvasY: number;
-    prompt: string;
-    options: { id: string; text: string; sceneId: string | null }[];
-  } | null>(null);
+  const [choiceBuilder, setChoiceBuilder] = useState<ChoiceBuilderState | null>(null);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -1059,7 +1052,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
   // Legend items — used in the minimap container below
   const presentTypes = new Set(links.map(l => l.vnType));
-  const ALL_LEGEND_ITEMS: { type: string; label: string; stroke: string; dash?: string }[] = [
+  const ALL_LEGEND_ITEMS: LegendItem[] = [
     { type: 'jump',      label: t('canvas.edges.jump'), stroke: '#00d4c8' },
     { type: 'choice',    label: t('canvas.edges.choice'),    stroke: '#f472b6' },
     { type: 'good_path', label: t('canvas.edges.good_path'),        stroke: '#4ade80' },
@@ -1260,136 +1253,62 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
         {/* Floating Connection Menu — rendered in screen coordinate space */}
         {connMenu && (
-          <div 
-            onPointerDown={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', left: connMenu.x + 20, top: connMenu.y,
-              background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
-              padding: 8, width: 160, display: 'flex', flexDirection: 'column', gap: 4, zIndex: 1000,
-              animation: 'popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards'
-            }}>
-            <div style={{ padding: '0 4px 4px 4px', fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 2 }}>
-              {connMenu.targetNodeId ? 'Connect to Scene' : 'Create New Scene'}
-            </div>
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28 }} onClick={() => applyConnection('jump')}>
-              Jump to Scene
-            </button>
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28 }} onClick={() => applyConnection('choice')}>
-              Choice Option
-            </button>
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28 }} onClick={() => applyConnection('call')}>
-              Screen Call
-            </button>
-            <div style={{ height: 1, background: 'var(--bdr)', margin: '4px 0' }} />
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28, color: '#ef4444' }} onClick={() => { 
-              if (dragLineRef.current) dragLineRef.current.style.display = 'none';
-              if (dragGhostRef.current) dragGhostRef.current.style.display = 'none';
-              setConnMenu(null); 
-              setIsConnectionMode(false); 
-            }}>
-              Cancel
-            </button>
-          </div>
+          <ConnectionMenu connMenu={connMenu} applyConnection={applyConnection} onCancel={() => {
+            if (dragLineRef.current) dragLineRef.current.style.display = 'none';
+            if (dragGhostRef.current) dragGhostRef.current.style.display = 'none';
+            setConnMenu(null);
+            setIsConnectionMode(false);
+          }} />
         )}
 
         {/* Choice Builder Menu */}
         {choiceBuilder && (
-          <div 
-            onPointerDown={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', left: choiceBuilder.screenX + 20, top: choiceBuilder.screenY, zIndex: 1000,
-              background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.8)', padding: 12, width: 340,
-              display: 'flex', flexDirection: 'column', gap: 8,
-              animation: 'popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards'
-            }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dim)', marginBottom: 4 }}>Create Choice Block</div>
-            
-            <label style={{ fontSize: 10, color: 'var(--faint)' }}>Question / Prompt</label>
-            <input autoFocus className="input" style={{ width: '100%', fontSize: 12, padding: '6px 8px', background: 'var(--bg0)' }} value={choiceBuilder.prompt} onChange={e => setChoiceBuilder({...choiceBuilder, prompt: e.target.value})} />
-            
-            <div style={{ fontSize: 10, color: 'var(--faint)', marginTop: 8 }}>Answers / Routes</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-              {choiceBuilder.options.map((opt, i) => (
-                <div key={opt.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input className="input" style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '4px 6px', background: 'var(--bg0)' }} value={opt.text} placeholder="Answer text..." onChange={e => {
-                     const newOpts = [...choiceBuilder.options];
-                     newOpts[i].text = e.target.value;
-                     setChoiceBuilder({...choiceBuilder, options: newOpts});
-                  }} />
-                  <span style={{ color: 'var(--faint)', fontSize: 10 }}>→</span>
-                  <select className="input" style={{ width: 120, fontSize: 10, padding: '4px 6px', background: 'var(--bg0)' }} value={opt.sceneId || ''} onChange={e => {
-                     const newOpts = [...choiceBuilder.options];
-                     newOpts[i].sceneId = e.target.value;
-                     setChoiceBuilder({...choiceBuilder, options: newOpts});
-                  }}>
-                     <option value="__NEW__">✨ New Scene</option>
-                     <option value="">(Unlinked)</option>
-                     {displayNodes.filter(s => s.kind === 'vn_scene' && s.id !== choiceBuilder.sourceNodeId).map(s => (
-                       <option key={s.id} value={s.id}>{s.label}</option>
-                     ))}
-                  </select>
-                  <button className="btn btn-ghost" style={{ padding: '2px 6px', color: 'var(--err)', minHeight: 0, height: 24 }} onClick={() => {
-                     const newOpts = choiceBuilder.options.filter((_, idx) => idx !== i);
-                     setChoiceBuilder({...choiceBuilder, options: newOpts});
-                  }}>×</button>
-                </div>
-              ))}
-            </div>
-            
-            <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px', alignSelf: 'flex-start', color: 'var(--acc2)' }} onClick={() => {
-               setChoiceBuilder({...choiceBuilder, options: [...choiceBuilder.options, { id: crypto.randomUUID().slice(0, 8), text: `Option ${choiceBuilder.options.length + 1}`, sceneId: '__NEW__' }]});
-            }}>+ Add Answer</button>
+          <ChoiceBuilderMenu
+            choiceBuilder={choiceBuilder} setChoiceBuilder={setChoiceBuilder} displayNodes={displayNodes}
+            onCreate={() => {
+              const p = project;
+              const newLayout = { ...p.layout };
+              const newScenes = [...p.scenes];
 
-            <div style={{ height: 1, background: 'var(--bdr)', margin: '4px 0' }} />
+              let newSceneCount = 0;
 
-            <div style={{ display: 'flex', gap: 8 }}>
-               <button className="btn" style={{ flex: 1, background: 'var(--acc)', color: '#fff', fontSize: 12, padding: '6px' }} onClick={() => {
-                  const p = project;
-                  const newLayout = { ...p.layout };
-                  const newScenes = [...p.scenes];
-                  
-                  let newSceneCount = 0;
-                  
-                  const finalOpts = choiceBuilder.options.map((opt, i) => {
-                     let finalTarget = opt.sceneId;
-                     if (opt.sceneId === '__NEW__') {
-                        const baseSceneCount = p.scenes.length + newSceneCount;
-                        const sc = newScene(`Scene ${baseSceneCount + 1}`);
-                        newScenes.push(sc);
-                        newLayout[sc.id] = [choiceBuilder.canvasX + (i * 20), choiceBuilder.canvasY - 55 + (newSceneCount * 140)] as [number, number];
-                        finalTarget = sc.id;
-                        newSceneCount++;
-                     }
-                     return { id: opt.id, text: opt.text, scene: finalTarget ?? null };
-                  });
+              const finalOpts = choiceBuilder.options.map((opt, i) => {
+                 let finalTarget = opt.sceneId;
+                 if (opt.sceneId === '__NEW__') {
+                    const baseSceneCount = p.scenes.length + newSceneCount;
+                    const sc = newScene(`Scene ${baseSceneCount + 1}`);
+                    newScenes.push(sc);
+                    newLayout[sc.id] = [choiceBuilder.canvasX + (i * 20), choiceBuilder.canvasY - 55 + (newSceneCount * 140)] as [number, number];
+                    finalTarget = sc.id;
+                    newSceneCount++;
+                 }
+                 return { id: opt.id, text: opt.text, scene: finalTarget ?? null };
+              });
 
-                  const eventToAdd = {
-                    id: crypto.randomUUID().slice(0, 8),
-                    type: 'choice' as const,
-                    prompt: choiceBuilder.prompt,
-                    opts: finalOpts
-                  };
+              const eventToAdd = {
+                id: crypto.randomUUID().slice(0, 8),
+                type: 'choice' as const,
+                prompt: choiceBuilder.prompt,
+                opts: finalOpts
+              };
 
-                  const updatedScenes = newScenes.map(s => {
-                     if (s.id === choiceBuilder.sourceNodeId) {
-                        return { ...s, events: [...s.events, eventToAdd] };
-                     }
-                     return s;
-                  });
+              const updatedScenes = newScenes.map(s => {
+                 if (s.id === choiceBuilder.sourceNodeId) {
+                    return { ...s, events: [...s.events, eventToAdd] };
+                 }
+                 return s;
+              });
 
-                  if (onProjectChange) onProjectChange({ ...p, scenes: updatedScenes, layout: newLayout });
-                  setPositions(newLayout);
-                  setChoiceBuilder(null);
-                  setIsConnectionMode(false);
-               }}>Create Choice</button>
-               <button className="btn btn-ghost" style={{ flex: 1, fontSize: 12, padding: '6px' }} onClick={() => {
-                  setChoiceBuilder(null);
-                  setIsConnectionMode(false);
-               }}>Cancel</button>
-            </div>
-          </div>
+              if (onProjectChange) onProjectChange({ ...p, scenes: updatedScenes, layout: newLayout });
+              setPositions(newLayout);
+              setChoiceBuilder(null);
+              setIsConnectionMode(false);
+            }}
+            onCancel={() => {
+              setChoiceBuilder(null);
+              setIsConnectionMode(false);
+            }}
+          />
         )}
 
         {/* Slide animation keyframes */}
@@ -1417,29 +1336,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           }}
         >
           {/* Legend — sits above the minimap, same animation container */}
-          {hasTypedLinks && (
-            <div style={{
-              background: 'rgba(8,13,26,0.88)', backdropFilter: 'blur(8px)',
-              border: '1px solid var(--bdr)', borderRadius: 8,
-              padding: '10px 14px', pointerEvents: 'none',
-              display: 'flex', flexDirection: 'column', gap: 6,
-            }}>
-              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--dim)', textTransform: 'uppercase', marginBottom: 2 }}>{t('canvas.edge_types')}</span>
-              {legendItems.map(item => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width={42} height={10} style={{ flexShrink: 0, overflow: 'visible' }}>
-                      <path d="M 4 2 A 3 3 0 0 1 4 8" fill="none" stroke={item.stroke} strokeWidth={2} strokeLinecap="round" />
-                      <line x1={7} y1={5} x2={34} y2={5}
-                        stroke={item.stroke} strokeWidth={2}
-                        strokeDasharray={item.dash}
-                        strokeLinecap="round" />
-                      <path d="M 30 2 L 38 5 L 30 8 Z" fill={item.stroke} />
-                    </svg>
-                  <span style={{ fontSize: 10, color: '#8892a4', whiteSpace: 'nowrap' }}>{item.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {hasTypedLinks && <EdgeLegend legendItems={legendItems} />}
 
           <Minimap
             items={displayNodes.map((n) => ({ id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, kind: n.isStart ? 'start' : n.isEnd ? 'end' : n.kind }))}
@@ -1455,92 +1352,12 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         {floatingInspector}
 
         {/* Hide UI Button — outside minimap, moves based on visibility */}
-        {(() => {
-          const btnWidth = 100;
-          const gap = 12;
-          const mmWidth = 220;
-
-          return (
-            <div
-              key="hide-ui-btn-wrapper"
-              style={{
-                position: 'absolute', bottom: 16, zIndex: 40,
-                left: displayedSide === 'right' ? 16 : 'auto',
-                right: displayedSide === 'left' ? 16 : 'auto',
-                pointerEvents: 'none',
-                animation: suppressAnim ? 'none' : (
-                  panelExiting
-                    ? (displayedSide === 'left' ? 'vnv-slide-out-right 0.44s forwards cubic-bezier(0.4,0,0.2,1)' : 'vnv-slide-out-left 0.44s forwards cubic-bezier(0.4,0,0.2,1)')
-                    : (displayedSide === 'left' ? 'vnv-slide-in-right 0.44s forwards cubic-bezier(0.4,0,0.2,1)' : 'vnv-slide-in-left 0.44s forwards cubic-bezier(0.4,0,0.2,1)')
-                ),
-              }}
-            >
-              <button
-                onPointerDown={e => e.stopPropagation()}
-                onClick={() => setUiVisible(!uiVisible)}
-                style={{
-                  width: btnWidth,
-                  transform: uiVisible ? (displayedSide === 'left' ? `translateX(-${mmWidth + gap}px)` : `translateX(${mmWidth + gap}px)`) : 'translateX(0)',
-                  transition: suppressAnim ? 'none' : 'transform 0.44s cubic-bezier(0.4,0,0.2,1)',
-                  background: 'color-mix(in srgb, var(--bg2) 85%, transparent)', border: '1px solid var(--bdr)',
-                  borderRadius: 8, color: 'var(--dim)', fontSize: 13, fontWeight: 700,
-                  padding: '12px 0', cursor: 'pointer', backdropFilter: 'blur(4px)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, pointerEvents: 'auto',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                }}
-              >
-                {uiVisible ? `🙈 ${t('canvas.hide_ui') || 'Hide UI'}` : `👀 ${t('canvas.show_ui') || 'Show UI'}`}
-              </button>
-            </div>
-          );
-        })()}
+        <HideUiButton displayedSide={displayedSide} suppressAnim={suppressAnim} panelExiting={panelExiting} uiVisible={uiVisible} setUiVisible={setUiVisible} />
       </div>
 
       {/* Recent Scenes HUD — top-right */}
         {recentSceneIds.length > 0 && (
-          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 30, pointerEvents: 'auto' }}>
-            <button
-              onPointerDown={e => e.stopPropagation()}
-              onClick={() => setShowRecent(v => !v)}
-              style={{
-                background: 'color-mix(in srgb, var(--bg2) 85%, transparent)', border: '1px solid var(--bdr)',
-                borderRadius: 6, color: 'var(--dim)', fontSize: 11, fontWeight: 600,
-                padding: '4px 10px', cursor: 'pointer', backdropFilter: 'blur(4px)',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              🕐 Recent {showRecent ? '▲' : '▼'}
-            </button>
-            {showRecent && (
-              <div style={{
-                marginTop: 4, background: 'color-mix(in srgb, var(--bg2) 92%, transparent)',
-                border: '1px solid var(--bdr)', borderRadius: 8,
-                overflow: 'hidden', backdropFilter: 'blur(6px)',
-                minWidth: 180,
-              }}>
-                {recentSceneIds.map(id => {
-                  const sc = project.scenes.find(s => s.id === id);
-                  if (!sc) return null;
-                  return (
-                    <button key={id}
-                      onClick={() => { setShowRecent(false); onEditScene?.(id); }}
-                      style={{
-                        display: 'block', width: '100%', textAlign: 'left',
-                        padding: '7px 12px', background: 'transparent',
-                        border: 'none', borderBottom: '1px solid var(--bdr)',
-                        color: 'var(--text)', fontSize: 11, cursor: 'pointer',
-                        transition: 'background .1s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--acc) 12%, transparent)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      🎬 {sc.label || id}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <RecentScenesHud recentSceneIds={recentSceneIds} showRecent={showRecent} setShowRecent={setShowRecent} project={project} onEditScene={onEditScene} />
         )}
 
     </div>

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { VNKeyframe, ATLEasing } from "./types";
-import { DraggableNumber } from "./Inspector";
+import { DraggableNumber } from "./InspectorFields";
 import { useTranslation } from "./translationContext";
 
 interface Props {
