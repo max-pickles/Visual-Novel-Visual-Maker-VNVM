@@ -7,7 +7,7 @@
 
 import { compileProject, getProjectStats } from "../compiler";
 import { newProject, newScene, newCharacter, newEvent } from "../types";
-import type { VNProject, VNScene, VNCharacter } from "../types";
+import type { VNProject } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,11 +24,6 @@ function lines(proj: VNProject, asExport = false): string[] {
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
-}
-
-/** Find the first line that starts with `prefix`. */
-function find(proj: VNProject, prefix: string, asExport = false): string | undefined {
-  return lines(proj, asExport).find((l) => l.startsWith(prefix));
 }
 
 // ─── Banner & header ──────────────────────────────────────────────────────────

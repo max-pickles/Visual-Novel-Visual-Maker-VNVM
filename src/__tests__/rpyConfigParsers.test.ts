@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import fs from 'node:fs';
+import guiTemplate from '../../Templet/game/gui.rpy?raw';
+import optionsTemplate from '../../Templet/game/options.rpy?raw';
 import { parseGuiRpy, patchGuiRpy, rpyColor, rpyStr } from '../guiParser';
 import { parseOptionsRpy, patchOptionsRpy } from '../optionsParser';
 import { splitComment, parsePyString, pyString } from '../rpyValue';
 
-const templet = (file: string) => fs.readFileSync(new URL(`../../Templet/game/${file}`, import.meta.url), 'utf8');
+const templet = (file: 'gui.rpy' | 'options.rpy') => (file === 'gui.rpy' ? guiTemplate : optionsTemplate);
 const linesMatching = (text: string, re: RegExp) => text.split('\n').filter(l => re.test(l));
 
 describe('rpyValue', () => {
