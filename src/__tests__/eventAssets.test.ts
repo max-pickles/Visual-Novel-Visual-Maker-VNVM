@@ -106,6 +106,7 @@ describe("a file picked for an event is compiled", () => {
     ev[field!] = value;
     const proj = newProject("Test", "Tester");
     proj.scenes[0].events = [ev];
-    expect(compileProject(proj)).toContain(`"${value}"`);
+    // Scripts may name the file relative to game/, so look for its path from there.
+    expect(compileProject(proj)).toContain(`${value.replace(/^game\//, "")}"`);
   });
 });
