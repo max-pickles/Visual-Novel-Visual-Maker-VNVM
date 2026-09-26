@@ -21,7 +21,7 @@ Managing a Ren'Py project in a plain text editor means juggling dozens of `.rpy`
 |---|---|
 | **Story Canvas** | Zoomable node graph showing scenes, branches, and endings |
 | **Scene Editor** | 3-column event editor — EventList · ScenePreview · Inspector |
-| **Live Preview** | One-click "Play from Here" in Ren'Py with inherited scene state |
+| **Live Preview** | One-click "Play from Here" in Ren'Py, with the backgrounds, sprites, music and variables the story has by then |
 | **Character Editor** | Sprite pose management, layered images, side-image support |
 | **GUI Editor** | Visual drag-and-drop main menu editor with live preview |
 | **Achievement Manager** | Define and wire unlockable achievements to story events |
@@ -193,6 +193,10 @@ Scenes and characters remember the label and variable they had in the game (`lab
 
 ---
 
+## ▶ Play from Here
+
+**▶ Play from here** in the Graph tab, and the play button in the Scene editor, start Ren'Py at the selected scene. Before the scene starts, the preview rebuilds what a player would have by then. It follows a shortest route from the start of the story and replays the variables set along the way, the backgrounds and sprites still on screen, the camera, and the music. This works like Ren'Py's own warp to a line: it replays only statements that leave something behind (no dialogue, pauses or transitions), and it doesn't run raw Python code other than simple assignments such as `$ points += 1`.
+
 ## 📦 Exporting
 
 **Export → Project folder** copies the project to a folder outside it and writes the compiled story as `game/script.rpy` plus one `game/scene_<id>.rpy` per scene. In the copy it removes `project.vnvmaker`, the live-preview script and any scripts the compiled story replaces (for imported games, the original story scripts). `gui.rpy`, `options.rpy`, `screens.rpy`, translations (an imported game's own and the Translation Dashboard's), other scripts that aren't story, and scripts you added yourself are kept.
@@ -217,7 +221,7 @@ npm run test:smoke
 
 The browser smoke tests in `e2e/` run the production build in Chromium under the app's Content-Security-Policy, with the Tauri backend replaced by a mock (`e2e/tauri-mock.js`) that records every call. They create and open projects, visit every tab, edit the story canvas, read and write `gui.rpy`, check what happens to unsaved changes when you leave the editor, check that dialogue text tags can't inject HTML, and play a branching story in the playtest. Any page error, console error or CSP violation fails a test.
 
-`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, each playable one must play through to the end, and the exported sample game's 12 translations must still cover all of its dialogue. CI runs it against Ren'Py 8.5.2 built from source.
+`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, each playable one must play through to the end, Play from Here on a later scene must start with the backgrounds, sprites, music and variables a playthrough has there, and the exported sample game's 12 translations must still cover all of its dialogue. CI runs it against Ren'Py 8.5.2 built from source.
 
 ---
 

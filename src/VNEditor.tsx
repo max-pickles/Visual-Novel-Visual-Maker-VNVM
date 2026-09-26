@@ -123,7 +123,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
       // Ren'Py launcher still shows the main menu and Start begins at the start scene.
       try {
         const declaredElsewhere = await declaredVarsInGame(current._rootPath);
-        const previewRpy = compilePreview(current, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere });
+        const previewRpy = compilePreview(current, "main_menu", { declaredElsewhere });
         await writeTextFile(`${current._rootPath}/game/vnv_preview.rpy`, previewRpy);
       } catch (compileErr) {
         ToastManager.warning(t('toasts.preview_compile_failed'), String(compileErr));

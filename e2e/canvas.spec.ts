@@ -104,3 +104,19 @@ test("cancelling the connection menu leaves connector mode", async ({ page }) =>
   await expect(page.getByText("Create New Scene", { exact: true })).toHaveCount(0);
   await expect(connectorMode(page)).not.toHaveClass(/active/);
 });
+
+test("Play from here starts Ren'Py with what the story has by then", async ({ page }) => {
+  await sceneCard(page, "good_end").click();
+  await page.getByRole("button", { name: "▶ Play from here" }).click();
+  await expect.poll(() => page.evaluate(() => window.__calls.some(([cmd]) => cmd === "launch_renpy_preview"))).toBe(true);
+
+  const { project, preview } = await page.evaluate(() => {
+    const [, args] = window.__calls.find(([cmd]) => cmd === "launch_renpy_preview")!;
+    return { project: String(args.projectRoot), preview: String(args.previewRpy) };
+  });
+  expect(project).toMatch(/\/Canvas_Test$/);
+  // The start scene's background and the variable it sets carry over to the good ending.
+  const entry = preview.slice(preview.indexOf("label vnv_preview_entry:"));
+  expect(entry).toContain('scene expression Transform("gui/game_menu.png"');
+  expect(entry).toMatch(/\$ met_eileen = True\n {4}jump vns_scene_\w+\n/);
+});

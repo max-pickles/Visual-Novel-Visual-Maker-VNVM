@@ -26,6 +26,7 @@
 
 import type { VNProject, VNEvent, VNScene, VNCharacter } from "./types";
 import { extractVars, findChar, findScene } from "./types";
+import { routeTo, type RouteStep } from "./storyRoute";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -176,6 +177,183 @@ function compileAtl(atl: string, lines: string[], prefix: string): void {
   }
 }
 
+// ─── Statements that change what's on screen or playing ───────────────────────
+// Shared by compileEvent and the live preview, which replays them (see
+// compileStorySoFar) to rebuild the screen when it starts partway through.
+
+/** A background image scaled to fill the screen. */
+function bgFill(bg: string): string {
+  return `Transform("${esc(bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+}
+
+/** The `scene` statement for a background event, with its ATL block. */
+function bgLines(ev: VNEvent, prefix: string): string[] {
+  const fill = bgFill(ev.bg ?? "");
+  if (!ev.atl_code) return [`${prefix}scene expression ${fill}`];
+  const lines = [`${prefix}scene expression ${fill}:`];
+  compileAtl(ev.atl_code, lines, prefix + "    ");
+  return lines;
+}
+
+/** The `show` statement for an image event, with its ATL block. */
+function imageLines(ev: VNEvent, prefix: string): string[] {
+  const img = esc(ev.image ?? "");
+  const side = ev.side ?? "center";
+  if (!ev.atl_code) {
+    const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
+    return [`${prefix}show expression "${img}"${at}`];
+  }
+  const lines = [`${prefix}show expression "${img}" at ${atPosition(side)}:`];
+  compileAtl(ev.atl_code, lines, prefix + "    ");
+  return lines;
+}
+
+/** The `show` statement for an animation event: its image with the keyframes as ATL. */
+function animationLines(ev: VNEvent, prefix: string): string[] {
+  const img = esc(ev.image ?? "");
+  const kfs = ev.animation_keyframes;
+  if (!kfs || !kfs.length) return [`${prefix}show expression "${img}"`];
+
+  const lines = [`${prefix}show expression "${img}":`];
+  for (let i = 0; i < kfs.length; i++) {
+    const kf = kfs[i];
+    const p = kf.props;
+    const props = [];
+    if (p.xalign !== undefined) props.push(`xalign ${p.xalign}`);
+    if (p.yalign !== undefined) props.push(`yalign ${p.yalign}`);
+    if (p.xpos !== undefined) props.push(`xpos ${p.xpos}`);
+    if (p.ypos !== undefined) props.push(`ypos ${p.ypos}`);
+    if (p.xanchor !== undefined) props.push(`xanchor ${p.xanchor}`);
+    if (p.yanchor !== undefined) props.push(`yanchor ${p.yanchor}`);
+    if (p.zoom !== undefined) props.push(`zoom ${p.zoom}`);
+    if (p.xzoom !== undefined) props.push(`xzoom ${p.xzoom}`);
+    if (p.yzoom !== undefined) props.push(`yzoom ${p.yzoom}`);
+    if (p.rotate !== undefined) props.push(`rotate ${p.rotate}`);
+    if (p.alpha !== undefined) props.push(`alpha ${p.alpha}`);
+    if (p.additive !== undefined) props.push(`additive ${p.additive}`);
+    if (p.blur !== undefined) props.push(`blur ${p.blur}`);
+
+    // Crop
+    if (p.cropX !== undefined || p.cropY !== undefined || p.cropW !== undefined || p.cropH !== undefined) {
+      props.push(`crop (${p.cropX ?? 0}, ${p.cropY ?? 0}, ${p.cropW ?? 1920}, ${p.cropH ?? 1080})`);
+    }
+
+    // MatrixColor
+    if (p.hue !== undefined || p.contrast !== undefined || p.saturate !== undefined || p.bright !== undefined || p.invert !== undefined) {
+      const matrices = [];
+      if (p.invert !== undefined && p.invert !== 0) matrices.push(`InvertMatrix(${p.invert})`);
+      if (p.contrast !== undefined && p.contrast !== 1.0) matrices.push(`ContrastMatrix(${p.contrast})`);
+      if (p.saturate !== undefined && p.saturate !== 1.0) matrices.push(`SaturationMatrix(${p.saturate})`);
+      if (p.bright !== undefined && p.bright !== 0) matrices.push(`BrightnessMatrix(${p.bright})`);
+      if (p.hue !== undefined && p.hue !== 0) matrices.push(`HueMatrix(${p.hue})`);
+
+      if (matrices.length > 0) {
+        props.push(`matrixcolor ${matrices.join(" * ")}`);
+      }
+    }
+
+    const propStr = props.join(" ");
+    if (i === 0) {
+      lines.push(`${prefix}    ${propStr || "pass"}`);
+    } else {
+      const dur = kf.duration ?? 1.0;
+      const ease = kf.easing && kf.easing !== "none" ? kf.easing : "linear";
+      lines.push(`${prefix}    ${ease} ${dur} ${propStr || "pass"}`);
+    }
+  }
+  return lines;
+}
+
+/** The `play music` statement for a music event, or `stop music` when it has no track. */
+function musicStatement(ev: VNEvent): string {
+  const m = esc(ev.music ?? "");
+  if (!m) return `stop music fadeout ${ev.fadeout || 0.5}`;
+  const parts = [`play music "${m}"`];
+  if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
+  if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
+  if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
+  if (ev.loop === false) parts.push(`noloop`); // 'loop' is default for music, so we use 'noloop' if false
+  else if (ev.loop === true) parts.push(`loop`);
+  return parts.join(" ");
+}
+
+/** The `play music` statement for a scene's own music, which starts with the scene. */
+function sceneMusicStatement(music: string): string {
+  return `play music "${esc(music)}"`;
+}
+
+/** The `play sound` statement for a sound effect event (which must have a file). */
+function soundStatement(ev: VNEvent): string {
+  const parts = [`play sound "${esc(ev.sfx ?? "")}"`];
+  if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
+  if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
+  if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
+  if (ev.loop === true) parts.push(`loop`); // 'noloop' is default for sound
+  return parts.join(" ");
+}
+
+/**
+ * The `show` statement that puts a dialogue line's speaker on screen, and the
+ * image tag it shows; null when the speaker has no sprite for the line's pose
+ * (or a neutral one to fall back on).
+ */
+function dialogueSprite(ev: VNEvent, proj: VNProject): { tag: string; statement: string } | null {
+  const char = findChar(proj, ev.char_id);
+  if (!char) return null;
+  let pose = ev.pose ?? "neutral";
+  let hasSprite = false;
+
+  if (char.is_layered) {
+    if (char.layered_sprites && Object.keys(char.layered_sprites[pose] || {}).length > 0) {
+      hasSprite = true;
+    } else if (char.layered_sprites && Object.keys(char.layered_sprites["neutral"] || {}).length > 0) {
+      pose = "neutral";
+      hasSprite = true;
+    }
+  } else {
+    if (char.sprites?.[pose]) {
+      hasSprite = true;
+    } else if (char.sprites?.["neutral"]) {
+      pose = "neutral";
+      hasSprite = true;
+    }
+  }
+
+  const tag = charImageTag(char);
+  const poseAttr = imageNameComponent(pose);
+  return hasSprite && poseAttr ? { tag, statement: `show ${tag} ${poseAttr} at ${atPosition(ev.side)}` } : null;
+}
+
+/** The `$ name = value` statement for a set-variable event. */
+function setvarStatement(ev: VNEvent): string {
+  return `$ ${ev.var_name?.trim() || "var"} = ${ev.var_val ?? "False"}`;
+}
+
+/** The `camera` statement for a camera event: easing into place, or straight there. */
+function cameraLines(ev: VNEvent, prefix: string, ease: boolean): string[] {
+  const x = ev.camera_x ?? 0;
+  const y = ev.camera_y ?? 0;
+  const z = ev.camera_z ?? 0;
+  const zoom = ev.camera_zoom ?? 1.0;
+  const pitch = ev.camera_pitch ?? 0;
+  const yaw = ev.camera_yaw ?? 0;
+  const roll = ev.camera_roll ?? 0;
+  const dur = ev.camera_dur ?? 1.0;
+
+  // Pitch/yaw/roll rotate the camera around the x/y/z axes (Ren'Py 8 3D stage).
+  const rotation = [
+    pitch ? ` xrotate ${pitch}` : "",
+    yaw ? ` yrotate ${yaw}` : "",
+    roll ? ` zrotate ${roll}` : "",
+  ].join("");
+
+  return [
+    `${prefix}camera:`,
+    `${prefix}    perspective True`,
+    `${prefix}    ${ease ? `ease ${dur} ` : ""}xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}${rotation}`,
+  ];
+}
+
 // ─── Per-event code generator ─────────────────────────────────────────────────
 // Mirrors _vn_compile_events() in vn_compile.rpy
 
@@ -205,15 +383,8 @@ function compileEvent(
 
   // ── Background ──────────────────────────────────────────────────────────────
   if (t === "bg") {
-    const bg = esc(ev.bg ?? "");
-    if (!bg) return;
-    const fill = `Transform("${bg}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
-    if (ev.atl_code) {
-      lines.push(`${prefix}scene expression ${fill}:`);
-      compileAtl(ev.atl_code, lines, prefix + "    ");
-    } else {
-      lines.push(`${prefix}scene expression ${fill}`);
-    }
+    if (!ev.bg) return;
+    lines.push(...bgLines(ev, prefix));
     if (ev.transition) {
       lines.push(`${prefix}with ${safeTrans(ev.transition)}`);
     }
@@ -221,16 +392,8 @@ function compileEvent(
 
   // ── Sprite / image ──────────────────────────────────────────────────────────
   else if (t === "image") {
-    const img = esc(ev.image ?? "");
-    if (!img) return;
-    const side = ev.side ?? "center";
-    const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
-    if (ev.atl_code) {
-      lines.push(`${prefix}show expression "${img}" at ${atPosition(side)}:`);
-      compileAtl(ev.atl_code, lines, prefix + "    ");
-    } else {
-      lines.push(`${prefix}show expression "${img}"${at}`);
-    }
+    if (!ev.image) return;
+    lines.push(...imageLines(ev, prefix));
     if (ev.transition) {
       lines.push(`${prefix}with ${safeTrans(ev.transition)}`);
     }
@@ -238,94 +401,19 @@ function compileEvent(
 
   // ── Animation (ActionEditor style) ──────────────────────────────────────────
   else if (t === "animation") {
-    const img = esc(ev.image ?? "");
-    if (!img) return;
-    
-    const kfs = ev.animation_keyframes;
-    if (!kfs || !kfs.length) {
-      lines.push(`${prefix}show expression "${img}"`);
-      return;
-    }
-    
-    lines.push(`${prefix}show expression "${img}":`);
-    
-    for (let i = 0; i < kfs.length; i++) {
-      const kf = kfs[i];
-      const p = kf.props;
-      const props = [];
-      if (p.xalign !== undefined) props.push(`xalign ${p.xalign}`);
-      if (p.yalign !== undefined) props.push(`yalign ${p.yalign}`);
-      if (p.xpos !== undefined) props.push(`xpos ${p.xpos}`);
-      if (p.ypos !== undefined) props.push(`ypos ${p.ypos}`);
-      if (p.xanchor !== undefined) props.push(`xanchor ${p.xanchor}`);
-      if (p.yanchor !== undefined) props.push(`yanchor ${p.yanchor}`);
-      if (p.zoom !== undefined) props.push(`zoom ${p.zoom}`);
-      if (p.xzoom !== undefined) props.push(`xzoom ${p.xzoom}`);
-      if (p.yzoom !== undefined) props.push(`yzoom ${p.yzoom}`);
-      if (p.rotate !== undefined) props.push(`rotate ${p.rotate}`);
-      if (p.alpha !== undefined) props.push(`alpha ${p.alpha}`);
-      if (p.additive !== undefined) props.push(`additive ${p.additive}`);
-      if (p.blur !== undefined) props.push(`blur ${p.blur}`);
-
-      // Crop
-      if (p.cropX !== undefined || p.cropY !== undefined || p.cropW !== undefined || p.cropH !== undefined) {
-        props.push(`crop (${p.cropX ?? 0}, ${p.cropY ?? 0}, ${p.cropW ?? 1920}, ${p.cropH ?? 1080})`);
-      }
-
-      // MatrixColor
-      if (p.hue !== undefined || p.contrast !== undefined || p.saturate !== undefined || p.bright !== undefined || p.invert !== undefined) {
-        const matrices = [];
-        if (p.invert !== undefined && p.invert !== 0) matrices.push(`InvertMatrix(${p.invert})`);
-        if (p.contrast !== undefined && p.contrast !== 1.0) matrices.push(`ContrastMatrix(${p.contrast})`);
-        if (p.saturate !== undefined && p.saturate !== 1.0) matrices.push(`SaturationMatrix(${p.saturate})`);
-        if (p.bright !== undefined && p.bright !== 0) matrices.push(`BrightnessMatrix(${p.bright})`);
-        if (p.hue !== undefined && p.hue !== 0) matrices.push(`HueMatrix(${p.hue})`);
-        
-        if (matrices.length > 0) {
-          props.push(`matrixcolor ${matrices.join(" * ")}`);
-        }
-      }
-      
-      const propStr = props.join(" ");
-      if (i === 0) {
-        lines.push(`${prefix}    ${propStr || "pass"}`);
-      } else {
-        const dur = kf.duration ?? 1.0;
-        const ease = kf.easing && kf.easing !== "none" ? kf.easing : "linear";
-        lines.push(`${prefix}    ${ease} ${dur} ${propStr || "pass"}`);
-      }
-    }
+    if (!ev.image) return;
+    lines.push(...animationLines(ev, prefix));
+    if (!ev.animation_keyframes?.length) return; // (no auto-advance pause for a plain show)
   }
 
   // ── Music ───────────────────────────────────────────────────────────────────
   else if (t === "music") {
-    const m = esc(ev.music ?? "");
-    if (m) {
-      const parts = [`play music "${m}"`];
-      if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
-      if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
-      if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
-      if (ev.loop === false) parts.push(`noloop`); // 'loop' is default for music, so we use 'noloop' if false
-      else if (ev.loop === true) parts.push(`loop`);
-      lines.push(`${prefix}${parts.join(" ")}`);
-    } else {
-      // Stopping music
-      const fo = ev.fadeout ? ` fadeout ${ev.fadeout}` : ` fadeout 0.5`;
-      lines.push(`${prefix}stop music${fo}`);
-    }
+    lines.push(`${prefix}${musicStatement(ev)}`);
   }
 
   // ── SFX ─────────────────────────────────────────────────────────────────────
   else if (t === "sfx") {
-    const s = esc(ev.sfx ?? "");
-    if (s) {
-      const parts = [`play sound "${s}"`];
-      if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
-      if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
-      if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
-      if (ev.loop === true) parts.push(`loop`); // 'noloop' is default for sound
-      lines.push(`${prefix}${parts.join(" ")}`);
-    }
+    if (ev.sfx) lines.push(`${prefix}${soundStatement(ev)}`);
   }
 
   // ── Dialogue ────────────────────────────────────────────────────────────────
@@ -334,31 +422,8 @@ function compileEvent(
     const cRef = char ? names.character(char.id) : "narrator";
 
     // Show character sprite if available
-    if (ev.char_id && char) {
-      let pose = ev.pose ?? "neutral";
-      let hasSprite = false;
-
-      if (char.is_layered) {
-        if (char.layered_sprites && Object.keys(char.layered_sprites[pose] || {}).length > 0) {
-          hasSprite = true;
-        } else if (char.layered_sprites && Object.keys(char.layered_sprites["neutral"] || {}).length > 0) {
-          pose = "neutral";
-          hasSprite = true;
-        }
-      } else {
-        if (char.sprites?.[pose]) {
-          hasSprite = true;
-        } else if (char.sprites?.["neutral"]) {
-          pose = "neutral";
-          hasSprite = true;
-        }
-      }
-
-      const poseAttr = imageNameComponent(pose);
-      if (hasSprite && poseAttr) {
-        lines.push(`${prefix}show ${charImageTag(char)} ${poseAttr} at ${atPosition(ev.side)}`);
-      }
-    }
+    const sprite = dialogueSprite(ev, proj);
+    if (sprite) lines.push(`${prefix}${sprite.statement}`);
 
     if (ev.voice) {
       lines.push(`${prefix}voice "${esc(ev.voice)}"`);
@@ -435,9 +500,7 @@ function compileEvent(
 
   // ── Set Variable ────────────────────────────────────────────────────────────
   else if (t === "setvar") {
-    const name = ev.var_name?.trim() || "var";
-    const val = ev.var_val ?? "False";
-    lines.push(`${prefix}$ ${name} = ${val}`);
+    lines.push(`${prefix}${setvarStatement(ev)}`);
   }
 
   // ── If / Conditional Jump ───────────────────────────────────────────────────
@@ -463,25 +526,7 @@ function compileEvent(
 
   // ── Camera (3D Stage) ───────────────────────────────────────────────────────
   else if (t === "camera") {
-    const x = ev.camera_x ?? 0;
-    const y = ev.camera_y ?? 0;
-    const z = ev.camera_z ?? 0;
-    const zoom = ev.camera_zoom ?? 1.0;
-    const pitch = ev.camera_pitch ?? 0;
-    const yaw = ev.camera_yaw ?? 0;
-    const roll = ev.camera_roll ?? 0;
-    const dur = ev.camera_dur ?? 1.0;
-
-    // Pitch/yaw/roll rotate the camera around the x/y/z axes (Ren'Py 8 3D stage).
-    const rotation = [
-      pitch ? ` xrotate ${pitch}` : "",
-      yaw ? ` yrotate ${yaw}` : "",
-      roll ? ` zrotate ${roll}` : "",
-    ].join("");
-
-    lines.push(`${prefix}camera:`);
-    lines.push(`${prefix}    perspective True`);
-    lines.push(`${prefix}    ease ${dur} xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}${rotation}`);
+    lines.push(...cameraLines(ev, prefix, true));
   }
 
   // ── Achievement grant ─────────────────────────────────────────────────────
@@ -611,12 +656,11 @@ function compileScene(sc: VNScene, proj: VNProject, lines: string[], names: Name
 
   // Scene-level background
   if (sc.bg) {
-    const fill = `Transform("${esc(sc.bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
-    lines.push(`    scene expression ${fill}`);
+    lines.push(`    scene expression ${bgFill(sc.bg)}`);
   }
   // Scene-level music
   if (sc.music) {
-    lines.push(`    play music "${esc(sc.music)}"`);
+    lines.push(`    ${sceneMusicStatement(sc.music)}`);
   }
 
   if (!sc.events.length) {
@@ -835,36 +879,155 @@ export function compileProjectToFiles(proj: VNProject, opts: ExportOptions = {})
 
 // ─── Preview compiler ──────────────────────────────────────────────────────────
 
+/** Top-level statements of raw code that only show or hide things. */
+const DISPLAY_STATEMENT = /^(scene|show|hide|camera)\b/;
+
+/** A trailing `with` clause naming a transition, such as `with dissolve` or `with Dissolve(0.5)`. */
+const WITH_CLAUSE = /\s+with\s+[A-Za-z_][\w.]*(\([^"'()]*\))?\s*$/;
+
+/**
+ * A Python line that only sets a variable to a value it computes without
+ * calling anything, such as `$ points += 1` or `$ route = "eileen"`.
+ */
+const SIMPLE_ASSIGNMENT = /^\$\s*[A-Za-z_][\w.]*(\[[^\]()]*\])?\s*(\+|-|\*|\/\/|\/|%)?=(?!=)[^()]*$/;
+
+/**
+ * Raw code as the live preview replays it: code whose top-level statements all
+ * show or hide something (`scene`, `show`, `hide`, `camera`, with their ATL
+ * blocks, without transitions), or all set variables (see SIMPLE_ASSIGNMENT).
+ * Other code could do more than that (ask for input, pause, grant an
+ * achievement), so it isn't replayed.
+ */
+function replayableRaw(code: string): { display: boolean; lines: string[] } | null {
+  const lines = code.split("\n").filter(l => l.trim() && !l.trim().startsWith("#"));
+  if (!lines.length) return null;
+  const indent = Math.min(...lines.map(l => l.length - l.trimStart().length));
+  const top = lines.map(l => l.slice(indent));
+  if (top.every(l => SIMPLE_ASSIGNMENT.test(l))) return { display: false, lines: top };
+  const kept: string[] = [];
+  for (const line of top) {
+    if (/^\s/.test(line)) kept.push(line);           // inside the statement's ATL block
+    else if (/^with\b/.test(line)) continue;          // a transition
+    else if (DISPLAY_STATEMENT.test(line)) kept.push(line.endsWith(":") ? line : line.replace(WITH_CLAUSE, ""));
+    else return null;
+  }
+  return kept.length ? { display: true, lines: kept } : null;
+}
+
+/**
+ * The statements that bring a player's game to where it is when the story
+ * reaches the last scene on `route`: the variables the scenes before it set,
+ * what they leave on screen, the camera and the music. Like Ren'Py's warp, it
+ * replays only statements that leave something behind, without dialogue,
+ * pauses or transitions, and follows each scene only as far as the event that
+ * leads on. Raw code counts only when it just shows things or sets variables
+ * (see replayableRaw). Statements are unindented; ATL blocks are indented by 4.
+ */
+function compileStorySoFar(route: RouteStep[], proj: VNProject): string[] {
+  // Variable changes and what's put on screen, as statements in story order,
+  // for Ren'Py to apply as it would in a playthrough. A character's sprite
+  // shows carry the image tag they show, so a later line by that character
+  // replaces its earlier show (they always give a position, so nothing else of
+  // it carries over). Other display statements may show or hide that tag too,
+  // so no show moves past one; variable changes don't touch the screen.
+  const story: { tag?: string; lines: string[] }[] = [];
+  let settled = 0;
+  const add = (lines: string[]) => {
+    story.push({ lines });
+    settled = story.length;
+  };
+  const setVars = (lines: string[]) => story.push({ lines });
+  const showSprite = (tag: string, lines: string[]) => {
+    const i = story.findIndex((e, idx) => idx >= settled && e.tag === tag);
+    if (i >= 0) story[i] = { tag, lines };
+    else story.push({ tag, lines });
+  };
+  let camera: string[] = [];
+  let music: string | null = null;
+  let sound: string | null = null;
+
+  for (const { scene: sc, exit } of route.slice(0, -1)) {
+    if (sc.bg) add([`scene expression ${bgFill(sc.bg)}`]);
+    if (sc.music) music = sceneMusicStatement(sc.music);
+    for (const ev of sc.events.slice(0, exit)) {
+      switch (ev.type) {
+        case "bg":
+          if (ev.bg) add(bgLines(ev, ""));
+          break;
+        case "image":
+          if (ev.image) add(imageLines(ev, ""));
+          break;
+        case "animation":
+          if (ev.image) add(animationLines(ev, ""));
+          break;
+        case "dialogue": {
+          const sprite = dialogueSprite(ev, proj);
+          if (sprite) showSprite(sprite.tag, [sprite.statement]);
+          break;
+        }
+        case "raw": {
+          const code = replayableRaw(ev.raw_code ?? "");
+          if (code?.display) add(code.lines);
+          else if (code) setVars(code.lines);
+          break;
+        }
+        case "camera":
+          camera = cameraLines(ev, "", false);
+          break;
+        case "music":
+          music = ev.music ? musicStatement(ev) : null;
+          break;
+        case "sfx":
+          // A looping sound keeps playing; any other sound replaces it and ends.
+          sound = ev.sfx && ev.loop === true ? soundStatement(ev) : null;
+          break;
+        case "setvar":
+          setVars([setvarStatement(ev)]);
+          break;
+      }
+    }
+  }
+  return [...story.flatMap(e => e.lines), ...camera, ...[music, sound].filter((l): l is string => !!l)];
+}
+
+/** Options for the live preview script. */
+export interface PreviewOptions extends DefaultsOptions {
+  /** Start the game windowed or full screen, whatever the player's setting. */
+  playMode?: 'windowed' | 'fullscreen';
+}
+
 /**
  * Compile a **live preview** script for a specific scene.
  *
  * The output is written to `game/vnv_preview.rpy` inside the project folder.
  * It contains all scene labels so cross-scene `call`/`jump` events resolve,
  * but sets `label start:` to jump directly to `targetSceneId` so Ren'Py
- * enters on exactly the scene you're editing.
+ * enters on exactly the scene you're editing. Before the jump it rebuilds what
+ * a player would have by then (see {@link compileStorySoFar}), following a
+ * shortest route from the start of the story: the backgrounds, sprites and
+ * camera on screen, the music, and the variables set so far.
  *
  * Unlike {@link compileProject} there is **no resolution `init python:` block**
  * because the project's existing `gui.rpy` / `options.rpy` already configure
  * screen dimensions — adding a second block would cause a redefinition error.
  *
  * @param proj          - The project to compile.
- * @param targetSceneId - Scene id to jump to on `label start:`.
+ * @param targetSceneId - Scene id to jump to on `label start:`, or "main_menu"
+ *                        to start at the game's main menu.
  * @param opts          - `declaredElsewhere`: variables the game's other scripts
- *                        already declare (the preview always sits next to them).
+ *                        already declare (the preview always sits next to them);
+ *                        `playMode`: windowed or full screen.
  * @returns Multi-line Ren'Py `.rpy` string.
  */
 export function compilePreview(
   proj: VNProject,
   targetSceneId?: string,
-  inheritedMusic?: string,
-  playMode?: 'windowed' | 'fullscreen',
-  inheritedBg?: string,
-  inheritedSprite?: string,
-  opts: DefaultsOptions = {},
+  opts: PreviewOptions = {},
 ): string {
   if (!targetSceneId) {
     targetSceneId = proj.scenes[0]?.id ?? "start";
   }
+  const { playMode } = opts;
   const targetScene = proj.scenes.find(s => s.id === targetSceneId);
   const lines: string[] = [
     `## ═══════════════════════════════════════════════`,
@@ -922,15 +1085,10 @@ export function compilePreview(
     lines.push(`define config.label_overrides = {"start": "vnv_preview_entry"}`);
     lines.push(``);
     lines.push(`label vnv_preview_entry:`);
-    if (inheritedBg) {
-      const fill = `Transform("${esc(inheritedBg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
-      lines.push(`    scene expression ${fill}`);
-    }
-    if (inheritedSprite) {
-      lines.push(`    show expression "${esc(inheritedSprite)}" at center`);
-    }
-    if (inheritedMusic) {
-      lines.push(`    play music "${esc(inheritedMusic)}" fadein 0.5`);
+    const story = compileStorySoFar(routeTo(proj, targetSceneId), proj);
+    if (story.length) {
+      lines.push(`    ## The story so far: variables, what's on screen, the camera and the music.`);
+      for (const line of story) lines.push(`    ${line}`);
     }
     lines.push(`    jump ${names.label(targetSceneId)}`);
     lines.push(``);
@@ -962,8 +1120,7 @@ export function compileSingleAnimationPreview(
     `label vnv_preview_entry:`,
   ];
   if (inheritedBg) {
-    const fill = `Transform("${esc(inheritedBg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
-    lines.push(`    scene expression ${fill}`);
+    lines.push(`    scene expression ${bgFill(inheritedBg)}`);
   } else {
     lines.push(`    scene black`);
   }

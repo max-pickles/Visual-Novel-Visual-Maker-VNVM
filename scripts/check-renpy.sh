@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compile fixture projects with VNVMaker's compiler (scripts/renpyFixtures.ts)
 # and check them with a real Ren'Py: every game must pass `lint`, every
-# playable one must play through to the end, and an imported game's kept
+# playable one must play through to the end, a preview started on a later
+# scene must have what a playthrough has there, and an imported game's kept
 # translations must still cover all of its dialogue.
 #
 # Usage: scripts/check-renpy.sh <path to a built Ren'Py checkout>
@@ -44,15 +45,18 @@ for dir in "$OUT"/games/*/; do
     checks="$checks, translations"
   fi
   if [ -f "$dir/vnv_testcases.rpy" ]; then
+    # A preview started on a later scene checks its state there; the others play to the end.
+    testing="playthrough"
+    if [[ "$name" == *-from ]]; then testing="state checks"; fi
     # Lint reports testcase statements as unreachable, so add them only now.
     mv "$dir/vnv_testcases.rpy" "$dir/game/"
     if ! (cd "$RENPY" && timeout 300 ./run.sh "$dir" test vnv_play > "$OUT/$name.play.log" 2>&1); then
-      echo "::error::Playthrough failed for $name"
+      echo "::error::$name failed its $testing"
       cat "$OUT/$name.play.log" "$dir/traceback.txt" 2>/dev/null || true
       failed=1
       continue
     fi
-    echo "ok: $name ($checks, playthrough)"
+    echo "ok: $name ($checks, $testing)"
   else
     echo "ok: $name ($checks)"
   fi
