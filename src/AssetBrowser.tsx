@@ -194,8 +194,10 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
     if (assetType === "audio" && playing !== path) playAudio(path);
   };
 
-  const confirmPick = () => {
-    if (selected && onPick) onPick(selected);
+  // Takes the file rather than reading `selected`: a row's Use button selects and
+  // picks in one click, and `selected` only changes on the next render.
+  const confirmPick = (path: string) => {
+    if (onPick) onPick(path);
   };
 
   // ── Copy path to clipboard ─────────────────────────────────────────────────
@@ -338,7 +340,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                   📋 Copy Path
                 </button>
                 {onPick && (
-                  <button className="btn btn-teal" style={{ fontSize: 11, padding: "3px 10px" }} onClick={confirmPick}>
+                  <button className="btn btn-teal" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => confirmPick(selected)}>
                     ✅ Use This
                   </button>
                 )}
@@ -431,7 +433,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                           <span style={{ fontSize: 10, color: "var(--faint)", flexShrink: 0 }}>.{extOf(f)}</span>
                           {onPick && isSel && (
                             <button className="btn btn-teal" style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
-                              onClick={(e) => { e.stopPropagation(); confirmPick(); }}>
+                              onClick={(e) => { e.stopPropagation(); confirmPick(f); }}>
                               Use
                             </button>
                           )}
@@ -482,7 +484,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                         </div>
                         {onPick && (
                           <button className="btn btn-teal" style={{ margin: "0 8px", fontSize: 11, padding: "3px 8px", flexShrink: 0 }}
-                            onClick={(e) => { e.stopPropagation(); select(f); confirmPick(); }}>
+                            onClick={(e) => { e.stopPropagation(); select(f); confirmPick(f); }}>
                             ✅ Use
                           </button>
                         )}
@@ -673,7 +675,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                       >
                         📂 Go to Folder
                       </button>
-                      {onPick && <button className="btn btn-teal" style={{ flex: 1, fontSize: 11 }} onClick={confirmPick}>✅ Use This</button>}
+                      {onPick && <button className="btn btn-teal" style={{ flex: 1, fontSize: 11 }} onClick={() => confirmPick(selected)}>✅ Use This</button>}
                     </div>
                   </div>
 
