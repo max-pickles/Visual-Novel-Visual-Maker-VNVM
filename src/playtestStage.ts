@@ -1,12 +1,13 @@
 /**
  * playtestStage.ts — What the Playtest shows and remembers (background,
- * sprites, variables and music) and how each event changes it.
+ * sprites, variables and music) and how entering a scene and each of its
+ * events change it.
  *
  * The Playtest applies events one at a time as you play. Starting mid-story
  * folds the replayed route (routeReplay.ts) through the same function, so the
  * start looks the way it would if you had played there.
  */
-import type { VNEvent, VNProject } from "./types";
+import type { VNEvent, VNProject, VNScene } from "./types";
 import { characterSprite, findChar } from "./types";
 import { evalPy } from "./pyExpr";
 import type { ReplayStep } from "./routeReplay";
@@ -16,7 +17,7 @@ export interface Stage {
   /** Sprites on screen by tag, in the order they first appeared (later ones on top). */
   sprites: Map<string, VNEvent>;
   variables: Record<string, any>;
-  /** The track a music event started, or null when none is playing. */
+  /** The music track playing, or null when none is. */
   music: string | null;
 }
 
@@ -121,10 +122,18 @@ export function applyEvent(stage: Stage, ev: VNEvent, project: VNProject): Stage
 }
 
 /**
- * The stage when play starts after `steps` (see replayTo). Only events count:
- * the Playtest doesn't apply a scene's default background or music when it
- * enters the scene, so the replay doesn't either.
+ * The stage when play enters `scene`: its own background and music, which the
+ * compiled game shows at the top of the scene's label, before its events.
  */
+export function enterScene(stage: Stage, scene: VNScene, project: VNProject): Stage {
+  const withBg = scene.bg ? applyEvent(stage, { id: `bg:${scene.id}`, type: "bg", bg: scene.bg }, project) : stage;
+  return scene.music ? { ...withBg, music: scene.music } : withBg;
+}
+
+/** The stage when play starts after `steps` (see replayTo). */
 export function replayStage(steps: ReplayStep[], project: VNProject): Stage {
-  return steps.reduce((stage, step) => (step.kind === "event" ? applyEvent(stage, step.event, project) : stage), emptyStage());
+  return steps.reduce(
+    (stage, step) => (step.kind === "enter" ? enterScene(stage, step.scene, project) : applyEvent(stage, step.event, project)),
+    emptyStage(),
+  );
 }

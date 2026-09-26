@@ -3,7 +3,7 @@
  * the Playtest shows, and the stage a replayed route starts with.
  */
 
-import { applyEvent, emptyStage, replayStage } from "../playtestStage";
+import { applyEvent, emptyStage, enterScene, replayStage } from "../playtestStage";
 import type { Stage } from "../playtestStage";
 import { replayTo } from "../routeReplay";
 import { newCharacter, newEvent, newProject, newScene } from "../types";
@@ -82,6 +82,22 @@ describe("applyEvent", () => {
   });
 });
 
+// ─── enterScene ───────────────────────────────────────────────────────────────
+
+describe("enterScene", () => {
+  it("shows the scene's own background and starts its music, like the top of its label", () => {
+    const proj = makeProj();
+    const scene = { ...newScene("Room"), bg: "room.png", music: "room.ogg" };
+    const withCat = run(proj, [ev("image", { image: "cat.png" })]);
+    const entered = enterScene(withCat, scene, proj);
+    expect(entered.bg).toBe("room.png");
+    expect(entered.music).toBe("room.ogg");
+    expect(shown(entered)).toEqual([]);
+    // A scene without its own background or music leaves the stage as it is.
+    expect(enterScene(withCat, newScene("Plain"), proj)).toBe(withCat);
+  });
+});
+
 // ─── replayStage ──────────────────────────────────────────────────────────────
 
 describe("replayStage", () => {
@@ -91,7 +107,7 @@ describe("replayStage", () => {
     const later = { ...newScene("Later"), id: "later" };
     later.events = [ev("narration", { text: "Here" })];
     proj.scenes.push(later);
-    start.bg = "ignored by the playtest.png";
+    start.bg = "default.png";
     start.events = [
       ev("bg", { bg: "park.png" }),
       ev("dialogue", { char_id: "eileen", pose: "happy", text: "Hi!" }),
@@ -104,5 +120,18 @@ describe("replayStage", () => {
     expect(shown(stage)).toEqual(["char:eileen=eileen happy.png"]);
     expect(stage.music).toBe("theme.ogg");
     expect(stage.variables).toEqual({ met: true });
+  });
+
+  it("keeps the background a scene on the route sets for itself", () => {
+    const proj = makeProj();
+    const start = proj.scenes[0];
+    const later = { ...newScene("Later"), id: "later" };
+    proj.scenes.push(later);
+    start.bg = "gui/game_menu.png";
+    start.music = "theme.ogg";
+    start.events = [ev("narration", { text: "Hi" }), ev("jump", { scene_id: "later" })];
+    const stage = replayStage(replayTo(proj, "later").steps, proj);
+    expect(stage.bg).toBe("gui/game_menu.png");
+    expect(stage.music).toBe("theme.ogg");
   });
 });

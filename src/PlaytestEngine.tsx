@@ -11,7 +11,7 @@ import { useTranslation } from "./translationContext";
 import { useMusicPlayer } from "./musicPlayerContext";
 import { MusicPlayerBar } from "./MusicPlayerBar";
 import { replayTo } from "./routeReplay";
-import { applyEvent, musicSource, replayStage, type Stage } from "./playtestStage";
+import { applyEvent, enterScene, musicSource, replayStage, type Stage } from "./playtestStage";
 
 const EXTS = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
 
@@ -68,14 +68,16 @@ function evaluateCondition(cond: string, vars: Record<string, any>): boolean {
 /**
  * Where play starts, and what with: the stage the route to that scene (and
  * the scene's lines before the start line) leaves behind, see routeReplay.ts.
+ * At a scene's first line that includes entering the scene.
  */
 function startOf(project: VNProject, sceneId: string, eventId: string | null | undefined) {
   const scene = project.scenes.find(s => s.id === sceneId);
   const eventIdx = Math.max(0, scene?.events.findIndex(ev => ev.id === eventId) ?? 0);
   const replay = replayTo(project, sceneId, eventIdx);
+  const stage = replayStage(replay.steps, project);
   return {
     eventIdx,
-    stage: replayStage(replay.steps, project),
+    stage: scene && eventIdx === 0 ? enterScene(stage, scene, project) : stage,
     history: [...replay.route, ...(scene ? [scene] : [])].slice(-20).map(sc => ({ sceneId: sc.id, label: sc.label })),
   };
 }
@@ -233,6 +235,17 @@ export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, 
     }
   }
 
+  /** Go to the first line of a scene, after its own background and music, like the top of its label. */
+  const goToScene = (id: string) => {
+    const scene = project.scenes.find(s => s.id === id);
+    if (scene) {
+      setStage(s => enterScene(s, scene, project));
+      if (scene.music) player.play(musicSource(scene.music), rootPath, []);
+    }
+    setSceneId(id);
+    setEventIdx(0);
+  };
+
   // Effect to process the current event on load/advance
   useEffect(() => {
     if (!currentEvent) return;
@@ -293,8 +306,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, 
       if (ev.type === "if") {
         const target = evaluateCondition(ev.condition || "", stage.variables) ? ev.scene_true : ev.scene_false;
         if (target && project.scenes.some(sc => sc.id === target)) {
-          setSceneId(target);
-          setEventIdx(0);
+          goToScene(target);
         } else {
           setEventIdx(i => i + 1);
         }
@@ -327,8 +339,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, 
           } else {
             picked = ids[Math.floor(Math.random() * ids.length)];
           }
-          setSceneId(picked);
-          setEventIdx(0);
+          goToScene(picked);
         } else {
           setEventIdx(i => i + 1);
         }
@@ -336,8 +347,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, 
 
       if (ev.type === "jump") {
         if (ev.scene_id) {
-          setSceneId(ev.scene_id);
-          setEventIdx(0);
+          goToScene(ev.scene_id);
         } else {
           setEventIdx(i => i + 1);
         }
@@ -727,10 +737,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, 
                   }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (o.scene) {
-                        setSceneId(o.scene);
-                        setEventIdx(0);
-                      }
+                      if (o.scene) goToScene(o.scene);
                     }}
                     onMouseEnter={(e) => { if (o.scene) e.currentTarget.style.transform = "scale(1.02)"; }}
                     onMouseLeave={(e) => { if (o.scene) e.currentTarget.style.transform = "scale(1)"; }}
@@ -774,7 +781,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, 
                         <div style={{ fontSize: 11, color: "var(--dim)", fontWeight: 700, marginBottom: 4 }}>{t('playtest.continue_to')}</div>
                         {unique.map(sc => (
                           <button key={sc.id}
-                            onClick={() => { setSceneId(sc.id); setEventIdx(0); }}
+                            onClick={() => goToScene(sc.id)}
                             style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13, transition: "border-color 0.15s, background 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.background = "color-mix(in srgb, var(--teal) 10%, transparent)"; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}

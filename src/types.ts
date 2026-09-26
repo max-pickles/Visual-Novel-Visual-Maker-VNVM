@@ -197,8 +197,9 @@ export interface VNScene {
   label: string;
   /**
    * Background shown when the scene starts, before its events: the compiler
-   * puts it at the top of the label. Imported scenes leave it unset: the
-   * game's `scene` statements become `bg` events, at the same point.
+   * puts it at the top of the label, and the Playtest shows it on entering the
+   * scene. Imported scenes leave it unset: the game's `scene` statements
+   * become `bg` events, at the same point.
    */
   bg: string | null;
   /** Music started when the scene starts, before its events. Unset on imported scenes, like `bg`. */
