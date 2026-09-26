@@ -6,6 +6,8 @@
 
 import { importFromRpyFiles } from "../rpyImporter";
 import type { ImportResult } from "../rpyImporter";
+import { compileProject } from "../compiler";
+import type { VNProject } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -291,10 +293,11 @@ describe("rpyImporter – scene (background) events", () => {
     expect(ev!.bg).toBe("bg_forest");
   });
 
-  it("sets scene.bg to the parsed background name", () => {
-    const { project } = imp(`label prologue:\n    scene bg_city`);
+  it("leaves scene.bg unset, since the compiler shows it before the scene's first event", () => {
+    const { project } = imp(`label prologue:\n    "Still on the last label's background."\n    scene bg_city\n    scene bg_park`);
     const sc = project.scenes.find((s) => s.label === "prologue")!;
-    expect(sc.bg).toBe("bg_city");
+    expect(sc.events.filter((e) => e.type === "bg").map((e) => e.bg)).toEqual(["bg_city", "bg_park"]);
+    expect(sc.bg).toBeNull();
   });
 });
 
@@ -336,10 +339,69 @@ describe("rpyImporter – music events", () => {
     expect(ev!.music).toBe("");
   });
 
-  it("sets scene.music to the parsed music path", () => {
-    const { project } = imp(`label prologue:\n    play music "theme.ogg"`);
+  it("leaves scene.music unset, since the compiler plays it before the scene's first event", () => {
+    const { project } = imp(`label prologue:\n    "Quiet so far."\n    play music "theme.ogg"`);
     const sc = project.scenes.find((s) => s.label === "prologue")!;
-    expect(sc.music).toBe("theme.ogg");
+    expect(sc.music).toBeNull();
+  });
+});
+
+// ─── Compiled labels ──────────────────────────────────────────────────────────
+
+describe("rpyImporter – compiled labels start where the game left off", () => {
+  /** The statements under `label <name>:` in the compiled export, trimmed. */
+  function labelBody(project: VNProject, name: string): string[] {
+    const lines = compileProject(project, { asExport: true }).split("\n");
+    const start = lines.indexOf(`label ${name}:`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const end = lines.findIndex((l, i) => i > start && /^\S/.test(l));
+    return lines.slice(start + 1, end < 0 ? undefined : end).map((l) => l.trim()).filter(Boolean);
+  }
+
+  it("shows the lines before a label's first scene statement on the previous label's background", () => {
+    const { project } = imp(`
+define s = Character("Sylvie")
+label start:
+    scene bg uni
+    show sylvie green normal
+    s "Class is over."
+    jump rightaway
+label rightaway:
+    s "Hi there! How was class?"
+    scene bg meadow with fade
+    play music "walk.ogg"
+    s "What a view."
+    scene bg club
+    s "Here we are."
+`.trim());
+    const body = labelBody(project, "rightaway");
+    // Nothing comes before the first line: a `scene` for the label's last
+    // background would show it too early and hide Sylvie.
+    expect(body[0]).toBe('s "Hi there! How was class?"');
+    expect(body.filter((l) => /^(scene|play music) /.test(l))).toEqual([
+      expect.stringContaining('"bg meadow"'),
+      'play music "walk.ogg"',
+      expect.stringContaining('"bg club"'),
+    ]);
+  });
+
+  it("keeps the sprites and music on after an if the game falls through", () => {
+    const { project } = imp(`
+define s = Character("Sylvie")
+label start:
+    scene bg uni
+    play music "theme.ogg"
+    show sylvie green normal
+    s "Did you bring the key?"
+    if has_key:
+        jump inside
+    s "Then we're locked out."
+    return
+label inside:
+    s "We're in."
+`.trim());
+    const fallthrough = project.scenes.find((sc) => sc.label === "start_bad_end")!;
+    expect(labelBody(project, `vns_scene_${fallthrough.id}`)[0]).toBe(`s "Then we're locked out."`);
   });
 });
 
