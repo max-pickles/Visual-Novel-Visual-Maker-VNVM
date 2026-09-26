@@ -22,9 +22,9 @@ const SEV: Record<ToastSeverity, {
   border: string; bar: string; bg: string; icon: string; label: string;
 }> = {
   info: {
-    border: "#4b6cf7",
-    bar:    "#4b6cf7",
-    bg:     "rgba(75,108,247,0.10)",
+    border: "var(--acc)",
+    bar:    "var(--acc)",
+    bg:     "color-mix(in srgb, var(--acc) 10%, transparent)",
     icon:   "ℹ",
     label:  "INFO",
   },

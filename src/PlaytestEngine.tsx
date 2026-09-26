@@ -772,7 +772,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                           <button key={sc.id}
                             onClick={() => { setSceneId(sc.id); setEventIdx(0); }}
                             style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13, transition: "border-color 0.15s, background 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.background = "rgba(0,212,200,0.1)"; }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.background = "color-mix(in srgb, var(--teal) 10%, transparent)"; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
                           >
                             → {sc.label}

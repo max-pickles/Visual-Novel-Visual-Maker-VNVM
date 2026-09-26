@@ -1420,11 +1420,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           {hasTypedLinks && (
             <div style={{
               background: 'rgba(8,13,26,0.88)', backdropFilter: 'blur(8px)',
-              border: '1px solid #1e2d42', borderRadius: 8,
+              border: '1px solid var(--bdr)', borderRadius: 8,
               padding: '10px 14px', pointerEvents: 'none',
               display: 'flex', flexDirection: 'column', gap: 6,
             }}>
-              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: '#4a5568', textTransform: 'uppercase', marginBottom: 2 }}>{t('canvas.edge_types')}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--dim)', textTransform: 'uppercase', marginBottom: 2 }}>{t('canvas.edge_types')}</span>
               {legendItems.map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <svg width={42} height={10} style={{ flexShrink: 0, overflow: 'visible' }}>
@@ -1482,7 +1482,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
                   width: btnWidth,
                   transform: uiVisible ? (displayedSide === 'left' ? `translateX(-${mmWidth + gap}px)` : `translateX(${mmWidth + gap}px)`) : 'translateX(0)',
                   transition: suppressAnim ? 'none' : 'transform 0.44s cubic-bezier(0.4,0,0.2,1)',
-                  background: 'rgba(13,18,32,0.85)', border: '1px solid var(--bdr)',
+                  background: 'color-mix(in srgb, var(--bg2) 85%, transparent)', border: '1px solid var(--bdr)',
                   borderRadius: 8, color: 'var(--dim)', fontSize: 13, fontWeight: 700,
                   padding: '12px 0', cursor: 'pointer', backdropFilter: 'blur(4px)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, pointerEvents: 'auto',
@@ -1503,7 +1503,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
               onPointerDown={e => e.stopPropagation()}
               onClick={() => setShowRecent(v => !v)}
               style={{
-                background: 'rgba(13,18,32,0.85)', border: '1px solid var(--bdr)',
+                background: 'color-mix(in srgb, var(--bg2) 85%, transparent)', border: '1px solid var(--bdr)',
                 borderRadius: 6, color: 'var(--dim)', fontSize: 11, fontWeight: 600,
                 padding: '4px 10px', cursor: 'pointer', backdropFilter: 'blur(4px)',
                 display: 'flex', alignItems: 'center', gap: 6,
@@ -1513,7 +1513,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
             </button>
             {showRecent && (
               <div style={{
-                marginTop: 4, background: 'rgba(13,18,32,0.92)',
+                marginTop: 4, background: 'color-mix(in srgb, var(--bg2) 92%, transparent)',
                 border: '1px solid var(--bdr)', borderRadius: 8,
                 overflow: 'hidden', backdropFilter: 'blur(6px)',
                 minWidth: 180,
@@ -1531,7 +1531,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
                         color: 'var(--text)', fontSize: 11, cursor: 'pointer',
                         transition: 'background .1s',
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(75,108,247,0.12)')}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--acc) 12%, transparent)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       🎬 {sc.label || id}

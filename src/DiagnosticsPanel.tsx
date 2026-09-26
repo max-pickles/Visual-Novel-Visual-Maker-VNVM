@@ -392,7 +392,7 @@ const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({ project, onNavigate
               style={{
                 fontSize: 11, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
                 border: `1px solid ${severityFilter === f ? 'var(--acc2)' : 'var(--bdr)'}`,
-                background: severityFilter === f ? 'rgba(107,138,251,0.12)' : 'rgba(255,255,255,0.02)',
+                background: severityFilter === f ? 'color-mix(in srgb, var(--acc2) 12%, transparent)' : 'rgba(255,255,255,0.02)',
                 color: severityFilter === f ? 'var(--acc2)' : 'var(--dim)',
                 fontWeight: severityFilter === f ? 600 : 400,
                 transition: 'all 0.15s'

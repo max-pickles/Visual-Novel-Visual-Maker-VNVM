@@ -230,7 +230,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
               '--node-color': color,
               position: 'absolute', left: node.x, top: node.y, width: node.w, height: node.h,
               zIndex: isSel ? 10 : 1,
-              background: 'rgba(13,18,32,0.85)', borderRadius: 8,
+              background: 'color-mix(in srgb, var(--bg2) 85%, transparent)', borderRadius: 8,
               border: `${isSel ? 2 : 1}px solid ${isSel ? color : 'var(--bdr)'}`,
               opacity: dim ? 0.3 : 1, display: 'flex', flexDirection: 'column', overflow: 'visible',
               cursor: 'pointer',
@@ -347,7 +347,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
               left: node.x + node.w - 110,
               top: node.y + 40,
               zIndex: 999,
-              background: '#0d1220',
+              background: 'var(--bg2)',
               border: '1px solid #2a3a55',
               borderRadius: 8,
               overflow: 'hidden',
@@ -357,7 +357,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
             onPointerDown={e => e.stopPropagation()}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ padding: '5px 10px', fontSize: 9, color: 'var(--dim)', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', borderBottom: '1px solid #1e2d42' }}>{t('canvas.badge_ending_type')}</div>
+            <div style={{ padding: '5px 10px', fontSize: 9, color: 'var(--dim)', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', borderBottom: '1px solid var(--bdr)' }}>{t('canvas.badge_ending_type')}</div>
             {CYCLE.map(type => {
               const optBg = (type === 'good' || type === 'true') ? '#4ade80' : type === 'bad' ? '#fb923c' : type === 'stuck' ? '#eab308' : '#a78bfa';
               const isActive = (sc.ending_type ?? 'odd') === type;
@@ -373,8 +373,8 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8, width: '100%',
                     padding: '7px 12px', background: isActive ? 'rgba(255,255,255,0.07)' : 'transparent',
-                    border: 'none', borderBottom: '1px solid #1e2d42',
-                    color: '#e2e8f0', fontSize: 11, cursor: 'pointer', textAlign: 'left',
+                    border: 'none', borderBottom: '1px solid var(--bdr)',
+                    color: 'var(--text)', fontSize: 11, cursor: 'pointer', textAlign: 'left',
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
                   onMouseLeave={e => (e.currentTarget.style.background = isActive ? 'rgba(255,255,255,0.07)' : 'transparent')}

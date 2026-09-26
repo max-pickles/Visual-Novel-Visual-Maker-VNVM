@@ -124,7 +124,7 @@ export default function App() {
     if (route === "vnEditor" && vnvProject) {
       return (
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,200,0.012) 2px, rgba(0,212,200,0.012) 4px)', pointerEvents: 'none', opacity: 0.4, zIndex: 9999 }} />}
+          {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 4px)', pointerEvents: 'none', opacity: 0.4, zIndex: 9999 }} />}
           <VNEditor
             project={vnvProject}
             onClose={() => setRoute("start")}

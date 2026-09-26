@@ -247,7 +247,7 @@ export function CharacterEditor({ project, onProjectChange }: Props) {
                     </div>
                     <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ fontSize: 11, color: "var(--dim)" }}>
-                        Ren'Py variable: <code style={{ fontFamily: "var(--mono)", color: "var(--teal)", background: "rgba(0,212,200,0.1)", padding: "2px 6px", borderRadius: 4 }}>vnc_{char.name}</code>
+                        Ren'Py variable: <code style={{ fontFamily: "var(--mono)", color: "var(--teal)", background: "color-mix(in srgb, var(--teal) 10%, transparent)", padding: "2px 6px", borderRadius: 4 }}>vnc_{char.name}</code>
                       </div>
                       <button className="btn btn-ghost" style={{ fontSize: 12, color: "var(--err)", padding: "4px 8px" }}
                         onClick={() => deleteChar(char.id)}>

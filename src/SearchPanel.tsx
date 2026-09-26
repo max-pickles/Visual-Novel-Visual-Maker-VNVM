@@ -145,7 +145,7 @@ export function SearchPanel({ project, onProjectChange, onEditScene, onClose }: 
       onClick={toggle}
       style={{
         padding: "3px 7px", borderRadius: 4, border: "1px solid var(--bdr)",
-        background: active ? "rgba(75,108,247,0.2)" : "var(--bg3)",
+        background: active ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "var(--bg3)",
         color: active ? "var(--acc2, #4b6cf7)" : "var(--dim)",
         fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, cursor: "pointer",
         transition: "all 0.15s",
@@ -223,9 +223,9 @@ export function SearchPanel({ project, onProjectChange, onEditScene, onClose }: 
             if (replaceMode && showReplaceConfirm) setShowReplaceConfirm(false);
             else setReplaceMode(!replaceMode);
           }} style={{
-            background: replaceMode ? "rgba(75,108,247,0.15)" : "transparent",
+            background: replaceMode ? "color-mix(in srgb, var(--acc) 15%, transparent)" : "transparent",
             color: replaceMode ? "var(--acc2)" : "var(--dim)",
-            border: "1px solid", borderColor: replaceMode ? "rgba(75,108,247,0.3)" : "var(--bdr)",
+            border: "1px solid", borderColor: replaceMode ? "color-mix(in srgb, var(--acc) 30%, transparent)" : "var(--bdr)",
             padding: "4px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer"
           }}>
             {replaceMode ? "Cancel Replace" : "Toggle Replace"}
@@ -300,7 +300,7 @@ export function SearchPanel({ project, onProjectChange, onEditScene, onClose }: 
                 <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{label}</span>
                 <span style={{
                   marginLeft: "auto", fontSize: 10, padding: "1px 6px",
-                  borderRadius: 10, background: "rgba(75,108,247,0.15)", color: "var(--acc2, #4b6cf7)",
+                  borderRadius: 10, background: "color-mix(in srgb, var(--acc) 15%, transparent)", color: "var(--acc2, #4b6cf7)",
                 }}>{sm.length}</span>
               </button>
 
@@ -313,7 +313,7 @@ export function SearchPanel({ project, onProjectChange, onEditScene, onClose }: 
                     padding: "4px 8px 4px 28px",
                     borderRadius: 6, marginBottom: 2,
                   }}
-                  onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.background = "rgba(75,108,247,0.08)"}
+                  onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.background = "color-mix(in srgb, var(--acc) 8%, transparent)"}
                   onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.background = "transparent"}
                 >
                   <div className="col" style={{ flex: 1, gap: 2, minWidth: 0, cursor: "pointer" }} onClick={() => { onEditScene(sceneId); onClose(); }}>

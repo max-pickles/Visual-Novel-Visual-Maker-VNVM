@@ -705,7 +705,7 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
                 <TransitionPicker value={ev.transition} onChange={(v) => set("transition", v)} />
               </div>
               {ev.transition && ev.scene_id && (
-                <button className="btn btn-ghost" style={{ flexShrink: 0, marginTop: 4, background: "rgba(107,138,251,0.15)", color: "var(--teal)" }} onClick={() => window.dispatchEvent(new CustomEvent('preview-transition', { detail: { targetScene: ev.scene_id, transition: ev.transition } }))}>
+                <button className="btn btn-ghost" style={{ flexShrink: 0, marginTop: 4, background: "color-mix(in srgb, var(--acc2) 15%, transparent)", color: "var(--teal)" }} onClick={() => window.dispatchEvent(new CustomEvent('preview-transition', { detail: { targetScene: ev.scene_id, transition: ev.transition } }))}>
                   🎬 {tr('inspector.preview')}
                 </button>
               )}

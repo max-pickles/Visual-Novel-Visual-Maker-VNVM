@@ -264,7 +264,7 @@ export function EventList({
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                 cursor: armedToolType ? "crosshair" : "pointer",
                 userSelect: "none",
-                background: isSel ? "rgba(75,108,247,0.15)" : "var(--bg2)",
+                background: isSel ? "color-mix(in srgb, var(--acc) 15%, transparent)" : "var(--bg2)",
                 border: isSel ? `1px solid ${color}` : "1px solid var(--bdr)",
                 borderRadius: 8,
                 transition: "all .1s",

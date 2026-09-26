@@ -209,7 +209,7 @@ input, textarea {
 ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
 
 /* ─── Custom Title Bar ───────────────────────────────────────────────────── */
-.titlebar-btn:hover { background: rgba(255,255,255,0.08) !important; color: #e2e8f0 !important; }
+.titlebar-btn:hover { background: rgba(255,255,255,0.08) !important; color: var(--text) !important; }
 .titlebar-close:hover { background: #c42b1c !important; color: #fff !important; }
 
 /* ─── Buttons ────────────────────────────────────────────────────────────── */

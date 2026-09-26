@@ -220,7 +220,7 @@ export function AnimActionsPanel({ frames, selIdx, onChange, onPlayIde, onTestRe
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
         {cur ? (
           <>
-            <div className="col gap12" style={{ background: "rgba(0,212,200,0.05)", padding: 16, borderRadius: 8, border: "1px solid rgba(0,212,200,0.15)" }}>
+            <div className="col gap12" style={{ background: "color-mix(in srgb, var(--teal) 5%, transparent)", padding: 16, borderRadius: 8, border: "1px solid color-mix(in srgb, var(--teal) 15%, transparent)" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--teal)" }}>
                 {selIdx === 0 ? t("animation_track.start_state") : `${t("animation_track.keyframe")} ${selIdx}`}
               </span>
@@ -335,9 +335,9 @@ export function AnimTimelinePanel({ frames, selIdx, setSelIdx, onChange }: Timel
                       padding: "10px 16px", minWidth: 110,
                       border: "none", outline: isSel ? "2px solid var(--teal)" : "1px solid var(--bdr)",
                       outlineOffset: -1,
-                      background: isSel ? "linear-gradient(to bottom, rgba(0,212,200,0.15), rgba(0,212,200,0.05))" : "linear-gradient(to bottom, var(--bg2), var(--bg1))",
+                      background: isSel ? "linear-gradient(to bottom, color-mix(in srgb, var(--teal) 15%, transparent), color-mix(in srgb, var(--teal) 5%, transparent))" : "linear-gradient(to bottom, var(--bg2), var(--bg1))",
                       borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                      boxShadow: isSel ? "0 0 16px rgba(0,212,200,0.2)" : "0 4px 6px rgba(0,0,0,0.2)",
+                      boxShadow: isSel ? "0 0 16px color-mix(in srgb, var(--teal) 20%, transparent)" : "0 4px 6px rgba(0,0,0,0.2)",
                       transition: "all 0.2s"
                     }}
                     onClick={() => setSelIdx(i)}

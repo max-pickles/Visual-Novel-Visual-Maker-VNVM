@@ -109,7 +109,7 @@ function HighlightedLabel({
           <mark
             key={i}
             style={{
-              background: "rgba(75,108,247,0.35)",
+              background: "color-mix(in srgb, var(--acc) 35%, transparent)",
               color: "#c7d4ff",
               borderRadius: 2,
               padding: "0 1px",
@@ -152,8 +152,8 @@ function ResultRow({
       style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "8px 14px",
-        background: active ? "rgba(75,108,247,0.16)" : "transparent",
-        borderLeft: active ? "2px solid #4b6cf7" : "2px solid transparent",
+        background: active ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
+        borderLeft: active ? "2px solid var(--acc)" : "2px solid transparent",
         cursor: "pointer",
         transition: "background 0.08s",
         userSelect: "none",
@@ -444,7 +444,7 @@ export function QuickOpen({ project, onFlyTo, onEditScene, onClose }: Props) {
             placeholder="Search scenes…"
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
-              fontSize: 14, color: "var(--text)", caretColor: "#4b6cf7",
+              fontSize: 14, color: "var(--text)", caretColor: "var(--acc)",
             }}
           />
           {/* Mode toggle */}
@@ -454,7 +454,7 @@ export function QuickOpen({ project, onFlyTo, onEditScene, onClose }: Props) {
             style={{
               fontSize: 10, fontWeight: 700, padding: "2px 7px",
               borderRadius: 4, border: "1px solid var(--bdr)",
-              background: fuzzyMode ? "rgba(75,108,247,0.18)" : "transparent",
+              background: fuzzyMode ? "color-mix(in srgb, var(--acc) 18%, transparent)" : "transparent",
               color: fuzzyMode ? "#93b4ff" : "var(--dim)",
               cursor: "pointer", flexShrink: 0,
               transition: "all 0.12s",

@@ -650,7 +650,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                           onClick={() => setSelSceneId(s.id)}
                           style={{
                             flex: 1, textAlign: "left", padding: "8px 12px", borderRadius: 6,
-                            background: selSceneId === s.id ? "rgba(0, 212, 200, 0.15)" : "transparent",
+                            background: selSceneId === s.id ? "color-mix(in srgb, var(--teal) 15%, transparent)" : "transparent",
                             border: selSceneId === s.id ? "1px solid var(--teal)" : "1px solid transparent",
                             color: selSceneId === s.id ? "var(--teal)" : "var(--text)",
                             fontSize: 13, fontWeight: selSceneId === s.id ? 700 : 500,

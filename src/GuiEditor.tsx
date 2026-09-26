@@ -434,7 +434,7 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
                       display: 'flex', alignItems: 'center', gap: 5, padding: '6px 8px',
                       borderRadius: 5, cursor: 'pointer', border: '1px solid',
                       borderColor: selectedId === btn.id ? 'var(--acc)' : 'var(--bdr)',
-                      background: selectedId === btn.id ? 'rgba(75,108,247,0.1)' : 'var(--bg2)',
+                      background: selectedId === btn.id ? 'color-mix(in srgb, var(--acc) 10%, transparent)' : 'var(--bg2)',
                     }}>
                     <span style={{ flex: 1, fontSize: 12, color: btn.visible ? 'var(--text)' : 'var(--faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {btn.label}
@@ -470,7 +470,7 @@ export default function GuiEditor({ project, onProjectChange }: Props) {
             </span>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#05080f', padding: 24, overflow: 'hidden' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg0)', padding: 24, overflow: 'hidden' }}>
             {activeTab === 'main_menu' && (
               <RenpyPreview menu={menu} cfg={guiCfg} optCfg={optCfg} scrCfg={scrCfg} rootPath={rootPath}
                 selectedId={selectedId} onSelectBtn={setSelectedId} 
@@ -868,7 +868,7 @@ export function RenpyPreview({ menu, cfg, optCfg, scrCfg, rootPath, selectedId, 
           transform: `scale(${fitScale})`,
           transformOrigin: 'center center',
           background: '#000', overflow: 'hidden',
-          boxShadow: isThumbnail ? 'none' : '0 0 0 2px #1e2d42, 0 24px 64px rgba(0,0,0,0.7)',
+          boxShadow: isThumbnail ? 'none' : '0 0 0 2px var(--bdr), 0 24px 64px rgba(0,0,0,0.7)',
           flexShrink: 0,
         }}
       >
@@ -979,9 +979,9 @@ function NavBtn({ btn, fontSize, idleColor, hoverColor, selected, onClick }: {
       style={{
         fontSize: fontSize, color, cursor: 'pointer', userSelect: 'none',
         fontFamily: 'DejaVu Sans, var(--font)', fontWeight: 400,
-        outline: selected ? '1.5px dashed rgba(75,108,247,0.8)' : hovered ? '1px dashed rgba(255,255,255,0.4)' : 'none',
+        outline: selected ? '1.5px dashed color-mix(in srgb, var(--acc) 80%, transparent)' : hovered ? '1px dashed rgba(255,255,255,0.4)' : 'none',
         outlineOffset: 2, borderRadius: 2, padding: '1px 6px',
-        background: selected ? 'rgba(75,108,247,0.15)' : 'transparent',
+        background: selected ? 'color-mix(in srgb, var(--acc) 15%, transparent)' : 'transparent',
         transform: hovered ? 'scale(1.02)' : 'scale(1)',
         transition: 'all 0.15s ease',
         whiteSpace: 'nowrap',
@@ -1049,7 +1049,7 @@ function GameMenuShell({ cfg, scrCfg, rootPath, children }: {
         transform: `scale(${fitScale})`,
         transformOrigin: 'center center',
         background: '#000', borderRadius: 0, overflow: 'hidden',
-        boxShadow: '0 0 0 2px #1e2d42, 0 24px 64px rgba(0,0,0,0.7)',
+        boxShadow: '0 0 0 2px var(--bdr), 0 24px 64px rgba(0,0,0,0.7)',
         flexShrink: 0,
       }}>
         {bgSrc && bgOk ? (

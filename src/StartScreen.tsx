@@ -350,7 +350,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
     <>
     <div style={{ display: 'flex', height: '100%', background: bgMap[bgLevel], fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: uiScale === '125%' ? '112.5%' : uiScale === '150%' ? '125%' : '100%' }}>
       {/* Subtle scanline overlay */}
-      {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,200,0.012) 2px, rgba(0,212,200,0.012) 4px)', pointerEvents: 'none', opacity: 0.6, zIndex: 0 }} />}
+      {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 4px)', pointerEvents: 'none', opacity: 0.6, zIndex: 0 }} />}
       {/* Left Sidebar Menu */}
       <div style={{ 
         width: 240, borderRight: '1px solid rgba(var(--teal-rgb,0,212,200),0.12)', 
@@ -360,7 +360,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
         transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Sidebar glow */}
-        <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,212,200,0.06) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, color-mix(in srgb, var(--teal) 6%, transparent) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 0 16px' }}>
 
           {/* Credits — pinned to very top */}
@@ -437,8 +437,8 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
         {/* Atmospheric gradient glows — on top of solid bg */}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: bgMap[bgLevel], zIndex: 0 }}>
           {glowEnabled && <>
-            <div style={{ position: 'absolute', top: '5%', left: '10%', width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, rgba(75,108,247,0.18) 0%, transparent 65%)', filter: 'blur(30px)' }} />
-            <div style={{ position: 'absolute', bottom: '5%', right: '5%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,212,200,0.14) 0%, transparent 65%)', filter: 'blur(30px)' }} />
+            <div style={{ position: 'absolute', top: '5%', left: '10%', width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, color-mix(in srgb, var(--acc) 18%, transparent) 0%, transparent 65%)', filter: 'blur(30px)' }} />
+            <div style={{ position: 'absolute', bottom: '5%', right: '5%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, color-mix(in srgb, var(--teal) 14%, transparent) 0%, transparent 65%)', filter: 'blur(30px)' }} />
             <div style={{ position: 'absolute', top: '35%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(244,114,182,0.08) 0%, transparent 65%)', filter: 'blur(50px)' }} />
           </>}
         </div>
@@ -544,7 +544,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                         await win.unmaximize();
                       }
                     }}
-                      style={{ flex: 1, padding: '12px 16px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'rgba(0,212,200,0.1)' : 'rgba(0,0,0,0.2)', color: sel ? 'var(--teal)' : 'var(--dim)', fontWeight: 600, textAlign: 'center', transition: 'all 0.15s ease', fontSize: 13 }}>
+                      style={{ flex: 1, padding: '12px 16px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'color-mix(in srgb, var(--teal) 10%, transparent)' : 'rgba(0,0,0,0.2)', color: sel ? 'var(--teal)' : 'var(--dim)', fontWeight: 600, textAlign: 'center', transition: 'all 0.15s ease', fontSize: 13 }}>
                       {m.label}
                     </div>
                   );
@@ -604,7 +604,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                       const sel = bgLevel === opt.val;
                       return (
                         <div key={opt.val} onClick={() => setBgLevel(opt.val as any)}
-                          style={{ flex: 1, padding: '10px 12px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'rgba(0,212,200,0.1)' : opt.bg, transition: 'all 0.15s ease', textAlign: 'center' }}>
+                          style={{ flex: 1, padding: '10px 12px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'color-mix(in srgb, var(--teal) 10%, transparent)' : opt.bg, transition: 'all 0.15s ease', textAlign: 'center' }}>
                           <div style={{ width: 24, height: 24, borderRadius: 4, background: opt.bg, border: '1px solid rgba(255,255,255,0.15)', margin: '0 auto 6px' }} />
                           <div style={{ fontSize: 11, fontWeight: 600, color: sel ? 'var(--teal)' : '#7e95ab' }}>{opt.label}</div>
                         </div>
@@ -620,7 +620,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t("prefs.glow_effects_desc")}</div>
                   </div>
                   <div onClick={() => setGlowEnabled(v => !v)}
-                    style={{ width: 40, height: 20, borderRadius: 10, background: glowEnabled ? 'var(--teal)' : '#2d3748', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
+                    style={{ width: 40, height: 20, borderRadius: 10, background: glowEnabled ? 'var(--teal)' : 'var(--faint)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
                     <div style={{ position: 'absolute', top: 2, left: glowEnabled ? 22 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
                   </div>
                 </div>
@@ -632,7 +632,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t("prefs.scanlines_desc")}</div>
                   </div>
                   <div onClick={() => setScanlinesEnabled(v => !v)}
-                    style={{ width: 40, height: 20, borderRadius: 10, background: scanlinesEnabled ? 'var(--teal)' : '#2d3748', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
+                    style={{ width: 40, height: 20, borderRadius: 10, background: scanlinesEnabled ? 'var(--teal)' : 'var(--faint)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
                     <div style={{ position: 'absolute', top: 2, left: scanlinesEnabled ? 22 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
                   </div>
                 </div>
@@ -679,7 +679,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                       const sel = uiScale === s;
                       return (
                         <div key={s} onClick={() => setUiScale(s)}
-                          style={{ flex: 1, padding: '10px 16px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'rgba(0, 212, 200, 0.1)' : 'rgba(0,0,0,0.2)', color: sel ? 'var(--teal)' : 'var(--dim)', fontWeight: 600, textAlign: 'center', transition: 'all 0.15s ease' }}>{s}</div>
+                          style={{ flex: 1, padding: '10px 16px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'color-mix(in srgb, var(--teal) 10%, transparent)' : 'rgba(0,0,0,0.2)', color: sel ? 'var(--teal)' : 'var(--dim)', fontWeight: 600, textAlign: 'center', transition: 'all 0.15s ease' }}>{s}</div>
                       );
                     })}
                   </div>
@@ -692,7 +692,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                     <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t("prefs.auto_save_desc")}</div>
                   </div>
                   <div onClick={() => setAutoSave(v => !v)}
-                    style={{ width: 40, height: 20, borderRadius: 10, background: autoSave ? 'var(--teal)' : '#2d3748', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
+                    style={{ width: 40, height: 20, borderRadius: 10, background: autoSave ? 'var(--teal)' : 'var(--faint)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
                     <div style={{ position: 'absolute', top: 2, left: autoSave ? 22 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
                   </div>
                 </div>
@@ -718,7 +718,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                   <div style={{ 
                     fontSize: 15, fontWeight: 600, 
                     padding: '10px 20px', background: 'var(--teal)', color: '#000', borderRadius: 6,
-                    boxShadow: '0 4px 12px rgba(0,212,200,0.3)'
+                    boxShadow: '0 4px 12px color-mix(in srgb, var(--teal) 30%, transparent)'
                   }}>
                     {t("prefs.change_language")}
                   </div>
@@ -745,7 +745,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
                         padding: '16px 20px', borderRadius: 8, textAlign: 'left',
                         border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.05)',
-                        background: sel ? 'rgba(0, 212, 200, 0.1)' : 'rgba(0,0,0,0.2)',
+                        background: sel ? 'color-mix(in srgb, var(--teal) 10%, transparent)' : 'rgba(0,0,0,0.2)',
                         transition: 'all 0.15s'
                       }}
                     >
@@ -765,7 +765,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <div style={{
-              width: 560, background: 'linear-gradient(145deg,#0d1220,#111827)',
+              width: 560, background: 'linear-gradient(145deg,var(--bg2),var(--bg3))',
               border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16,
               boxShadow: '0 32px 80px rgba(0,0,0,.9)',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -833,7 +833,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                       <div onClick={() => setNewTemplate('blank')} style={{
                         flex: 1, padding: '20px', borderRadius: 8, cursor: 'pointer',
                         border: `1px solid ${newTemplate === 'blank' ? 'var(--acc)' : 'rgba(255,255,255,0.07)'}`,
-                        background: newTemplate === 'blank' ? 'rgba(75,108,247,0.12)' : 'rgba(255,255,255,0.025)',
+                        background: newTemplate === 'blank' ? 'color-mix(in srgb, var(--acc) 12%, transparent)' : 'rgba(255,255,255,0.025)',
                         transition: 'all 0.15s',
                       }}>
                         <div style={{ fontSize: 16, fontWeight: 700, color: newTemplate === 'blank' ? '#fff' : '#aaa', marginBottom: 8 }}>{t("wizard.blank_title")}</div>
@@ -844,7 +844,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                       <div onClick={() => setNewTemplate('demo')} style={{
                         flex: 1, padding: '20px', borderRadius: 8, cursor: 'pointer',
                         border: `1px solid ${newTemplate === 'demo' ? 'var(--acc)' : 'rgba(255,255,255,0.07)'}`,
-                        background: newTemplate === 'demo' ? 'rgba(75,108,247,0.12)' : 'rgba(255,255,255,0.025)',
+                        background: newTemplate === 'demo' ? 'color-mix(in srgb, var(--acc) 12%, transparent)' : 'rgba(255,255,255,0.025)',
                         transition: 'all 0.15s',
                       }}>
                         <div style={{ fontSize: 16, fontWeight: 700, color: newTemplate === 'demo' ? '#fff' : '#aaa', marginBottom: 8 }}>{t("wizard.demo_title")}</div>
@@ -875,7 +875,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                           <div key={r.val} onClick={() => setNewRes(r.val)} style={{
                             padding: '13px 18px', borderRadius: 8, cursor: 'pointer',
                             border: `1px solid ${sel ? 'var(--acc)' : 'rgba(255,255,255,0.07)'}`,
-                            background: sel ? 'rgba(75,108,247,0.12)' : 'rgba(255,255,255,0.025)',
+                            background: sel ? 'color-mix(in srgb, var(--acc) 12%, transparent)' : 'rgba(255,255,255,0.025)',
                             display: 'flex', alignItems: 'center', gap: 14, transition: 'all 0.15s',
                           }}>
                             <div style={{

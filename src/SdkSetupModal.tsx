@@ -130,8 +130,8 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
         <div style={{ padding: "20px 24px 0", display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{
             width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-            background: "rgba(75,108,247,0.12)",
-            border: "1px solid rgba(75,108,247,0.25)",
+            background: "color-mix(in srgb, var(--acc) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 22,
           }}>
@@ -207,7 +207,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
                 fontFamily: "var(--mono, monospace)",
                 transition: "border-color 0.15s",
               }}
-              onFocus={e => (e.target.style.borderColor = "#4b6cf7")}
+              onFocus={e => (e.target.style.borderColor = "var(--acc)")}
               onBlur={e => (e.target.style.borderColor = "var(--bdr, #2a3050)")}
             />
             <button
@@ -235,7 +235,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
               href="https://www.renpy.org/latest.html"
               target="_blank"
               rel="noreferrer"
-              style={{ color: "#4b6cf7", textDecoration: "none" }}
+              style={{ color: "var(--acc)", textDecoration: "none" }}
               onMouseEnter={e => ((e.target as HTMLElement).style.textDecoration = "underline")}
               onMouseLeave={e => ((e.target as HTMLElement).style.textDecoration = "none")}
             >
@@ -275,7 +275,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
               cursor: isConfirmable ? "pointer" : "not-allowed",
               transition: "opacity 0.15s",
               opacity: isConfirmable ? 1 : 0.5,
-              boxShadow: isConfirmable ? "0 4px 16px rgba(75,108,247,0.35)" : "none",
+              boxShadow: isConfirmable ? "0 4px 16px color-mix(in srgb, var(--acc) 35%, transparent)" : "none",
             }}
           >
             ▶ Save &amp; Launch
