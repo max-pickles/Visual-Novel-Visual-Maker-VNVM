@@ -5,6 +5,7 @@
 import type { VNEvent, VNProject } from "./types";
 import { newOpt, VN_POSES, VN_SIDES, VN_EFFECTS } from "./types";
 import { useTranslation } from "./translationContext";
+import { exportedNames } from "./compiler";
 import { Label, Row, ChipRow, AssetPicker, DraggableNumber, AtlField, RichTextarea, TransitionPicker, AudioPreview } from "./InspectorFields";
 
 // ─── Inspector ────────────────────────────────────────────────────────────────
@@ -682,7 +683,7 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
                     <div>{"$ _pool = ["}</div>
                     {slots.filter(Boolean).map((id, i) => {
                       const sc = project.scenes.find(s => s.id === id);
-                      return <div key={i} style={{ paddingLeft: 16 }}>*{weights[i]} + ["{sc ? `vns_scene_${id}` : id}"],</div>;
+                      return <div key={i} style={{ paddingLeft: 16 }}>*{weights[i]} + ["{sc ? exportedNames(project).label(id) : id}"],</div>;
                     })}
                     <div>{"]"}</div>
                     <div>{"$ _rnd = renpy.random.choice(_pool)"}</div>
@@ -692,7 +693,7 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
                     <div>{"$ _rnd = renpy.random.choice(["}</div>
                     {slots.filter(Boolean).map((id, i) => {
                       const sc = project.scenes.find(s => s.id === id);
-                      return <div key={i} style={{ paddingLeft: 16 }}>"{sc ? `vns_scene_${id}` : id}"{i < slots.filter(Boolean).length - 1 ? "," : ""}</div>;
+                      return <div key={i} style={{ paddingLeft: 16 }}>"{sc ? exportedNames(project).label(id) : id}"{i < slots.filter(Boolean).length - 1 ? "," : ""}</div>;
                     })}
                     <div>{"])"}</div>
                   </>

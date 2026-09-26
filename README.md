@@ -183,17 +183,19 @@ Drop any existing Ren'Py project's `game/` folder into the import dialog. The im
 
 - `label` → Scene
 - `define X = Character(…)` → Character
-- `scene`, `show`, `hide`, `play music`, `with`, `pause`, `jump`, `menu:`
+- `scene`, `show`, `hide`, `play music`, `with`, `pause`, `jump`, `menu:` (including choice conditions and a prompt said by a character)
 - Complex `if/else` blocks are **captured as Raw Code events** (not silently dropped)
 - `$ python` lines are **captured as Raw Code events** with a warning
 - ATL blocks (`show X at transform:`) are **captured as Raw Code events**
 - Ending-type detection (good/bad/stuck) with 4-stage propagation analysis
 
+Scenes and characters remember the label and variable they had in the game (`label rightaway:`, `define s = Character(…)`). Exports keep those names, because Ren'Py finds a line's translation by its label and speaker: an imported game's own translations keep working. Translations (`game/tl/`), `styles.rpy`, test scripts and other files that aren't story are left as they are.
+
 ---
 
 ## 📦 Exporting
 
-**Export → Project folder** copies the project to a folder outside it and writes the compiled story as `game/script.rpy` plus one `game/scene_<id>.rpy` per scene. In the copy it removes `project.vnvmaker`, the live-preview script and any scripts the compiled story replaces (for imported games, the original story scripts). `gui.rpy`, `options.rpy`, `screens.rpy`, Translation Dashboard output and scripts you added yourself are kept. The export never runs on the project folder itself, and asks before replacing an existing folder.
+**Export → Project folder** copies the project to a folder outside it and writes the compiled story as `game/script.rpy` plus one `game/scene_<id>.rpy` per scene. In the copy it removes `project.vnvmaker`, the live-preview script and any scripts the compiled story replaces (for imported games, the original story scripts). `gui.rpy`, `options.rpy`, `screens.rpy`, translations (an imported game's own and the Translation Dashboard's), other scripts that aren't story, and scripts you added yourself are kept. The export never runs on the project folder itself, and asks before replacing an existing folder.
 
 ---
 
@@ -213,7 +215,7 @@ npm run test:smoke
 
 The browser smoke tests in `e2e/` run the production build in Chromium under the app's Content-Security-Policy, with the Tauri backend replaced by a mock (`e2e/tauri-mock.js`) that records every call. They create and open projects, visit every tab, edit the story canvas, read and write `gui.rpy`, check what happens to unsaved changes when you leave the editor, check that dialogue text tags can't inject HTML, and play a branching story in the playtest. Any page error, console error or CSP violation fails a test.
 
-`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, and each playable one must play through to the end. CI runs it against Ren'Py 8.5.2 built from source.
+`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, each playable one must play through to the end, and the exported sample game's 12 translations must still cover all of its dialogue. CI runs it against Ren'Py 8.5.2 built from source.
 
 ---
 

@@ -106,6 +106,7 @@ export interface VNEvent {
   type: EventType;
 
   // ── dialogue / narration ──
+  /** The speaker. On a choice, the character who says its prompt. */
   char_id?: string | null;
   pose?: Pose;
   text?: string;
@@ -220,6 +221,11 @@ export interface VNScene {
   description?: string;
   /** Scenes contained within this scene (if it acts as a folder) */
   scene_ids?: string[];
+  /**
+   * The label this scene had in the Ren'Py game it was imported from. Exports
+   * keep it, so the game's translations still match its dialogue.
+   */
+  renpy_label?: string;
 }
 
 /** Color grading settings applied to all bg events in this scene.
@@ -242,6 +248,12 @@ export interface VNCharacter {
   name: string;
   /** Name shown in the dialogue box */
   display: string;
+  /**
+   * The variable this character had in the Ren'Py game it was imported from
+   * (`define s = Character(…)`). Exports keep it, so the game's translations
+   * still match its dialogue.
+   */
+  renpy_name?: string;
   /** Hex color for the character name in dialogue */
   color: string;
   /** Dialogue Mode: ADV (default), NVL (full screen), or Speech Bubble */

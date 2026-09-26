@@ -11,7 +11,9 @@
  *   <name>-preview  the preview file written on every save, next to the game's own scripts
  *   <name>-play     Play from Here on the start scene (linted only: it loops by design)
  * Playable layouts get a vnv_testcases.rpy (next to game/, since lint reports
- * testcase statements as unreachable) that clicks through to the end.
+ * testcase statements as unreachable) that clicks through to the end. An
+ * export whose translations must still match its dialogue gets a
+ * vnv_translations.txt listing the languages to check.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,7 +21,8 @@ import { newProject, newDemoProject, newCharacter, newEvent, newScene } from "..
 import type { VNProject, VNCharacter, VNScene } from "../src/types";
 import { compileProject, compileProjectToFiles, compilePreview } from "../src/compiler";
 import { importFromRpyFiles } from "../src/rpyImporter";
-import { declaredVarNames } from "../src/rpyDeclarations";
+import { declaredVarNames, declaredLabelNames } from "../src/rpyDeclarations";
+import { isReplacedByExport } from "../src/exportScripts";
 
 const [OUT, RENPY, ROOT] = process.argv.slice(2);
 if (!OUT || !RENPY || !ROOT) throw new Error("usage: renpyFixtures.mjs <outDir> <renpyCheckout> <repoRoot>");
@@ -61,12 +64,16 @@ function addPlaceholders(game: string, files: string[]): void {
   }
 }
 
-/** What the app passes as declaredElsewhere: names the other scripts declare. */
-function declaredIn(game: string): Set<string> {
-  const scripts = walk(game)
+/** The game's other scripts, as the app reads them (without the preview script). */
+function scriptsIn(game: string): string[] {
+  return walk(game)
     .filter(f => f.endsWith(".rpy") && !f.endsWith("vnv_preview.rpy"))
     .map(f => fs.readFileSync(path.join(game, f), "utf8"));
-  return declaredVarNames(scripts);
+}
+
+/** What the app passes as declaredElsewhere: names the other scripts declare. */
+function declaredIn(game: string): Set<string> {
+  return declaredVarNames(scriptsIn(game));
 }
 
 /** A testcase that starts the game, makes the given choices and plays to the end. */
@@ -95,16 +102,22 @@ function addPlaythrough(game: string, choices: string[]): void {
  * lives in (the template for new projects, the original game for imports);
  * `replaced` lists the scripts an export removes.
  */
-function emit(name: string, proj: VNProject, opts: { fromGame?: string; files?: string[]; choices?: string[]; replaced?: string[] } = {}): void {
-  const { fromGame = TEMPLATE, files = [], choices = [], replaced = ["script.rpy"] } = opts;
+function emit(
+  name: string,
+  proj: VNProject,
+  opts: { fromGame?: string; files?: string[]; choices?: string[]; replaced?: string[]; translations?: string[] } = {},
+): void {
+  const { fromGame = TEMPLATE, files = [], choices = [], replaced = ["script.rpy"], translations = [] } = opts;
 
   let game = newGame(`${name}-export`, fromGame);
   addPlaceholders(game, files);
   for (const f of replaced) fs.rmSync(path.join(game, f), { force: true });
-  for (const f of compileProjectToFiles(proj, { declaredElsewhere: declaredIn(game) })) {
+  const kept = scriptsIn(game);
+  for (const f of compileProjectToFiles(proj, { declaredElsewhere: declaredVarNames(kept), labelsElsewhere: declaredLabelNames(kept) })) {
     fs.writeFileSync(path.join(game, f.filename), f.content);
   }
   addPlaythrough(game, choices);
+  if (translations.length) fs.writeFileSync(path.join(game, "..", "vnv_translations.txt"), translations.join("\n") + "\n");
 
   if (fromGame === TEMPLATE) {
     game = newGame(`${name}-single`, fromGame);
@@ -214,11 +227,13 @@ emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] 
   const game = path.join(OUT, "_question");
   copyDir(source, game);
   fs.rmSync(path.join(game, "testcases.rpy"), { force: true });
-  const keep = ["gui.rpy", "options.rpy", "screens.rpy"];
+  const imported = scripts.filter(f => f !== "testcases.rpy").map(f => `game/${f}`);
   emit("question", project, {
     fromGame: game,
     choices: ["ask her right away", "an interactive book"],
-    replaced: scripts.filter(f => !keep.includes(path.basename(f)) && f !== "testcases.rpy"),
+    // What the app's export removes; the game's translations stay and must still match.
+    replaced: imported.filter(f => isReplacedByExport(f, imported)).map(f => f.slice("game/".length)),
+    translations: fs.readdirSync(path.join(source, "tl")).filter(l => l !== "None"),
   });
   fs.rmSync(game, { recursive: true, force: true });
 }

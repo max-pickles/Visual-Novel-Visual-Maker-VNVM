@@ -3,7 +3,7 @@ import { documentDir, homeDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { VNProject } from "./types";
 import { migrateProject } from "./types";
-import { declaredVarNames } from "./rpyDeclarations";
+import { declaredVarNames, declaredLabelNames } from "./rpyDeclarations";
 
 // ─── Monitor / Window ─────────────────────────────────────────────────────────
 
@@ -332,8 +332,22 @@ export async function validateRenpyProject(folderPath: string): Promise<string> 
  * is skipped, since it's the file being regenerated.
  */
 export async function declaredVarsInGame(rootPath: string): Promise<Set<string>> {
+  return declaredVarNames(await gameScripts(rootPath));
+}
+
+/**
+ * The variables and labels the scripts in a game folder already declare, for
+ * an export written next to them (see `declaredVarsInGame`).
+ */
+export async function declaredNamesInGame(rootPath: string): Promise<{ vars: Set<string>; labels: Set<string> }> {
+  const scripts = await gameScripts(rootPath);
+  return { vars: declaredVarNames(scripts), labels: declaredLabelNames(scripts) };
+}
+
+/** The scripts in a game folder, without the live-preview script (the file being regenerated). */
+async function gameScripts(rootPath: string): Promise<string[]> {
   const scripts = await readRpyFolder(rootPath);
-  return declaredVarNames(scripts.filter(s => !s.name.endsWith("vnv_preview.rpy")).map(s => s.content));
+  return scripts.filter(s => !s.name.endsWith("vnv_preview.rpy")).map(s => s.content);
 }
 
 export async function readRpyFolder(

@@ -4,7 +4,7 @@ import { compileProjectToFiles, getProjectStats } from "./compiler";
 import { 
   pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile,
   launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
-  dirHasFiles, isSameOrInside, declaredVarsInGame, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR,
+  dirHasFiles, isSameOrInside, declaredNamesInGame, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR,
 } from "./tauriApi";
 import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
 import { validateProject } from "./validator";
@@ -184,9 +184,10 @@ export function ExportPanel({ project }: Props) {
       }
 
       // 4. Generate and write out the separate multi-file scripts, leaving out
-      //    defaults that the scripts kept in the export already declare
-      const declaredElsewhere = await declaredVarsInGame(targetDir);
-      const newScripts = compileProjectToFiles(project, { declaredElsewhere });
+      //    defaults, and avoiding labels, that the scripts kept in the export
+      //    already declare
+      const declared = await declaredNamesInGame(targetDir);
+      const newScripts = compileProjectToFiles(project, { declaredElsewhere: declared.vars, labelsElsewhere: declared.labels });
       for (const script of newScripts) {
         await writeTextFile(`${targetDir}/game/${script.filename}`, script.content);
       }

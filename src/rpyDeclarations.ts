@@ -1,6 +1,6 @@
 /**
  * rpyDeclarations.ts — Find the variables a set of Ren'Py scripts already
- * declares with `default` or `define`.
+ * declares with `default` or `define`, and the labels they define.
  *
  * The compiler emits a `default` for every story variable it discovers. Ren'Py
  * refuses to start if a variable gets a `default` twice ("store.x is being
@@ -17,6 +17,21 @@ export function declaredVarNames(scripts: string[]): Set<string> {
   const names = new Set<string>();
   for (const script of scripts) {
     for (const m of script.matchAll(DECLARATION)) names.add(m[1]);
+  }
+  return names;
+}
+
+// `label name:`, `label name(args):` (local labels, `label .name:`, can't clash)
+const LABEL = /^[ \t]*label[ \t]+([A-Za-z_][A-Za-z0-9_]*)(?=[ \t(:])/gm;
+
+/**
+ * Labels defined in `scripts`. An export that keeps an imported game's label
+ * names avoids these: Ren'Py refuses to start if a label is defined twice.
+ */
+export function declaredLabelNames(scripts: string[]): Set<string> {
+  const names = new Set<string>();
+  for (const script of scripts) {
+    for (const m of script.matchAll(LABEL)) names.add(m[1]);
   }
   return names;
 }

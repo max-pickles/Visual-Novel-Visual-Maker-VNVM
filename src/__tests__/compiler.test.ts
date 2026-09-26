@@ -5,7 +5,7 @@
  * because vite.config.ts sets `test.globals: true`.
  */
 
-import { compileProject, getProjectStats } from "../compiler";
+import { compileProject, compileProjectToFiles, compilePreview, getProjectStats } from "../compiler";
 import { newProject, newScene, newCharacter, newEvent } from "../types";
 import type { VNProject } from "../types";
 
@@ -563,5 +563,85 @@ describe("getProjectStats", () => {
     expect(stats.dialogueLines).toBe(0);
     expect(stats.choices).toBe(0);
     expect(stats.music).toBe(0);
+  });
+});
+
+// ─── Imported games keep their names in exports ───────────────────────────────
+
+describe("exports of an imported game", () => {
+  /** A project as the importer makes it: scenes and characters remember their Ren'Py names. */
+  function imported(): VNProject {
+    const proj = newProject("Question", "Tester");
+    const sylvie = newCharacter("s");
+    sylvie.display = "Sylvie";
+    sylvie.renpy_name = "s";
+    const start = newScene("start");
+    start.renpy_label = "start";
+    const later = newScene("later");
+    later.renpy_label = "later";
+    const say = newEvent("dialogue");
+    say.char_id = sylvie.id;
+    say.text = 'Where does the "visual" part come in?';
+    const jump = newEvent("jump");
+    jump.scene_id = later.id;
+    start.events = [say, jump];
+    proj.characters = [sylvie];
+    proj.scenes = [start, later];
+    proj.start = start.id;
+    return proj;
+  }
+  const exported = (proj: VNProject, opts = {}) => compileProjectToFiles(proj, opts).map((f) => f.content).join("\n");
+
+  it("keeps the game's labels and character variables, which its translations are keyed by", () => {
+    const text = exported(imported());
+    expect(text).toContain("define s = Character('Sylvie'");
+    expect(text).toContain('    s "Where does the \\"visual\\" part come in?"');
+    expect(text).toContain("    jump later");
+    expect(text).toMatch(/^label later:$/m);
+    expect(text.match(/^label start:$/gm)).toHaveLength(1); // the start scene is the entry point
+    expect(text).not.toContain("vns_scene_");
+  });
+
+  it("does the same in a single-file export", () => {
+    const text = compileProject(imported(), { asExport: true });
+    expect(text).toContain("define s = Character('Sylvie'");
+    expect(text.match(/^label start:$/gm)).toHaveLength(1);
+  });
+
+  it("falls back to generated names that are invalid or taken", () => {
+    const proj = imported();
+    const [start, later] = proj.scenes;
+    later.renpy_label = "start"; // only the start scene may be `start`
+    proj.characters[0].renpy_name = "if";
+    const text = exported(proj);
+    expect(text).toContain(`label vns_scene_${later.id}:`);
+    expect(text).toContain(`define vnc_${proj.characters[0].id} = `);
+    expect(text).toMatch(/^label start:$/m);
+    expect(text).not.toContain(`vns_scene_${start.id}`);
+  });
+
+  it("doesn't reuse names the scripts it's written next to declare", () => {
+    const proj = imported();
+    const text = exported(proj, { declaredElsewhere: new Set(["s"]), labelsElsewhere: new Set(["later"]) });
+    expect(text).toContain(`define vnc_${proj.characters[0].id} = `);
+    expect(text).toContain(`label vns_scene_${proj.scenes[1].id}:`);
+  });
+
+  it("names who says a menu's prompt", () => {
+    const proj = imported();
+    const choice = newEvent("choice");
+    choice.prompt = "Well?";
+    choice.char_id = proj.characters[0].id;
+    choice.opts = [{ id: "o1", text: "Yes", scene: proj.scenes[1].id }];
+    proj.scenes[0].events = [choice];
+    expect(exported(proj)).toContain('        s "Well?"');
+  });
+
+  it("keeps generated names in the live preview, which sits next to the game's own story", () => {
+    const proj = imported();
+    const text = compilePreview(proj, proj.start!);
+    expect(text).toContain(`label vns_scene_${proj.scenes[0].id}:`);
+    expect(text).toContain(`define vnc_${proj.characters[0].id} = `);
+    expect(text).not.toMatch(/^label start:$/m);
   });
 });

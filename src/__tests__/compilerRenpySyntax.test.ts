@@ -10,7 +10,7 @@
  */
 
 import { compileProject, compileProjectToFiles, compilePreview, charImageTag, imageNameComponent } from "../compiler";
-import { declaredVarNames } from "../rpyDeclarations";
+import { declaredVarNames, declaredLabelNames } from "../rpyDeclarations";
 import { newProject, newCharacter, newEvent, extractVars, conditionVarNames } from "../types";
 import { validateProject } from "../validator";
 import type { VNProject, VNCharacter } from "../types";
@@ -294,6 +294,14 @@ describe("declared variables", () => {
       "label start:\n    $ not_declared = 1\n    # default commented = 1\n",
     ]);
     expect([...names].sort()).toEqual(["affection", "flag", "money"]);
+  });
+
+  it("finds the labels scripts define", () => {
+    const names = declaredLabelNames([
+      "label start:\n    jump ending\nlabel ending (mood='sad'):\n    return\n",
+      "label .local:\n    pass\n    # label commented:\nlabel chapter2:\n",
+    ]);
+    expect([...names].sort()).toEqual(["chapter2", "ending", "start"]);
   });
 
   it("skips defaults for variables the game's other scripts already declare", () => {

@@ -12,6 +12,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { ColorPicker } from "./ColorPicker";
 import type { PaletteColor } from "./colorPalettes";
 import { LayeredImageComposer } from "./LayeredImageComposer";
+import { exportedNames } from "./compiler";
 import { useTranslation } from "./translationContext";
 
 interface Props {
@@ -247,7 +248,7 @@ export function CharacterEditor({ project, onProjectChange }: Props) {
                     </div>
                     <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ fontSize: 11, color: "var(--dim)" }}>
-                        Ren'Py variable: <code style={{ fontFamily: "var(--mono)", color: "var(--teal)", background: "color-mix(in srgb, var(--teal) 10%, transparent)", padding: "2px 6px", borderRadius: 4 }}>vnc_{char.name}</code>
+                        Ren'Py variable: <code style={{ fontFamily: "var(--mono)", color: "var(--teal)", background: "color-mix(in srgb, var(--teal) 10%, transparent)", padding: "2px 6px", borderRadius: 4 }}>{exportedNames(project).character(char.id)}</code>
                       </div>
                       <button className="btn btn-ghost" style={{ fontSize: 12, color: "var(--err)", padding: "4px 8px" }}
                         onClick={() => deleteChar(char.id)}>

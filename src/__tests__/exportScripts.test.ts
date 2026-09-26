@@ -42,14 +42,26 @@ describe("isReplacedByExport", () => {
     expect(isReplacedByExport("game/lib/utils.rpy", [])).toBe(false);
   });
 
-  it("replaces the scripts an imported game brought in, and keeps ones added later", () => {
+  it("replaces the story scripts an imported game brought in, and keeps ones added later", () => {
     const imported = ["game/script.rpy", "game/chapter1.rpy", "game/tl/french/script.rpy"];
     expect(isReplacedByExport("game/chapter1.rpy", imported)).toBe(true);
-    expect(isReplacedByExport("game/tl/french/script.rpy", imported)).toBe(true);
     expect(isReplacedByExport("game/added_later.rpy", imported)).toBe(false);
   });
 
-  it("replaces every other script for projects saved before imports were tracked", () => {
+  it("keeps an imported game's translations and other scripts that aren't story", () => {
+    const imported = [
+      "game/script.rpy", "game/tl/french/script.rpy", "game/tl/french/common.rpy",
+      "game/styles.rpy", "game/testcases.rpy",
+    ];
+    for (const tracked of [imported, undefined]) {
+      expect(isReplacedByExport("game/tl/french/script.rpy", tracked)).toBe(false);
+      expect(isReplacedByExport("game/tl/french/common.rpy", tracked)).toBe(false);
+      expect(isReplacedByExport("game/styles.rpy", tracked)).toBe(false);
+      expect(isReplacedByExport("game/testcases.rpy", tracked)).toBe(false);
+    }
+  });
+
+  it("replaces every other story script for projects saved before imports were tracked", () => {
     expect(isReplacedByExport("game/chapter1.rpy", undefined)).toBe(true);
     expect(isReplacedByExport("game/inventory.rpy", undefined)).toBe(true);
   });

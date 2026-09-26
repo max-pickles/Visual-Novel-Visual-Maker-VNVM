@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compile fixture projects with VNVMaker's compiler (scripts/renpyFixtures.ts)
-# and check them with a real Ren'Py: every game must pass `lint`, and every
-# playable one must play through to the end.
+# and check them with a real Ren'Py: every game must pass `lint`, every
+# playable one must play through to the end, and an imported game's kept
+# translations must still cover all of its dialogue.
 #
 # Usage: scripts/check-renpy.sh <path to a built Ren'Py checkout>
 # Playthroughs need a display; on a headless machine run it under xvfb-run.
@@ -26,6 +27,22 @@ for dir in "$OUT"/games/*/; do
     failed=1
     continue
   fi
+  checks="lint"
+  if [ -f "$dir/vnv_translations.txt" ]; then
+    stale=0
+    while read -r lang; do
+      count="$(cd "$RENPY" && SDL_VIDEODRIVER=dummy timeout 300 ./run.sh "$dir" translate "$lang" --count 2>&1 < /dev/null | tail -n 1)"
+      if [[ "$count" != "$lang: 0 missing dialogue translations"* ]]; then
+        echo "::error::$name: the $lang translation no longer matches the dialogue ($count)"
+        stale=1
+      fi
+    done < "$dir/vnv_translations.txt"
+    if [ "$stale" = 1 ]; then
+      failed=1
+      continue
+    fi
+    checks="$checks, translations"
+  fi
   if [ -f "$dir/vnv_testcases.rpy" ]; then
     # Lint reports testcase statements as unreachable, so add them only now.
     mv "$dir/vnv_testcases.rpy" "$dir/game/"
@@ -35,9 +52,9 @@ for dir in "$OUT"/games/*/; do
       failed=1
       continue
     fi
-    echo "ok: $name (lint, playthrough)"
+    echo "ok: $name ($checks, playthrough)"
   else
-    echo "ok: $name (lint)"
+    echo "ok: $name ($checks)"
   fi
 done
 exit "$failed"

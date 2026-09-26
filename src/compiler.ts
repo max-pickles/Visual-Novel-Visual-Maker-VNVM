@@ -9,6 +9,8 @@
  * 2. Auto-discover story variables via {@link extractVars} and emit `default` lines.
  * 3. Emit one `define vnc_<id> = Character(...)` per character.
  * 4. Compile each scene as a `label vns_scene_<id>:` block via {@link compileScene}.
+ *    Exports keep an imported game's own labels and character variables
+ *    instead (see `exportNames`), so its translations still match.
  * 5. Emit an entry-point label that `jump`s to the start scene.
  *
  * ## Known limitations / design choices
@@ -89,6 +91,74 @@ function safeTrans(t: string): string {
   return t;
 }
 
+/** What generated code calls each scene (its label) and character (its variable). */
+export interface Names {
+  label(sceneId: string): string;
+  character(charId: string): string;
+}
+
+/** The generated names, `vns_scene_<id>` and `vnc_<id>`, which can't clash with a game's own. */
+const GENERATED_NAMES: Names = {
+  label: id => `vns_scene_${id}`,
+  character: id => `vnc_${id}`,
+};
+
+const PY_KEYWORDS = new Set([
+  "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
+  "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+  "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise",
+  "return", "try", "while", "with", "yield",
+]);
+
+/** The label and variable names an export gives scenes and characters, for showing in the editor. */
+export function exportedNames(proj: VNProject): Names {
+  return exportNames(proj, {});
+}
+
+/**
+ * Whether a name from an imported game can be reused: a plain identifier that
+ * isn't a Python keyword, isn't reserved by Ren'Py (a leading underscore) and
+ * can't clash with generated names (`vns_…`, `vnc_…`, `vnv_…`).
+ */
+function isReusableName(name: string | undefined): name is string {
+  return !!name && /^[A-Za-z][A-Za-z0-9_]*$/.test(name) && !PY_KEYWORDS.has(name) && !/^vn[a-z]_/.test(name);
+}
+
+/**
+ * Names for scripts that replace an imported game's story (exports). Scenes and
+ * characters keep the label and variable they had in that game, because Ren'Py
+ * finds a line's translation by its label and speaker. Names already taken, by
+ * another scene or character or by the scripts the export keeps, fall back to
+ * generated ones, and only the start scene may be called `start`.
+ */
+function exportNames(proj: VNProject, opts: ExportOptions): Names {
+  const startId = proj.start ?? proj.scenes[0]?.id;
+  const labels = new Map<string, string>();
+  const takenLabels = new Set(opts.labelsElsewhere);
+  // The start scene goes first, so it can claim its name.
+  const scenes = [...proj.scenes].sort((a, b) => Number(b.id === startId) - Number(a.id === startId));
+  for (const sc of scenes) {
+    const name = sc.renpy_label;
+    if (isReusableName(name) && !takenLabels.has(name) && (name !== "start" || sc.id === startId)) {
+      labels.set(sc.id, name);
+      takenLabels.add(name);
+    }
+  }
+  const chars = new Map<string, string>();
+  const takenVars = new Set([...(opts.declaredElsewhere ?? []), ...extractVars(proj).map(v => v.name)]);
+  for (const ch of proj.characters) {
+    const name = ch.renpy_name;
+    if (isReusableName(name) && !takenVars.has(name)) {
+      chars.set(ch.id, name);
+      takenVars.add(name);
+    }
+  }
+  return {
+    label: id => labels.get(id) ?? GENERATED_NAMES.label(id),
+    character: id => chars.get(id) ?? GENERATED_NAMES.character(id),
+  };
+}
+
 /**
  * Append an ATL (Animation and Transform Language) code block to `lines`,
  * indenting each non-empty line with `prefix`.
@@ -121,12 +191,14 @@ function compileAtl(atl: string, lines: string[], prefix: string): void {
  * @param proj   - The parent project (used to resolve character/scene lookups).
  * @param lines  - Output line buffer.
  * @param prefix - Indentation string prepended to every emitted line.
+ * @param names  - Labels and character variables to use.
  */
 function compileEvent(
   ev: VNEvent,
   proj: VNProject,
   lines: string[],
   prefix: string,
+  names: Names,
 ): void {
   const t = ev.type;
   if (!t) return;
@@ -259,7 +331,7 @@ function compileEvent(
   // ── Dialogue ────────────────────────────────────────────────────────────────
   else if (t === "dialogue") {
     const char = findChar(proj, ev.char_id);
-    const cRef = char ? `vnc_${char.id}` : "narrator";
+    const cRef = char ? names.character(char.id) : "narrator";
 
     // Show character sprite if available
     if (ev.char_id && char) {
@@ -307,12 +379,13 @@ function compileEvent(
   else if (t === "choice") {
     const opts = ev.opts ?? [];
     const prompt = esc(ev.prompt ?? "");
+    const speaker = ev.char_id && findChar(proj, ev.char_id) ? `${names.character(ev.char_id)} ` : "";
     if (!opts.length) {
-      if (prompt) lines.push(`${prefix}"${prompt}"`);
+      if (prompt) lines.push(`${prefix}${speaker}"${prompt}"`);
       return;
     }
     lines.push(`${prefix}menu:`);
-    if (prompt) lines.push(`${prefix}    "${prompt}"`);
+    if (prompt) lines.push(`${prefix}    ${speaker}"${prompt}"`);
     for (const opt of opts) {
       // Optional per-option condition  →  "Label" if condition:
       const cond = opt.condition?.trim();
@@ -320,7 +393,7 @@ function compileEvent(
       lines.push(`${prefix}    "${esc(opt.text)}"${condStr}:`);
       const targetScene = findScene(proj, opt.scene);
       if (targetScene) {
-        lines.push(`${prefix}        jump vns_scene_${opt.scene}`);
+        lines.push(`${prefix}        jump ${names.label(targetScene.id)}`);
       } else {
         lines.push(`${prefix}        pass`);
       }
@@ -333,7 +406,7 @@ function compileEvent(
     const trans = ev.transition ? safeTrans(ev.transition) : "dissolve";
     if (target) {
       if (trans && trans !== "none") lines.push(`${prefix}with ${trans}`);
-      lines.push(`${prefix}jump vns_scene_${target}`);
+      lines.push(`${prefix}jump ${names.label(target)}`);
     }
   }
 
@@ -372,13 +445,13 @@ function compileEvent(
     const cond = ev.condition?.trim() || "True";
     lines.push(`${prefix}if ${cond}:`);
     if (ev.scene_true) {
-      lines.push(`${prefix}    jump vns_scene_${ev.scene_true}`);
+      lines.push(`${prefix}    jump ${names.label(ev.scene_true)}`);
     } else {
       lines.push(`${prefix}    pass`);
     }
     if (ev.scene_false) {
       lines.push(`${prefix}else:`);
-      lines.push(`${prefix}    jump vns_scene_${ev.scene_false}`);
+      lines.push(`${prefix}    jump ${names.label(ev.scene_false)}`);
     }
   }
 
@@ -432,11 +505,11 @@ function compileEvent(
       if (isWeighted) {
         // Expand into a weighted pool: each label repeated `weight` times
         const poolItems = pairs.flatMap(({ sc, w }) =>
-          Array(w).fill(`"vns_scene_${sc!.id}"`)
+          Array(w).fill(`"${names.label(sc!.id)}"`)
         ).join(", ");
         lines.push(`${prefix}$ _rnd = renpy.random.choice([${poolItems}])`);
       } else {
-        const labelList = pairs.map(({ sc }) => `"vns_scene_${sc!.id}"`).join(", ");
+        const labelList = pairs.map(({ sc }) => `"${names.label(sc!.id)}"`).join(", ");
         lines.push(`${prefix}$ _rnd = renpy.random.choice([${labelList}])`);
       }
       lines.push(`${prefix}jump expression _rnd`);
@@ -465,13 +538,13 @@ function compileEvent(
 // ─── Character definitions ────────────────────────────────────────────────────
 
 /**
- * Append a `define vnc_<id> = Character(...)` line for every character, plus the
+ * Append a `define <variable> = Character(...)` line for every character, plus the
  * side images and the pose images that dialogue events `show`.
  *
  * Strings go through {@link pyStr} (so names like O'Brien stay valid Python) and
  * image names through {@link charImageTag} / {@link imageNameComponent}.
  */
-function compileCharacters(proj: VNProject, lines: string[]): void {
+function compileCharacters(proj: VNProject, lines: string[], names: Names): void {
   if (!proj.characters.length) return;
   lines.push(`## Characters`);
   for (const char of proj.characters) {
@@ -485,7 +558,7 @@ function compileCharacters(proj: VNProject, lines: string[]): void {
     if (char.dialogue_prefix) args.push(`what_prefix=${pyStr(char.dialogue_prefix)}`);
     if (char.dialogue_suffix) args.push(`what_suffix=${pyStr(char.dialogue_suffix)}`);
     if (sideImages.length > 0) args.push(`image=${pyStr(tag)}`);
-    lines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
+    lines.push(`define ${names.character(char.id)} = Character(${args.join(', ')})`);
 
     for (const [pose, imgPath] of sideImages) {
       const attr = imageNameComponent(pose);
@@ -520,7 +593,7 @@ function compileCharacters(proj: VNProject, lines: string[]): void {
 // ─── Scene compiler ───────────────────────────────────────────────────────────
 
 /**
- * Compile one {@link VNScene} into a Ren'Py `label vns_scene_<id>:` block.
+ * Compile one {@link VNScene} into a Ren'Py `label` block, named by `names`.
  *
  * - If the scene has a `bg`, emits a `scene expression Transform(...)` at the
  *   top of the label body.
@@ -531,9 +604,10 @@ function compileCharacters(proj: VNProject, lines: string[]): void {
  * @param sc    - Scene to compile.
  * @param proj  - Parent project.
  * @param lines - Output line buffer.
+ * @param names - Labels and character variables to use.
  */
-function compileScene(sc: VNScene, proj: VNProject, lines: string[]): void {
-  lines.push(`label vns_scene_${sc.id}:`);
+function compileScene(sc: VNScene, proj: VNProject, lines: string[], names: Names): void {
+  lines.push(`label ${names.label(sc.id)}:`);
 
   // Scene-level background
   if (sc.bg) {
@@ -550,7 +624,7 @@ function compileScene(sc: VNScene, proj: VNProject, lines: string[]): void {
   } else {
     for (const ev of sc.events) {
       if (!ev.type) continue; // skip empty slots
-      compileEvent(ev, proj, lines, "    ");
+      compileEvent(ev, proj, lines, "    ", names);
     }
   }
 
@@ -581,8 +655,17 @@ function compileDefaults(proj: VNProject, lines: string[], opts: DefaultsOptions
 
 // ─── Main compiler ────────────────────────────────────────────────────────────
 
+/** Options for scripts that replace an imported game's story (exports). */
+export interface ExportOptions extends DefaultsOptions {
+  /**
+   * Labels the game's other scripts define (see `declaredLabelNames`). Scenes
+   * don't reuse them: Ren'Py refuses to start if a label is defined twice.
+   */
+  labelsElsewhere?: ReadonlySet<string>;
+}
+
 /** Options that control how the top-level `compileProject` entry point is emitted. */
-export interface CompileOptions extends DefaultsOptions {
+export interface CompileOptions extends ExportOptions {
   /**
    * When `true`, emits `label start:` as the Ren'Py entry point, which is
    * the convention for a standalone game. When `false` (default), a
@@ -640,13 +723,16 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
     lines.push(``);
   }
 
+  // An export replaces the game's story, so it can keep an imported game's names.
+  const names = opts.asExport ? exportNames(proj, opts) : GENERATED_NAMES;
+
   // ── Character definitions ────────────────────────────────────────────────────────
-  compileCharacters(proj, lines);
+  compileCharacters(proj, lines, names);
 
   // ── Scene labels ────────────────────────────────────────────────────────────
   lines.push(`## Scenes`);
   for (const sc of proj.scenes) {
-    compileScene(sc, proj, lines);
+    compileScene(sc, proj, lines, names);
   }
 
   // ── Entry point ─────────────────────────────────────────────────────────────
@@ -654,7 +740,8 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
     ? proj.scenes.find(s => s.id === proj.start)
     : proj.scenes[0];
 
-  if (startScene) {
+  // (An imported start scene can be `label start:` itself.)
+  if (startScene && names.label(startScene.id) !== "start") {
     lines.push(`## Entry Point`);
     if (opts.asExport) {
       lines.push(`label start:`);
@@ -662,7 +749,7 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
       const safeId = proj.id.replace(/[^a-zA-Z0-9_]/g, "_");
       lines.push(`label vns_${safeId}_start:`);
     }
-    lines.push(`    jump vns_scene_${startScene.id}`);
+    lines.push(`    jump ${names.label(startScene.id)}`);
     lines.push(``);
   }
 
@@ -680,8 +767,9 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
  * @param opts - Pass `declaredElsewhere` when other scripts stay next to these.
  * @returns Array of file objects with filename and string content.
  */
-export function compileProjectToFiles(proj: VNProject, opts: DefaultsOptions = {}): { filename: string, content: string }[] {
+export function compileProjectToFiles(proj: VNProject, opts: ExportOptions = {}): { filename: string, content: string }[] {
   const files: { filename: string, content: string }[] = [];
+  const names = exportNames(proj, opts);
   const scriptLines: string[] = [
     `## ═══════════════════════════════════════════════`,
     `## AUTO-GENERATED SCRIPT: ${proj.title}`,
@@ -713,18 +801,18 @@ export function compileProjectToFiles(proj: VNProject, opts: DefaultsOptions = {
   }
 
   // ── Character definitions ────────────────────────────────────────────────────────
-  compileCharacters(proj, scriptLines);
+  compileCharacters(proj, scriptLines, names);
 
   // ── Entry point ─────────────────────────────────────────────────────────────
   const startScene = proj.start
     ? proj.scenes.find(s => s.id === proj.start)
     : proj.scenes[0];
 
-  if (startScene) {
+  // A standalone game starts at `label start:`, which an imported start scene can be itself.
+  if (startScene && names.label(startScene.id) !== "start") {
     scriptLines.push(`## Entry Point`);
-    // For standalone export, we ALWAYS want `label start:`
     scriptLines.push(`label start:`);
-    scriptLines.push(`    jump vns_scene_${startScene.id}`);
+    scriptLines.push(`    jump ${names.label(startScene.id)}`);
     scriptLines.push(``);
   }
 
@@ -738,7 +826,7 @@ export function compileProjectToFiles(proj: VNProject, opts: DefaultsOptions = {
       `## ═══════════════════════════════════════════════`,
       ``,
     ];
-    compileScene(sc, proj, sceneLines);
+    compileScene(sc, proj, sceneLines, names);
     files.push({ filename: `scene_${sc.id}.rpy`, content: sceneLines.join("\n") });
   }
 
@@ -787,8 +875,11 @@ export function compilePreview(
     ``,
   ];
 
+  // The preview sits next to an imported game's own story, so it uses generated names.
+  const names = GENERATED_NAMES;
+
   // Character definitions
-  compileCharacters(proj, lines);
+  compileCharacters(proj, lines, names);
 
   // Auto-discovered story variables
   compileDefaults(proj, lines, opts);
@@ -796,7 +887,7 @@ export function compilePreview(
   // All scene labels — same format as the full export so cross-scene jumps resolve
   lines.push(`## Scenes`);
   for (const sc of proj.scenes) {
-    compileScene(sc, proj, lines);
+    compileScene(sc, proj, lines, names);
   }
 
   if (playMode) {
@@ -814,7 +905,7 @@ export function compilePreview(
     lines.push(``);
     lines.push(`label vnv_preview_entry:`);
     if (proj.start) {
-      lines.push(`    jump vns_scene_${proj.start}`);
+      lines.push(`    jump ${names.label(proj.start)}`);
     } else {
       lines.push(`    return`);
     }
@@ -841,7 +932,7 @@ export function compilePreview(
     if (inheritedMusic) {
       lines.push(`    play music "${esc(inheritedMusic)}" fadein 0.5`);
     }
-    lines.push(`    jump vns_scene_${targetSceneId}`);
+    lines.push(`    jump ${names.label(targetSceneId)}`);
     lines.push(``);
   }
 
@@ -877,7 +968,7 @@ export function compileSingleAnimationPreview(
     lines.push(`    scene black`);
   }
   
-  compileEvent({ ...ev, type: "animation" }, proj, lines, "    ");
+  compileEvent({ ...ev, type: "animation" }, proj, lines, "    ", GENERATED_NAMES);
   lines.push(`    pause`);
   lines.push(`    return`);
   return lines.join("\n");

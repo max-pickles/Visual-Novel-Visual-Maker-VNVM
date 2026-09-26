@@ -6,8 +6,7 @@
  * compiled story are removed from the copy; everything else is kept.
  */
 
-/** Kept in every export: Ren'Py config/UI definitions and the Translation Dashboard's output. */
-const KEEP_ON_EXPORT = new Set(["gui.rpy", "options.rpy", "screens.rpy", "vnv_translations.rpy"]);
+import { isStoryScript } from "./rpyImporter";
 
 /**
  * True for scripts VNVMaker writes itself: the compiled story, its per-scene
@@ -21,17 +20,20 @@ export function isGeneratedScript(path: string): boolean {
 /**
  * Should `path` be removed from an exported copy of the project?
  *
+ * Only story scripts can clash with the compiled story. Config and screens,
+ * translations (including the Translation Dashboard's), styles and tests,
+ * which the importer never reads, are always kept.
+ *
  * @param path     - Script path relative to the project folder.
  * @param imported - `VNProject.imported_scripts`: scripts copied in from the
  *                   Ren'Py game the project was imported from. `undefined` for
  *                   projects saved before this was tracked — for those every
- *                   script except the kept ones is replaced, as before.
+ *                   story script is replaced, as before.
  */
 export function isReplacedByExport(path: string, imported: string[] | undefined): boolean {
   const p = normalize(path);
-  const name = p.split("/").pop() ?? p;
-  if (KEEP_ON_EXPORT.has(name)) return false;
   if (isGeneratedScript(p)) return true;
+  if (!isStoryScript(p)) return false;
   if (imported) return imported.some(i => normalize(i) === p);
   return true;
 }
