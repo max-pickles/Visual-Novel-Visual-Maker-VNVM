@@ -27,6 +27,19 @@ const EVENT_ASSETS: Partial<Record<EventType, { kind: AssetKind; field: AssetFie
   narration: { kind: "audio",  field: "voice" },
 };
 
+/** The file extensions `listAssetFiles` lists for each kind (see `list_assets` in src-tauri/src/lib.rs). */
+const KIND_EXTENSIONS: Record<AssetKind, string[]> = {
+  images: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
+  audio:  ["ogg", "mp3", "wav", "opus", "flac"],
+  video:  ["webm", "mp4", "mkv", "avi", "mov", "ogv"],
+};
+
+/** The kind of file `path` is, by its extension, or null if it's none of them. */
+export function assetKindOf(path: string): AssetKind | null {
+  const ext = /\.([^./]+)$/.exec(path)?.[1].toLowerCase() ?? "";
+  return (Object.keys(KIND_EXTENSIONS) as AssetKind[]).find(kind => KIND_EXTENSIONS[kind].includes(ext)) ?? null;
+}
+
 /** The kind of file an event of type `type` takes, or null if it takes none. */
 export function assetKindFor(type: EventType): AssetKind | null {
   return EVENT_ASSETS[type]?.kind ?? null;

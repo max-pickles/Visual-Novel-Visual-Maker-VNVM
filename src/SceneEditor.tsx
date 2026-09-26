@@ -25,7 +25,7 @@ import { parseGuiRpy } from "./guiParser";
 import type { GuiConfig } from "./guiParser";
 import { useTranslation } from "./translationContext";
 import { SidebarAssetBrowser } from "./SidebarAssetBrowser";
-import { assetFieldFor, assetFieldValue, assetKindFor } from "./eventAssets";
+import { assetFieldFor, assetFieldValue, assetKindFor, assetKindOf } from "./eventAssets";
 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -74,8 +74,13 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal]   = useState("");
   const [, setTick]             = useState(0);
-  // Picker modal opened from clicking bg/sprite in the preview
-  const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" } | null>(null);
+  // Picker modal opened from clicking bg/sprite in the preview, or from a voice field (below)
+  const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" | "voice" } | null>(null);
+  // A voice field's Open Full Browser in the Inspector opens the picker on the project's audio.
+  // The picker needs the project folder, so without one the Inspector doesn't offer it.
+  const openFullBrowser = project._rootPath
+    ? (_tab: string, field: string) => { if (field === "voice") setPickerModal({ field }); }
+    : undefined;
   // Ren'Py live preview
   const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(SDK_PATH_KEY) ?? "");
   const [showSdkModal, setShowSdkModal] = useState(false);
@@ -814,6 +819,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     rootPath={project._rootPath ?? ""}
                     onChange={onEventChange}
                     onOpenAnimTrack={() => setShowAnimTrack(true)}
+                    openFullBrowser={openFullBrowser}
                   />
                 </div>
 
@@ -1041,13 +1047,15 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               padding: "12px 18px", borderBottom: "1px solid var(--bdr)",
               background: "var(--bg2)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
             }}>
-              <span style={{ fontSize: 16 }}>{pickerModal.field === "bg" ? "🖼" : "🎨"}</span>
+              <span style={{ fontSize: 16 }}>{{ bg: "🖼", image: "🎨", voice: "🎙" }[pickerModal.field]}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
-                {pickerModal.field === "bg" ? t('editor.scene.choose_bg') : t('editor.scene.choose_image')}
+                {t({ bg: 'editor.scene.choose_bg', image: 'editor.scene.choose_image', voice: 'editor.scene.choose_voice' }[pickerModal.field])}
               </span>
-              <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 4 }}>
-                {t('editor.scene.picker_hint')}
-              </span>
+              {pickerModal.field !== "voice" && (
+                <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 4 }}>
+                  {t('editor.scene.picker_hint')}
+                </span>
+              )}
               <button
                 onClick={() => setPickerModal(null)}
                 style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--faint)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
@@ -1060,11 +1068,12 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               <AssetBrowser
                 rootPath={project._rootPath}
                 project={project}
+                initialType={pickerModal.field === "voice" ? "audio" : "images"}
                 onPick={(path) => {
-                  if (selEvent && selIdx !== null) {
-                    const key = pickerModal.field === "bg" ? "bg" : "image";
-                    onEventChange({ ...selEvent, [key]: path });
-                  }
+                  // The file goes in the field the event takes, if it's that kind of file.
+                  const kind = assetKindOf(path);
+                  const field = selEvent && kind && assetFieldFor(selEvent.type, kind);
+                  if (selEvent && field) onEventChange({ ...selEvent, [field]: assetFieldValue(field, path) });
                   setPickerModal(null);
                 }}
               />

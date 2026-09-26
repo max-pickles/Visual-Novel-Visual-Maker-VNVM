@@ -5,7 +5,7 @@
  * because vite.config.ts sets `test.globals: true`.
  */
 
-import { assetFieldFor, assetFieldValue, assetKindFor } from "../eventAssets";
+import { assetFieldFor, assetFieldValue, assetKindFor, assetKindOf } from "../eventAssets";
 import type { AssetKind } from "../eventAssets";
 import { compileProject } from "../compiler";
 import { newEvent, newProject } from "../types";
@@ -67,6 +67,24 @@ describe("assetKindFor", () => {
 
   it("is null for events that take no file", () => {
     for (const type of NO_FILE) expect(assetKindFor(type), type || "(empty)").toBeNull();
+  });
+});
+
+describe("assetKindOf", () => {
+  it("tells images, audio and video apart by extension, whatever its case", () => {
+    expect(assetKindOf("game/images/room.png")).toBe("images");
+    expect(assetKindOf("game/images/Room.JPEG")).toBe("images");
+    expect(assetKindOf("game/voice/line_001.ogg")).toBe("audio");
+    expect(assetKindOf("game/audio/theme.Opus")).toBe("audio");
+    expect(assetKindOf("game/movies/intro.webm")).toBe("video");
+    expect(assetKindOf("game/movies/intro.ogv")).toBe("video");
+  });
+
+  it("is null for other files and names without an extension", () => {
+    expect(assetKindOf("game/script.rpy")).toBeNull();
+    expect(assetKindOf("game/gui/font.ttf")).toBeNull();
+    expect(assetKindOf("bg room")).toBeNull();
+    expect(assetKindOf("game/images.v2/room")).toBeNull();
   });
 });
 

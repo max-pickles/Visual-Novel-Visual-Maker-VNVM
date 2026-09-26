@@ -35,6 +35,7 @@ export const assetsProject = project("Assets", {
       { id: "line", type: "narration", text: "A voiced line" },
       { id: "movie", type: "movie", movie: "" },
       { id: "bg", type: "bg", bg: "" },
+      { id: "talk", type: "dialogue", char_id: null, text: "A voiced line of dialogue." },
       { id: "jump", type: "jump", scene_id: "end", transition: "dissolve" },
     ]),
     scene("end", [{ id: "end1", type: "narration", text: "The end" }]),

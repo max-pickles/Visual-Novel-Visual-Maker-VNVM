@@ -50,7 +50,7 @@ test("a file picked in the scene editor's sidebar goes in the field its event us
   await sidebarItem(page, "room.png").click();
 
   // A jump takes no file and a background no sound, so these picks change nothing.
-  await eventCard(page, 5).click();
+  await eventCard(page, 6).click();
   await sidebarItem(page, "Audio").click();
   await sidebarItem(page, "door.ogg").click();
   await eventCard(page, 4).click();
@@ -64,5 +64,34 @@ test("a file picked in the scene editor's sidebar goes in the field its event us
     { ...before[3], movie: "game/movies/intro.webm" },
     { ...before[4], bg: "game/images/room.png" },
     before[5],
+    before[6],
   ]);
+});
+
+test("a voice field's Open Full Browser button picks the line's voice file", async ({ page, allowErrors }) => {
+  // Choosing a track in the browser plays it, and the mocked backend has no audio to load.
+  allowErrors(/^console: Audio playback failed for all candidate paths:/);
+  await openApp(page, { project: assetsProject, assets });
+  await openProject(page, "Assets");
+  await editorTab(page, "Scenes").click();
+  const before = await save(page);
+
+  // The browser opens on the audio files.
+  await eventCard(page, 5).click();
+  await page.getByRole("button", { name: /Open Full Browser/ }).click();
+  const title = page.getByText("Choose Voice File", { exact: true });
+  await expect(title).toBeVisible();
+  await page.getByText("game/voice/line_001.ogg", { exact: true }).click();
+  await page.getByRole("button", { name: "✅ Use This" }).click();
+  await expect(title).toBeHidden();
+  await expect(page.getByText("✓ line_001.ogg")).toBeVisible();
+
+  // An image picked on its images tab isn't a voice, so it changes nothing.
+  await page.getByRole("button", { name: /Open Full Browser/ }).click();
+  await page.getByText("🖼 Images", { exact: true }).click();
+  await page.getByTitle("game/images/room.png").click();
+  await page.getByRole("button", { name: "✅ Use This" }).first().click();
+  await expect(title).toBeHidden();
+
+  expect((await save(page))[5]).toEqual({ ...before[5], voice: "voice/line_001.ogg" });
 });
