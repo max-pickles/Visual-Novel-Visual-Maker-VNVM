@@ -4,6 +4,7 @@
 // A test configures it through window.__VNV_MOCK__, set by an earlier init script:
 //   project        a VNProject listed in the games folder and returned by load_vnv_project
 //   files          file contents read_rpy_file returns, keyed by path suffix (e.g. "game/gui.rpy")
+//   assets         paths list_asset_files returns, keyed by asset type (e.g. { audio: ["audio/theme.ogg"] })
 //   dialogAnswers  replies to plugin:dialog|message, in order ("Cancel" once they run out)
 //
 // Every call is recorded in window.__calls as [command, args], dialogs in
@@ -12,6 +13,7 @@
   const config = window.__VNV_MOCK__ || {};
   const answers = [...(config.dialogAnswers || [])];
   const files = config.files || {};
+  const assets = config.assets || {};
   const project = config.project || null;
   const projectDir = project ? `C:/Users/tester/Documents/VNVMaker/games/${project.title}` : null;
 
@@ -56,6 +58,7 @@
         case "find_renpy_sdk":
           return null;
         case "list_asset_files":
+          return assets[args.assetType] || [];
         case "get_rpy_files":
           return [];
         case "scan_tl_translations":

@@ -62,6 +62,7 @@ VNV Maker supports extensive theming (Light mode, Dark mode, Solarized, Nord, et
     *   `var(--text)`, `var(--dim)`, `var(--faint)`: Typography hierarchy.
     *   `var(--teal)`, `var(--acc)`, `var(--acc2)`: Primary brand colors.
     *   `var(--err)`, `var(--warn)`, `var(--ok)`: Status colors.
+    *   `var(--preview-dark)`, `var(--preview-white)`, `var(--preview-checker)`: Backdrops for image previews. Unlike the rest they are the same in every theme, so an image is judged against the same background.
 3.  **Transparencies**: If you need a transparent version of a theme color, **DO NOT** convert it to RGBA. Use the modern CSS `color-mix()` function.
     *   *Correct*: `background: "color-mix(in srgb, var(--teal) 15%, transparent)"`
     *   *Incorrect*: `background: "rgba(0, 212, 200, 0.15)"`

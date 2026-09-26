@@ -194,8 +194,10 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
     if (assetType === "audio" && playing !== path) playAudio(path);
   };
 
-  const confirmPick = () => {
-    if (selected && onPick) onPick(selected);
+  // Takes the file rather than reading `selected`: a row's Use button selects and
+  // picks in one click, and `selected` only changes on the next render.
+  const confirmPick = (path: string) => {
+    if (onPick) onPick(path);
   };
 
   // ── Copy path to clipboard ─────────────────────────────────────────────────
@@ -338,7 +340,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                   📋 Copy Path
                 </button>
                 {onPick && (
-                  <button className="btn btn-teal" style={{ fontSize: 11, padding: "3px 10px" }} onClick={confirmPick}>
+                  <button className="btn btn-teal" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => confirmPick(selected)}>
                     ✅ Use This
                   </button>
                 )}
@@ -353,10 +355,10 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
 
               {/* Video Support Notice */}
               {assetType === "video" && (
-                <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(255,160,0,0.1)", border: "1px solid rgba(255,160,0,0.3)", borderRadius: 6, color: "var(--text)", fontSize: 13, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <div style={{ marginBottom: 16, padding: "10px 14px", background: "color-mix(in srgb, var(--warn) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 30%, transparent)", borderRadius: 6, color: "var(--text)", fontSize: 13, display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <span style={{ fontSize: 16, lineHeight: 1 }}>⚠️</span>
                   <div>
-                    <strong style={{ color: "#ffa000" }}>Note:</strong> Only <strong>.webm</strong> files are playable in the Ren'Py engine. While you can preview .mp4 and .mov files here, they will not work when running the game.
+                    <strong style={{ color: "var(--warn)" }}>Note:</strong> Only <strong>.webm</strong> files are playable in the Ren'Py engine. While you can preview .mp4 and .mov files here, they will not work when running the game.
                   </div>
                 </div>
               )}
@@ -431,7 +433,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                           <span style={{ fontSize: 10, color: "var(--faint)", flexShrink: 0 }}>.{extOf(f)}</span>
                           {onPick && isSel && (
                             <button className="btn btn-teal" style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
-                              onClick={(e) => { e.stopPropagation(); confirmPick(); }}>
+                              onClick={(e) => { e.stopPropagation(); confirmPick(f); }}>
                               Use
                             </button>
                           )}
@@ -482,7 +484,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                         </div>
                         {onPick && (
                           <button className="btn btn-teal" style={{ margin: "0 8px", fontSize: 11, padding: "3px 8px", flexShrink: 0 }}
-                            onClick={(e) => { e.stopPropagation(); select(f); confirmPick(); }}>
+                            onClick={(e) => { e.stopPropagation(); select(f); confirmPick(f); }}>
                             ✅ Use
                           </button>
                         )}
@@ -497,8 +499,8 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
             {/* ── Advanced Preview Panel ── */}
             {(assetType === "images" || assetType === "video") && selected && selectedUrl && (() => {
               const bgStyle = pvBg === 'checker'
-                ? { backgroundImage: 'repeating-conic-gradient(#1e2a3a 0% 25%, #0d1220 0% 50%)', backgroundSize: '20px 20px' }
-                : pvBg === 'white' ? { background: '#f0f0f0' } : { background: '#05080f' };
+                ? { backgroundImage: 'var(--preview-checker)', backgroundSize: '20px 20px' }
+                : pvBg === 'white' ? { background: 'var(--preview-white)' } : { background: 'var(--preview-dark)' };
               const selectedIdx = visibleFiles.indexOf(selected);
               const prevFile = selectedIdx > 0 ? visibleFiles[selectedIdx - 1] : null;
               const nextFile = selectedIdx < visibleFiles.length - 1 ? visibleFiles[selectedIdx + 1] : null;
@@ -637,11 +639,11 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                     )}
                     {/* Zoom hint */}
                     {pvZoom > 1 && (
-                      <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 10, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none' }}>Drag to pan • Scroll to zoom</div>
+                      <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 10, color: 'color-mix(in srgb, var(--preview-white) 35%, transparent)', pointerEvents: 'none' }}>Drag to pan • Scroll to zoom</div>
                     )}
                     {/* Rotation badge */}
                     {pvRotation !== 0 && (
-                      <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '2px 6px', fontSize: 10, color: 'var(--teal)' }}>{pvRotation}°</div>
+                      <div style={{ position: 'absolute', top: 8, left: 8, background: 'color-mix(in srgb, var(--preview-dark) 60%, transparent)', borderRadius: 4, padding: '2px 6px', fontSize: 10, color: 'var(--teal)' }}>{pvRotation}°</div>
                     )}
                   </div>
 
@@ -673,39 +675,39 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                       >
                         📂 Go to Folder
                       </button>
-                      {onPick && <button className="btn btn-teal" style={{ flex: 1, fontSize: 11 }} onClick={confirmPick}>✅ Use This</button>}
+                      {onPick && <button className="btn btn-teal" style={{ flex: 1, fontSize: 11 }} onClick={() => confirmPick(selected)}>✅ Use This</button>}
                     </div>
                   </div>
 
                   {/* ── Fullscreen Lightbox ── */}
                   {pvFullscreen && (
                     <div
-                      style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.96)', display: 'flex', flexDirection: 'column' }}
+                      style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'color-mix(in srgb, var(--preview-dark) 96%, transparent)', display: 'flex', flexDirection: 'column' }}
                       onClick={() => setPvFullscreen(false)}
                     >
                       {/* Lightbox toolbar */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'rgba(0,0,0,0.7)', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-                        <span style={{ fontSize: 13, color: '#ccc', fontWeight: 600, flex: 1 }}>{selectedName}</span>
-                        {imageDims && <span style={{ fontSize: 11, color: '#666', fontFamily: 'var(--mono)' }}>{imageDims.w} × {imageDims.h}px</span>}
-                        <button onClick={() => setPvFullscreen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>✕ Close</button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'color-mix(in srgb, var(--preview-dark) 70%, transparent)', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                        <span style={{ fontSize: 13, color: 'color-mix(in srgb, var(--preview-white) 85%, transparent)', fontWeight: 600, flex: 1 }}>{selectedName}</span>
+                        {imageDims && <span style={{ fontSize: 11, color: 'color-mix(in srgb, var(--preview-white) 40%, transparent)', fontFamily: 'var(--mono)' }}>{imageDims.w} × {imageDims.h}px</span>}
+                        <button onClick={() => setPvFullscreen(false)} style={{ background: 'color-mix(in srgb, var(--preview-white) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--preview-white) 20%, transparent)', color: 'var(--preview-white)', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>✕ Close</button>
                       </div>
                       {/* Lightbox image */}
                       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
                         {assetType === "video" ? (
-                          <video src={selectedUrl} controls style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', transform: `rotate(${pvRotation}deg)`, borderRadius: 4, boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }} />
+                          <video src={selectedUrl} controls style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', transform: `rotate(${pvRotation}deg)`, borderRadius: 4, boxShadow: '0 8px 60px color-mix(in srgb, var(--preview-dark) 80%, transparent)' }} />
                         ) : (
-                          <img src={selectedUrl} alt={selectedName} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', transform: `rotate(${pvRotation}deg)`, borderRadius: 4, boxShadow: '0 8px 60px rgba(0,0,0,0.8)' }} />
+                          <img src={selectedUrl} alt={selectedName} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', transform: `rotate(${pvRotation}deg)`, borderRadius: 4, boxShadow: '0 8px 60px color-mix(in srgb, var(--preview-dark) 80%, transparent)' }} />
                         )}
                       </div>
                       {/* Nav arrows */}
                       {prevFile && (
-                        <button onClick={e => { e.stopPropagation(); select(prevFile); }} style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: 48, height: 48, fontSize: 22, cursor: 'pointer' }}>◀</button>
+                        <button onClick={e => { e.stopPropagation(); select(prevFile); }} style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', background: 'color-mix(in srgb, var(--preview-white) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--preview-white) 20%, transparent)', color: 'var(--preview-white)', borderRadius: '50%', width: 48, height: 48, fontSize: 22, cursor: 'pointer' }}>◀</button>
                       )}
                       {nextFile && (
-                        <button onClick={e => { e.stopPropagation(); select(nextFile); }} style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: 48, height: 48, fontSize: 22, cursor: 'pointer' }}>▶</button>
+                        <button onClick={e => { e.stopPropagation(); select(nextFile); }} style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-50%)', background: 'color-mix(in srgb, var(--preview-white) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--preview-white) 20%, transparent)', color: 'var(--preview-white)', borderRadius: '50%', width: 48, height: 48, fontSize: 22, cursor: 'pointer' }}>▶</button>
                       )}
                       {/* ESC hint */}
-                      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>Click anywhere to close</div>
+                      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: 'color-mix(in srgb, var(--preview-white) 30%, transparent)' }}>Click anywhere to close</div>
                     </div>
                   )}
                 </div>
