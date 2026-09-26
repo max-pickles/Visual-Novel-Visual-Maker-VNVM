@@ -437,7 +437,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
             title="Reset zoom">{t('canvas.fit_all')}</button>
           <div style={{ width: 1, height: 14, background: "var(--bdr)", margin: "0 2px" }} />
           <button onClick={() => setShowGuides(g => !g)}
-            style={{ background: showGuides ? "var(--teal)" : "none", border: "none", color: showGuides ? "#000" : "var(--faint)", cursor: "pointer", fontSize: 11, borderRadius: 4, padding: "2px 6px" }}
+            style={{ background: showGuides ? "var(--teal)" : "none", border: "none", color: showGuides ? "var(--bg0)" : "var(--faint)", cursor: "pointer", fontSize: 11, borderRadius: 4, padding: "2px 6px" }}
             title="Toggle Composition Guides (Rule of Thirds & Safe Zones)">⌗</button>
         </div>
 
@@ -501,7 +501,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
           <div style={{
             width: leftWidth, flexShrink: 0, position: "relative",
             display: "flex", flexDirection: "column",
-            background: "rgba(13, 15, 26, 0.75)", backdropFilter: "blur(12px)",
+            background: "color-mix(in srgb, var(--bg1) 75%, transparent)", backdropFilter: "blur(12px)",
             border: "1px solid var(--bdr)", borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)", overflow: "hidden", zIndex: 10,
           }}>
@@ -520,7 +520,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
             />
 
             {/* Headers Area (Horizontal Tabs) */}
-            <div style={{ flexShrink: 0, display: "flex", background: "rgba(0,0,0,0.3)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ flexShrink: 0, display: "flex", background: "color-mix(in srgb, var(--bg0) 30%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--text) 5%, transparent)" }}>
               {(["scenes", "images", "audio", "effects"] as const).map(mode => {
                 const isActive = leftMode === mode;
                 const icons = { scenes: "🎬", images: "🖼", audio: "🎵", effects: "✨" };
@@ -537,7 +537,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     onClick={() => setLeftMode(mode)}
                     style={{
                       flex: 1, padding: "10px 0",
-                      background: isActive ? "rgba(255,255,255,0.05)" : "transparent",
+                      background: isActive ? "color-mix(in srgb, var(--text) 5%, transparent)" : "transparent",
                       border: "none", borderBottom: isActive ? "2px solid var(--teal)" : "2px solid transparent",
                       color: isActive ? "var(--teal)" : "var(--dim)",
                       cursor: "pointer", transition: "all 0.15s",
@@ -552,7 +552,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
             </div>
 
             {/* Content Area */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "rgba(0,0,0,0.15)" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "color-mix(in srgb, var(--bg0) 15%, transparent)" }}>
               {isAnimMode ? (
                 <AnimPropertiesPanel 
                   frames={selEvent.animation_keyframes || []}
@@ -625,7 +625,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     ))}
                   </div>
                 </div>
-                <div style={{ padding: "8px", borderTop: "1px solid rgba(255,255,255,0.1)", background: "rgba(0,0,0,0.2)" }}>
+                <div style={{ padding: "8px", borderTop: "1px solid color-mix(in srgb, var(--text) 10%, transparent)", background: "color-mix(in srgb, var(--bg0) 20%, transparent)" }}>
                   <button className="btn" style={{ width: "100%", fontSize: 11 }}
                     onClick={() => {
                       const s = newScene(`Scene ${project.scenes.length + 1}`);
@@ -752,7 +752,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
           <div style={{
             width: rightWidth, flexShrink: 0, position: "relative",
             display: "flex", flexDirection: "column",
-            background: "rgba(13, 15, 26, 0.75)", backdropFilter: "blur(12px)",
+            background: "color-mix(in srgb, var(--bg1) 75%, transparent)", backdropFilter: "blur(12px)",
             border: "1px solid var(--bdr)", borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)", overflow: "hidden", zIndex: 10,
           }}>
@@ -796,10 +796,10 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               <>
                 {/* Inspector header */}
                 <div style={{
-                  padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.1)",
+                  padding: "8px 14px", borderBottom: "1px solid color-mix(in srgb, var(--text) 10%, transparent)",
                   display: "flex", alignItems: "center", gap: 8,
                   fontSize: 10, fontWeight: 700, color: "var(--dim)",
-                  letterSpacing: ".1em", textTransform: "uppercase", background: "rgba(0,0,0,0.2)"
+                  letterSpacing: ".1em", textTransform: "uppercase", background: "color-mix(in srgb, var(--bg0) 20%, transparent)"
                 }}>
                   <span style={{ fontSize: 14 }}>{TOOL_ICONS[selEvent.type] ?? "○"}</span>
                   <span style={{ color: TOOL_COLORS[selEvent.type] ?? "var(--dim)" }}>{selEvent.type || "empty"}</span>
@@ -819,8 +819,8 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
 
                 {/* Action buttons */}
                 <div style={{
-                  padding: "8px 10px", borderTop: "1px solid rgba(255,255,255,0.1)",
-                  display: "flex", flexWrap: "wrap", gap: 4, background: "rgba(0,0,0,0.2)"
+                  padding: "8px 10px", borderTop: "1px solid color-mix(in srgb, var(--text) 10%, transparent)",
+                  display: "flex", flexWrap: "wrap", gap: 4, background: "color-mix(in srgb, var(--bg0) 20%, transparent)"
                 }}>
                   <button className="btn" style={{ flex: 1, fontSize: 11, minWidth: 60 }}
                     title="Copy event (Ctrl+C)"
@@ -844,7 +844,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 {/* Scene Notes */}
                 {scene && (
-                  <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--text) 6%, transparent)" }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                       <span>📝</span> {t('editor.scene.scene_notes')}
                     </div>
@@ -855,15 +855,15 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                       rows={5}
                       style={{
                         width: "100%", boxSizing: "border-box",
-                        background: "rgba(251,191,36,0.04)",
-                        border: "1px solid rgba(251,191,36,0.2)",
+                        background: "color-mix(in srgb, var(--amber) 4%, transparent)",
+                        border: "1px solid color-mix(in srgb, var(--amber) 20%, transparent)",
                         borderRadius: 8, color: "var(--text)", fontSize: 12,
                         padding: "10px 12px", resize: "vertical", outline: "none",
                         fontFamily: "inherit", lineHeight: 1.6,
                         transition: "border-color 0.15s",
                       }}
-                      onFocus={e => e.currentTarget.style.borderColor = "rgba(251,191,36,0.5)"}
-                      onBlur={e => e.currentTarget.style.borderColor = "rgba(251,191,36,0.2)"}
+                      onFocus={e => e.currentTarget.style.borderColor = "color-mix(in srgb, var(--amber) 50%, transparent)"}
+                      onBlur={e => e.currentTarget.style.borderColor = "color-mix(in srgb, var(--amber) 20%, transparent)"}
                     />
                     {scene.description && (
                       <div style={{ fontSize: 10, color: "var(--faint)", marginTop: 4, textAlign: "right" }}>
@@ -889,7 +889,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                 </div>
                 {/* Scene-level color grading when no event is selected */}
                 {scene && (
-                  <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                  <div style={{ padding: "16px", borderTop: "1px solid color-mix(in srgb, var(--text) 10%, transparent)" }}>
                     <ColorGradePanel
                       grade={scene.color_grade}
                       onChange={g => updateScene(sc => { sc.color_grade = g; })}

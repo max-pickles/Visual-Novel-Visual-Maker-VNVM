@@ -38,13 +38,13 @@ export function SidebarAssetBrowser({ project, mode, onPick }: {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+      <div style={{ padding: "8px 12px", borderBottom: "1px solid color-mix(in srgb, var(--text) 10%, transparent)" }}>
         <input 
           className="input" 
           placeholder={t('editor.scene.search_placeholder').replace('{mode}', mode)}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          style={{ width: "100%", padding: "4px 8px", fontSize: 11, background: "rgba(0,0,0,0.2)", border: "1px solid var(--bdr)" }}
+          style={{ width: "100%", padding: "4px 8px", fontSize: 11, background: "color-mix(in srgb, var(--bg0) 20%, transparent)", border: "1px solid var(--bdr)" }}
         />
       </div>
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
