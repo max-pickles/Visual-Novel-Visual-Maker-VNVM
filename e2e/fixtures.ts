@@ -9,6 +9,7 @@ import type { VNProject } from "../src/types";
 export interface MockOptions {
   project?: VNProject;
   files?: Record<string, string>;
+  assets?: Record<string, string[]>;
   dialogAnswers?: string[];
   /** localStorage entries set before the app starts (preferences). */
   localStorage?: Record<string, string>;
