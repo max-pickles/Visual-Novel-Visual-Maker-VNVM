@@ -5,7 +5,7 @@
  * because vite.config.ts sets `test.globals: true`.
  */
 
-import { compileProject, compileProjectToFiles, compilePreview, getProjectStats } from "../compiler";
+import { compileProject, compileProjectToFiles, compilePreview, compileSingleAnimationPreview, getProjectStats } from "../compiler";
 import { newProject, newScene, newCharacter, newEvent, newDemoProject, newOpt } from "../types";
 import type { VNProject, VNEvent, VNScene } from "../types";
 
@@ -856,5 +856,102 @@ describe("compilePreview – the story so far", () => {
       '    play music "audio/a.ogg"',
       `    jump vns_scene_${c.id}`,
     ]);
+  });
+});
+
+// ─── File paths ───────────────────────────────────────────────────────────────
+
+// The asset sidebar and browser store files relative to the project folder
+// ("game/audio/door.ogg"). Ren'Py looks files up inside game/, so scripts name
+// them relative to it, or Ren'Py would look in game/game/.
+describe("compiled file paths", () => {
+  const ev = (type: VNEvent["type"], fields: Partial<VNEvent>): VNEvent => ({ ...newEvent(type), ...fields });
+  const FILL = 'fit="cover", xsize=config.screen_width, ysize=config.screen_height';
+
+  it("are relative to the game folder for every event that shows or plays a file", () => {
+    const proj = makeProj();
+    proj.scenes[0].events = [
+      ev("bg", { bg: "game/images/room.png" }),
+      ev("image", { image: "game/images/eileen.png" }),
+      ev("animation", { image: "game/images/bird.png" }),
+      ev("music", { music: "game/audio/theme.ogg" }),
+      ev("sfx", { sfx: "game/audio/door.ogg" }),
+      ev("dialogue", { text: "Hi.", voice: "game/voice/eileen_001.ogg" }),
+      ev("narration", { text: "Hello.", voice: "game/voice/narrator_001.ogg" }),
+      ev("movie", { movie: "game/movies/intro.webm" }),
+    ];
+    const out = lines(proj);
+    expect(out).toContain(`scene expression Transform("images/room.png", ${FILL})`);
+    expect(out).toContain('show expression "images/eileen.png" at center');
+    expect(out).toContain('show expression "images/bird.png"');
+    expect(out).toContain('play music "audio/theme.ogg"');
+    expect(out).toContain('play sound "audio/door.ogg"');
+    expect(out).toContain('voice "voice/eileen_001.ogg"');
+    expect(out).toContain('voice "voice/narrator_001.ogg"');
+    expect(out).toContain('$ renpy.movie_cutscene("movies/intro.webm")');
+    expect(compileProject(proj)).not.toContain('"game/');
+  });
+
+  it("are relative to the game folder for a scene's own background and music", () => {
+    const proj = makeProj();
+    proj.scenes[0].bg = "game/images/room.png";
+    proj.scenes[0].music = "game/audio/theme.ogg";
+    const out = lines(proj);
+    expect(out).toContain(`scene expression Transform("images/room.png", ${FILL})`);
+    expect(out).toContain('play music "audio/theme.ogg"');
+  });
+
+  it("are relative to the game folder for character sprites and side images", () => {
+    const proj = makeProj();
+    const eve = newCharacter("Eve");
+    eve.sprites.neutral = "game/images/eve.png";
+    eve.side_images = { neutral: "game/images/side eve.png" };
+    const lucy = newCharacter("Lucy");
+    Object.assign(lucy, { is_layered: true, layer_order: ["base", "eyes"],
+      layered_sprites: { neutral: { base: "game/images/lucy base.png", eyes: "game/images/lucy eyes.png" } } });
+    proj.characters.push(eve, lucy);
+    const out = lines(proj);
+    expect(out).toContain('image Eve neutral = "images/eve.png"');
+    expect(out).toContain('image side Eve = "images/side eve.png"');
+    expect(out).toContain('"images/lucy base.png",');
+    expect(out).toContain('"images/lucy eyes.png",');
+    expect(compileProject(proj)).not.toContain('"game/');
+  });
+
+  it("are relative to the game folder in the live preview's story so far and the animation preview", () => {
+    const proj = makeProj();
+    const second = newScene("second");
+    proj.scenes.push(second);
+    proj.scenes[0].events = [
+      ev("bg", { bg: "game/images/room.png" }),
+      ev("music", { music: "game/audio/theme.ogg" }),
+      { ...newEvent("jump"), scene_id: second.id },
+    ];
+    second.events = [ev("narration", { text: "Here." })];
+    const preview = compilePreview(proj, second.id);
+    expect(preview).toContain(`scene expression Transform("images/room.png", ${FILL})`);
+    expect(preview).toContain('play music "audio/theme.ogg"');
+    expect(preview).not.toContain('"game/');
+
+    const anim = compileSingleAnimationPreview(proj, ev("animation", { image: "game/images/bird.png" }), "game/images/room.png");
+    expect(anim).toContain(`scene expression Transform("images/room.png", ${FILL})`);
+    expect(anim).toContain('show expression "images/bird.png"');
+  });
+
+  it("keep paths already relative to the game folder, and drop only a leading game/", () => {
+    const proj = makeProj();
+    proj.scenes[0].bg = "gui/game_menu.png";
+    proj.scenes[0].events = [
+      ev("sfx", { sfx: "audio/door.ogg" }),
+      ev("music", { music: "audio/game/theme.ogg" }),
+      ev("image", { image: "game/game/eileen.png" }),
+      ev("bg", { bg: "black" }),
+    ];
+    const out = lines(proj);
+    expect(out).toContain(`scene expression Transform("gui/game_menu.png", ${FILL})`);
+    expect(out).toContain('play sound "audio/door.ogg"');
+    expect(out).toContain('play music "audio/game/theme.ogg"');
+    expect(out).toContain('show expression "game/eileen.png" at center');
+    expect(out).toContain(`scene expression Transform("black", ${FILL})`);
   });
 });

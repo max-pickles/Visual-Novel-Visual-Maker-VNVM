@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { newProject, newDemoProject, newCharacter, newEvent, newScene } from "../src/types";
-import type { VNProject, VNCharacter, VNScene } from "../src/types";
+import type { VNProject, VNCharacter, VNEvent, VNScene } from "../src/types";
 import { compileProject, compileProjectToFiles, compilePreview } from "../src/compiler";
 import { importFromRpyFiles } from "../src/rpyImporter";
 import { declaredVarNames, declaredLabelNames } from "../src/rpyDeclarations";
@@ -106,20 +106,31 @@ function addPlaythrough(game: string, choices: string[]): void {
 function addStateChecks(game: string, firstLine: string, checks: string[]): void {
   fs.writeFileSync(path.join(game, "..", "vnv_testcases.rpy"), [
     "init python:",
-    "    def vnv_showing(text):",
-    '        """Whether an image whose file or name contains text is on the master layer."""',
-    "        def names(d, depth=0):",
+    "    def vnv_shown():",
+    '        """The displayables on the master layer, and everything inside them."""',
+    "        def inside(d, depth):",
     "            if d is None or depth > 20:",
     "                return",
+    "            yield d",
+    "            # Transforms hold a child; images shown with an expression are a reference to it.",
+    '            for c in [getattr(d, a, None) for a in ("child", "target", "name")] + list(getattr(d, "children", None) or []):',
+    '                if hasattr(c, "render"):',
+    "                    yield from inside(c, depth + 1)",
+    '        for e in renpy.game.context().scene_lists.layers["master"]:',
+    "            yield from inside(e.displayable, 0)",
+    "",
+    "    def vnv_showing(text):",
+    '        """Whether an image whose file or name contains text is on the master layer."""',
+    "        def names(d):",
     '            for attr in ("filename", "name"):',
     "                v = getattr(d, attr, None)",
     "                if isinstance(v, (str, tuple)):",
     '                    yield " ".join(v) if isinstance(v, tuple) else v',
-    "            # Transforms hold a child; images shown with an expression are a reference to it.",
-    '            for c in [getattr(d, a, None) for a in ("child", "target", "name")] + list(getattr(d, "children", None) or []):',
-    '                if hasattr(c, "render"):',
-    "                    yield from names(c, depth + 1)",
-    '        return any(text in n for e in renpy.game.context().scene_lists.layers["master"] for n in names(e.displayable))',
+    "        return any(text in n for d in vnv_shown() for n in names(d))",
+    "",
+    "    def vnv_images_load():",
+    '        """Whether every image file on the master layer loads. Ren\'Py shows a missing one as nothing."""',
+    '        return all(renpy.loadable(d.filename, directory="images") for d in vnv_shown() if isinstance(getattr(d, "filename", None), str))',
     "",
     "testsuite global:",
     "    before testcase:",
@@ -141,6 +152,9 @@ function addStateChecks(game: string, firstLine: string, checks: string[]): void
  * inside what's shown (see addStateChecks).
  */
 const showing = (text: string) => `vnv_showing(${JSON.stringify(text)})`;
+
+/** A Python condition: Ren'Py can load every image file on screen (see addStateChecks). */
+const imagesLoad = "vnv_images_load()";
 
 /**
  * Write every layout for `proj`. `fromGame` is the game folder the project
@@ -289,6 +303,48 @@ function emit(
         'all(renpy.showing(tag) for tag in ["Mary_Jane", "at_", "Layer_Girl", "さくら"])',
       ],
     },
+  });
+}
+
+// ─── Files named the way the editor's asset pickers store them ───────────────
+
+{
+  // The asset sidebar and browser, and sprites the importer finds, name files
+  // relative to the project folder ("game/audio/door.ogg"). Lint checks that
+  // Ren'Py can load the music, sounds, voices and character images. Lint and
+  // playing miss a background or image that doesn't load, so a state check
+  // covers those.
+  const p = newProject("Picked", "Tester");
+  const files: string[] = [];
+  const picked = (f: string) => { files.push(f); return `game/${f}`; };
+  const add = (sc: VNScene, type: VNEvent["type"], fields: Partial<VNEvent>) => sc.events.push({ ...newEvent(type), ...fields });
+
+  const eve = newCharacter("Eve");
+  eve.sprites.neutral = picked("images/eve.png");
+  eve.side_images = { neutral: picked("images/side_eve.png") };
+  p.characters.push(eve);
+
+  const start = p.scenes[0];
+  start.bg = picked("images/hall.png");
+  start.music = picked("audio/hall.ogg");
+  start.events = [];
+  const end = newScene("the_end");
+  p.scenes.push(end);
+  add(start, "bg", { bg: picked("images/room.png") });
+  add(start, "image", { image: picked("images/lamp.png") });
+  add(start, "animation", { image: picked("images/bird.png"), animation_keyframes: [
+    { id: "k1", duration: 0, easing: "linear", props: { xalign: 0.2 } },
+    { id: "k2", duration: 0.5, easing: "ease", props: { xalign: 0.8 } },
+  ] });
+  add(start, "music", { music: picked("audio/theme.ogg") });
+  add(start, "sfx", { sfx: picked("audio/door.ogg") });
+  add(start, "dialogue", { char_id: eve.id, pose: "neutral", text: "Hello.", voice: picked("voice/eve_001.ogg") });
+  add(start, "narration", { text: "A voiced line.", voice: picked("voice/narrator_001.ogg") });
+  add(start, "jump", { scene_id: end.id });
+  add(end, "narration", { text: "The end." });
+  emit("picked", p, {
+    files,
+    from: { scene: end.id, checks: [showing("images/room.png"), showing("images/lamp.png"), showing("images/bird.png"), imagesLoad] },
   });
 }
 

@@ -42,6 +42,16 @@ function esc(s: string): string {
 }
 
 /**
+ * {@link esc} for a file path, made relative to the game folder. Files picked in
+ * the editor are stored relative to the project folder (`game/audio/door.ogg`),
+ * but Ren'Py looks files up inside the game folder, so it would look for those
+ * in `game/game/`. Paths already relative to the game folder are unchanged.
+ */
+function escFile(path: string): string {
+  return esc(path.replace(/^game\//, ""));
+}
+
+/**
  * Python single-quoted string literal for `s` (used for Character() arguments).
  */
 function pyStr(s: string): string {
@@ -183,7 +193,7 @@ function compileAtl(atl: string, lines: string[], prefix: string): void {
 
 /** A background image scaled to fill the screen. */
 function bgFill(bg: string): string {
-  return `Transform("${esc(bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+  return `Transform("${escFile(bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
 }
 
 /** The `scene` statement for a background event, with its ATL block. */
@@ -197,7 +207,7 @@ function bgLines(ev: VNEvent, prefix: string): string[] {
 
 /** The `show` statement for an image event, with its ATL block. */
 function imageLines(ev: VNEvent, prefix: string): string[] {
-  const img = esc(ev.image ?? "");
+  const img = escFile(ev.image ?? "");
   const side = ev.side ?? "center";
   if (!ev.atl_code) {
     const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
@@ -210,7 +220,7 @@ function imageLines(ev: VNEvent, prefix: string): string[] {
 
 /** The `show` statement for an animation event: its image with the keyframes as ATL. */
 function animationLines(ev: VNEvent, prefix: string): string[] {
-  const img = esc(ev.image ?? "");
+  const img = escFile(ev.image ?? "");
   const kfs = ev.animation_keyframes;
   if (!kfs || !kfs.length) return [`${prefix}show expression "${img}"`];
 
@@ -266,7 +276,7 @@ function animationLines(ev: VNEvent, prefix: string): string[] {
 
 /** The `play music` statement for a music event, or `stop music` when it has no track. */
 function musicStatement(ev: VNEvent): string {
-  const m = esc(ev.music ?? "");
+  const m = escFile(ev.music ?? "");
   if (!m) return `stop music fadeout ${ev.fadeout || 0.5}`;
   const parts = [`play music "${m}"`];
   if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
@@ -279,12 +289,12 @@ function musicStatement(ev: VNEvent): string {
 
 /** The `play music` statement for a scene's own music, which starts with the scene. */
 function sceneMusicStatement(music: string): string {
-  return `play music "${esc(music)}"`;
+  return `play music "${escFile(music)}"`;
 }
 
 /** The `play sound` statement for a sound effect event (which must have a file). */
 function soundStatement(ev: VNEvent): string {
-  const parts = [`play sound "${esc(ev.sfx ?? "")}"`];
+  const parts = [`play sound "${escFile(ev.sfx ?? "")}"`];
   if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
   if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
   if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
@@ -426,7 +436,7 @@ function compileEvent(
     if (sprite) lines.push(`${prefix}${sprite.statement}`);
 
     if (ev.voice) {
-      lines.push(`${prefix}voice "${esc(ev.voice)}"`);
+      lines.push(`${prefix}voice "${escFile(ev.voice)}"`);
     }
 
     lines.push(`${prefix}${cRef} "${esc(ev.text ?? "")}"`);
@@ -435,7 +445,7 @@ function compileEvent(
   // ── Narration ───────────────────────────────────────────────────────────────
   else if (t === "narration") {
     if (ev.voice) {
-      lines.push(`${prefix}voice "${esc(ev.voice)}"`);
+      lines.push(`${prefix}voice "${escFile(ev.voice)}"`);
     }
     lines.push(`${prefix}"${esc(ev.text ?? "")}"`);
   }
@@ -520,7 +530,7 @@ function compileEvent(
 
   // ── Auto-advance pause ──────────────────────────────────────────────────────
   else if (t === "movie") {
-    const m = esc(ev.movie ?? "");
+    const m = escFile(ev.movie ?? "");
     if (m) lines.push(`${prefix}$ renpy.movie_cutscene("${m}")`);
   }
 
@@ -608,7 +618,7 @@ function compileCharacters(proj: VNProject, lines: string[], names: Names): void
     for (const [pose, imgPath] of sideImages) {
       const attr = imageNameComponent(pose);
       const poseSuffix = pose === 'neutral' || !attr ? '' : ` ${attr}`;
-      lines.push(`image side ${tag}${poseSuffix} = "${esc(imgPath)}"`);
+      lines.push(`image side ${tag}${poseSuffix} = "${escFile(imgPath)}"`);
     }
 
     for (const pose of char.poses ?? []) {
@@ -618,17 +628,17 @@ function compileCharacters(proj: VNProject, lines: string[], names: Names): void
         const poseLayers = char.layered_sprites[pose] || {};
         const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
         if (activeLayers.length === 1) {
-          lines.push(`image ${tag} ${attr} = "${esc(activeLayers[0])}"`);
+          lines.push(`image ${tag} ${attr} = "${escFile(activeLayers[0])}"`);
         } else if (activeLayers.length > 1) {
           lines.push(`image ${tag} ${attr} = Fixed(`);
           for (const file of activeLayers) {
-            lines.push(`    "${esc(file)}",`);
+            lines.push(`    "${escFile(file)}",`);
           }
           lines.push(`    fit_first=True`);
           lines.push(`)`);
         }
       } else if (char.sprites?.[pose]) {
-        lines.push(`image ${tag} ${attr} = "${esc(char.sprites[pose])}"`);
+        lines.push(`image ${tag} ${attr} = "${escFile(char.sprites[pose])}"`);
       }
     }
   }
