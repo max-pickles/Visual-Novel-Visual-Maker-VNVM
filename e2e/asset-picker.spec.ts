@@ -63,3 +63,30 @@ test("Use This and the list view's Use button pick the selected image", async ({
   await expect(pickerTitle(page)).toBeHidden();
   await expect(iconLabel(page, "park.png")).toBeVisible();
 });
+
+test("double-clicking a file in the asset picker picks it", async ({ page, allowErrors }) => {
+  // Choosing a track plays it, and the mocked backend has no audio to load.
+  allowErrors(/^console: Audio playback failed for all candidate paths:/);
+  await openAchievement(page, { images: ["images/park.png", "images/room.png"], audio: ["audio/rain.ogg"] });
+
+  await openPicker(page);
+  await page.getByTitle("images/room.png").dblclick();
+  await expect(pickerTitle(page)).toBeHidden();
+  await expect(iconLabel(page, "room.png")).toBeVisible();
+
+  // The first click opens the preview, which narrows list rows, so double-click the thumbnail.
+  await openPicker(page);
+  await page.getByTitle("List view").click();
+  await page.getByRole("img", { name: "park.png" }).dblclick();
+  await expect(pickerTitle(page)).toBeHidden();
+  await expect(iconLabel(page, "park.png")).toBeVisible();
+
+  // Double-clicking a track's play button only plays and pauses it.
+  await openPicker(page);
+  await page.getByRole("button", { name: "🎵 Music" }).click();
+  await page.getByRole("button", { name: "▶", exact: true }).dblclick();
+  await expect(pickerTitle(page)).toBeVisible();
+  await page.getByText("audio/rain.ogg", { exact: true }).dblclick();
+  await expect(pickerTitle(page)).toBeHidden();
+  await expect(iconLabel(page, "rain.ogg")).toBeVisible();
+});
