@@ -42,6 +42,16 @@ function esc(s: string): string {
 }
 
 /**
+ * {@link esc} for a file path, made relative to the game folder. Files picked in
+ * the editor are stored relative to the project folder (`game/audio/door.ogg`),
+ * but Ren'Py looks files up inside the game folder, so it would look for those
+ * in `game/game/`. Paths already relative to the game folder are unchanged.
+ */
+function escFile(path: string): string {
+  return esc(path.replace(/^game\//, ""));
+}
+
+/**
  * Python single-quoted string literal for `s` (used for Character() arguments).
  */
 function pyStr(s: string): string {
@@ -179,7 +189,7 @@ function compileAtl(atl: string, lines: string[], prefix: string): void {
 
 /** A background image filling the screen, for `scene expression`. */
 function bgTransform(bg: string): string {
-  return `Transform("${esc(bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+  return `Transform("${escFile(bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
 }
 
 /** The `scene` statement (and ATL block) for a bg event, without its transition. */
@@ -194,7 +204,7 @@ function bgScene(ev: VNEvent): string[] {
 
 /** The `show` statement (and ATL block) for an image event, without its transition. */
 function imageShow(ev: VNEvent): string[] {
-  const img = esc(ev.image ?? "");
+  const img = escFile(ev.image ?? "");
   if (!img) return [];
   const side = ev.side ?? "center";
   if (ev.atl_code) {
@@ -277,7 +287,7 @@ function cameraLines(ev: VNEvent, animate: boolean): string[] {
 
 /** `play music` for a music event with a track. */
 function musicPlay(ev: VNEvent): string {
-  const parts = [`play music "${esc(ev.music ?? "")}"`];
+  const parts = [`play music "${escFile(ev.music ?? "")}"`];
   if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
   if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
   if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
@@ -288,7 +298,7 @@ function musicPlay(ev: VNEvent): string {
 
 /** `play sound` for an sfx event with a file. */
 function soundPlay(ev: VNEvent): string {
-  const parts = [`play sound "${esc(ev.sfx ?? "")}"`];
+  const parts = [`play sound "${escFile(ev.sfx ?? "")}"`];
   if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
   if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
   if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
@@ -345,7 +355,7 @@ function compileEvent(
 
   // ── Animation (ActionEditor style) ──────────────────────────────────────────
   else if (t === "animation") {
-    const img = esc(ev.image ?? "");
+    const img = escFile(ev.image ?? "");
     if (!img) return;
     
     const kfs = ev.animation_keyframes;
@@ -397,7 +407,7 @@ function compileEvent(
     if (show) lines.push(`${prefix}${show}`);
 
     if (ev.voice) {
-      lines.push(`${prefix}voice "${esc(ev.voice)}"`);
+      lines.push(`${prefix}voice "${escFile(ev.voice)}"`);
     }
 
     lines.push(`${prefix}${cRef} "${esc(ev.text ?? "")}"`);
@@ -406,7 +416,7 @@ function compileEvent(
   // ── Narration ───────────────────────────────────────────────────────────────
   else if (t === "narration") {
     if (ev.voice) {
-      lines.push(`${prefix}voice "${esc(ev.voice)}"`);
+      lines.push(`${prefix}voice "${escFile(ev.voice)}"`);
     }
     lines.push(`${prefix}"${esc(ev.text ?? "")}"`);
   }
@@ -493,7 +503,7 @@ function compileEvent(
 
   // ── Auto-advance pause ──────────────────────────────────────────────────────
   else if (t === "movie") {
-    const m = esc(ev.movie ?? "");
+    const m = escFile(ev.movie ?? "");
     if (m) lines.push(`${prefix}$ renpy.movie_cutscene("${m}")`);
   }
 
@@ -581,7 +591,7 @@ function compileCharacters(proj: VNProject, lines: string[], names: Names): void
     for (const [pose, imgPath] of sideImages) {
       const attr = imageNameComponent(pose);
       const poseSuffix = pose === 'neutral' || !attr ? '' : ` ${attr}`;
-      lines.push(`image side ${tag}${poseSuffix} = "${esc(imgPath)}"`);
+      lines.push(`image side ${tag}${poseSuffix} = "${escFile(imgPath)}"`);
     }
 
     for (const pose of char.poses ?? []) {
@@ -591,17 +601,17 @@ function compileCharacters(proj: VNProject, lines: string[], names: Names): void
         const poseLayers = char.layered_sprites[pose] || {};
         const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
         if (activeLayers.length === 1) {
-          lines.push(`image ${tag} ${attr} = "${esc(activeLayers[0])}"`);
+          lines.push(`image ${tag} ${attr} = "${escFile(activeLayers[0])}"`);
         } else if (activeLayers.length > 1) {
           lines.push(`image ${tag} ${attr} = Fixed(`);
           for (const file of activeLayers) {
-            lines.push(`    "${esc(file)}",`);
+            lines.push(`    "${escFile(file)}",`);
           }
           lines.push(`    fit_first=True`);
           lines.push(`)`);
         }
       } else if (char.sprites?.[pose]) {
-        lines.push(`image ${tag} ${attr} = "${esc(char.sprites[pose])}"`);
+        lines.push(`image ${tag} ${attr} = "${escFile(char.sprites[pose])}"`);
       }
     }
   }
@@ -629,12 +639,12 @@ function compileScene(sc: VNScene, proj: VNProject, lines: string[], names: Name
 
   // Scene-level background
   if (sc.bg) {
-    const fill = `Transform("${esc(sc.bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+    const fill = `Transform("${escFile(sc.bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
     lines.push(`    scene expression ${fill}`);
   }
   // Scene-level music
   if (sc.music) {
-    lines.push(`    play music "${esc(sc.music)}"`);
+    lines.push(`    play music "${escFile(sc.music)}"`);
   }
 
   if (!sc.events.length) {
@@ -923,7 +933,7 @@ function replayStatements(step: ReplayStep, proj: VNProject): ReplayStatement[] 
     const { bg, music } = step.scene;
     const out: ReplayStatement[] = [];
     if (bg) out.push({ target: "display", clears: true, lines: [`scene expression ${bgTransform(bg)}`] });
-    if (music) out.push({ target: "audio:music", audio: "play", lines: [`play music "${esc(music)}"`] });
+    if (music) out.push({ target: "audio:music", audio: "play", lines: [`play music "${escFile(music)}"`] });
     return out;
   }
   const ev = step.event;
@@ -938,7 +948,7 @@ function replayStatements(step: ReplayStep, proj: VNProject): ReplayStatement[] 
     }
     case "animation": {
       // Where the animation ends up, rather than playing it again.
-      const img = esc(ev.image ?? "");
+      const img = escFile(ev.image ?? "");
       if (!img) return [];
       const kfs = ev.animation_keyframes ?? [];
       if (!kfs.length) return [{ target: "display", lines: [`show expression "${img}"`] }];
@@ -1144,7 +1154,7 @@ export function compileSingleAnimationPreview(
     `label vnv_preview_entry:`,
   ];
   if (inheritedBg) {
-    const fill = `Transform("${esc(inheritedBg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+    const fill = `Transform("${escFile(inheritedBg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
     lines.push(`    scene expression ${fill}`);
   } else {
     lines.push(`    scene black`);

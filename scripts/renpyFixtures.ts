@@ -13,7 +13,8 @@
  *   <name>-later    Play from Here on the scene furthest into the story, which
  *                   replays the route there first (linted only, like -play)
  *   <name>-line     the same from the middle line of that scene
- * The replay-* games check what Play from Here sets up in a running game.
+ * The replay-* games check what Play from Here sets up in a running game, and
+ * picked-shown that the image files it shows load.
  * Playable layouts get a vnv_testcases.rpy (next to game/, since lint reports
  * testcase statements as unreachable) that clicks through to the end. An
  * export whose translations must still match its dialogue gets a
@@ -240,6 +241,75 @@ emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] 
   say(good, obrien, "The end."); good.ending_type = "good";
   say(other, mary, "Another end.");
   emit("tricky", p, { files, choices: ["Go on"] });
+}
+
+// ─── Files named the way the editor's asset pickers store them ───────────────
+
+{
+  // The asset sidebar and browser, and sprites the importer finds, name files
+  // relative to the project folder ("game/audio/door.ogg"). Lint checks that
+  // Ren'Py can load the music, sounds, voices and character images. Lint and
+  // playing miss a background or image that doesn't load (Ren'Py shows
+  // nothing), so picked-shown checks those in a running game.
+  const p = newProject("Picked", "Tester");
+  const files: string[] = [];
+  const picked = (f: string) => { files.push(f); return `game/${f}`; };
+  const add = (sc: VNScene, type: VNEvent["type"], fields: Partial<VNEvent>) => sc.events.push({ ...newEvent(type), ...fields });
+
+  const eve = newCharacter("Eve");
+  eve.sprites.neutral = picked("images/eve.png");
+  eve.side_images = { neutral: picked("images/side_eve.png") };
+  p.characters.push(eve);
+
+  const start = p.scenes[0];
+  start.bg = picked("images/hall.png");
+  start.music = picked("audio/hall.ogg");
+  start.events = [];
+  const end = newScene("the_end");
+  p.scenes.push(end);
+  add(start, "bg", { bg: picked("images/room.png") });
+  add(start, "image", { image: picked("images/lamp.png") });
+  add(start, "animation", { image: picked("images/bird.png"), animation_keyframes: [
+    { id: "k1", duration: 0, easing: "linear", props: { xalign: 0.2 } },
+    { id: "k2", duration: 0.5, easing: "ease", props: { xalign: 0.8 } },
+  ] });
+  add(start, "music", { music: picked("audio/theme.ogg") });
+  add(start, "sfx", { sfx: picked("audio/door.ogg") });
+  add(start, "dialogue", { char_id: eve.id, pose: "neutral", text: "Hello.", voice: picked("voice/eve_001.ogg") });
+  add(start, "narration", { text: "A voiced line.", voice: picked("voice/narrator_001.ogg") });
+  add(start, "jump", { scene_id: end.id });
+  add(end, "narration", { text: "The end." });
+  emit("picked", p, { files });
+
+  // Play from Here on the last scene: once it's on its first line, the images
+  // the replay put on screen must be there, and every image file shown must load.
+  const game = newGame("picked-shown", TEMPLATE);
+  addPlaceholders(game, files);
+  const rpy = compilePreview(p, end.id, { declaredElsewhere: declaredIn(game) });
+  fs.writeFileSync(path.join(game, "vnv_preview.rpy"), rpy);
+  const firstLine = rpy.split("\n").indexOf(`label vns_scene_${end.id}:`) + 2; // 1-based line after the label
+  fs.writeFileSync(path.join(game, "..", "vnv_testcases.rpy"), [
+    "init python:",
+    "    def vnv_image_files():",
+    '        """The image files on the master layer, looking inside transforms and references."""',
+    "        def inside(d, depth):",
+    "            if d is None or depth > 20:",
+    "                return",
+    '            if isinstance(getattr(d, "filename", None), str):',
+    "                yield d.filename",
+    '            for c in [getattr(d, a, None) for a in ("child", "target", "name")] + list(getattr(d, "children", None) or []):',
+    '                if hasattr(c, "render"):',
+    "                    yield from inside(c, depth + 1)",
+    '        for e in renpy.game.context().scene_lists.layers["master"]:',
+    "            yield from inside(e.displayable, 0)",
+    "",
+    "testcase vnv_play:",
+    `    assert eval renpy.get_filename_line()[0].endswith("vnv_preview.rpy") and renpy.get_filename_line()[1] == ${firstLine} timeout 20.0`,
+    '    assert eval {"images/room.png", "images/lamp.png", "images/bird.png", "images/eve.png"} <= set(vnv_image_files())',
+    '    assert eval all(renpy.loadable(f, directory="images") for f in vnv_image_files())',
+    "    exit",
+    "",
+  ].join("\n"));
 }
 
 // ─── Ren'Py's sample game, imported through the app's importer ───────────────
