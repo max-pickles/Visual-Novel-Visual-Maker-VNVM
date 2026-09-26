@@ -4,7 +4,7 @@
 // A test configures it through window.__VNV_MOCK__, set by an earlier init script:
 //   project        a VNProject listed in the games folder and returned by load_vnv_project
 //   files          file contents read_rpy_file returns, keyed by path suffix (e.g. "game/gui.rpy")
-//   assets         paths list_asset_files returns, keyed by asset type ("images", "audio", "video")
+//   assets         paths list_asset_files returns, keyed by asset type (e.g. { audio: ["audio/theme.ogg"] })
 //   dialogAnswers  replies to plugin:dialog|message, in order ("Cancel" once they run out)
 //
 // Every call is recorded in window.__calls as [command, args], dialogs in

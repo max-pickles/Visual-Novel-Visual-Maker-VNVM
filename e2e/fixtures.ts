@@ -9,7 +9,6 @@ import type { VNProject } from "../src/types";
 export interface MockOptions {
   project?: VNProject;
   files?: Record<string, string>;
-  /** Paths list_asset_files returns, by asset type ("images", "audio", "video"). */
   assets?: Record<string, string[]>;
   dialogAnswers?: string[];
   /** localStorage entries set before the app starts (preferences). */

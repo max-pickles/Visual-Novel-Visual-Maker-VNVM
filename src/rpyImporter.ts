@@ -308,9 +308,11 @@ export function importFromRpyFiles(
               const synLabel = currentScene.label + '_bad_end';
               // Avoid duplicate synthetic scenes (same label block re-entered)
               if (!sceneNodes[synLabel]) {
+                // Like every imported scene, no bg or music of its own: the
+                // game goes on with whatever was showing and playing.
                 const synSc: VNScene = {
                   id: uid6(), label: synLabel,
-                  bg: currentScene.bg, music: currentScene.music, events: [],
+                  bg: null, music: null, events: [],
                 };
                 ifEv.scene_false = synSc.id;
                 sceneNodes[synLabel] = synSc;
@@ -359,6 +361,9 @@ export function importFromRpyFiles(
         }
       }
 
+      // bg and music stay unset: the compiler plays them at the top of the label,
+      // but the game's `scene` and `play music` statements (events below) may
+      // come later, after lines shown on the previous label's background.
       const sc: VNScene = { id: uid6(), label: sceneLbl, bg: null, music: null, events: [] };
       if (sceneLbl === lbl) sc.renpy_label = lbl;
       // Register under the full original label so `jump vns_scene_X` targets resolve
@@ -392,7 +397,6 @@ export function importFromRpyFiles(
         const rawPath = tm[1].replace(/^images\//, "");
         const ev: VNEvent = { id: uid6(), type: "bg", bg: rawPath };
         addEvent(ev);
-        currentScene.bg = rawPath;
         const wm = line.match(/\bwith\s+(\w+)/);
         if (wm) {
           const eff: VNEvent = { id: uid6(), type: "effect", kind: mapTransition(wm[1]), dur: 0.5 };
@@ -408,7 +412,6 @@ export function importFromRpyFiles(
       const bgName = m[1].replace(/\s+with\s+\w+$/, "").trim();
       const ev: VNEvent = { id: uid6(), type: "bg", bg: bgName };
       addEvent(ev);
-      currentScene.bg = bgName;
       // Detect immediate "with" transition on same line
       const wm = line.match(/\bwith\s+(\w+)/);
       if (wm) {
@@ -463,7 +466,6 @@ export function importFromRpyFiles(
     if (m) {
       const ev: VNEvent = { id: uid6(), type: "music", music: m[1] };
       addEvent(ev);
-      currentScene.music = m[1];
       continue;
     }
 
