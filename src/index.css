@@ -33,6 +33,10 @@
   --mono:   'JetBrains Mono', 'Fira Code', monospace;
   --grid-dot-color: var(--teal);
   --grid-dot-opacity: 0.35;
+  /* Asset previews show images against fixed backdrops, the same in every theme */
+  --preview-dark:    #05080f;
+  --preview-white:   #f0f0f0;
+  --preview-checker: repeating-conic-gradient(#1e2a3a 0% 25%, #0d1220 0% 50%);
 }
 
 [data-bg-level="lighter"] {
