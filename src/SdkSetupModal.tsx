@@ -167,7 +167,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
             display: "flex", alignItems: "center", gap: 8,
             marginBottom: 16, padding: "8px 12px", borderRadius: 8,
             background: "var(--bg2, #1c2133)",
-            border: `1px solid ${statusColor}33`,
+            border: `1px solid color-mix(in srgb, ${statusColor} 20%, transparent)`,
             minHeight: 38,
           }}>
             <span style={{ fontSize: 14 }}>

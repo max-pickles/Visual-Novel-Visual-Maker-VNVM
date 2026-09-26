@@ -256,7 +256,7 @@ export const NodeLayer = React.memo(function NodeLayer(props: NodeLayerProps) {
                 onPointerDown={handleConnectionDragStart(node)}
               />
             )}
-            <div className="row gap6" style={{ padding: '8px 12px', background: `linear-gradient(90deg,${color}33,transparent)`, borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
+            <div className="row gap6" style={{ padding: '8px 12px', background: `linear-gradient(90deg,color-mix(in srgb, ${color} 20%, transparent),transparent)`, borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}` }} />
               {renamingId === node.id ? (
                 <input autoFocus className="input flex1 mono" style={{ height: 20, fontSize: 10, padding: 0 }}
