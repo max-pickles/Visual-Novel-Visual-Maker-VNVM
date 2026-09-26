@@ -311,7 +311,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     setPreviewState("launching"); setPreviewMsg("");
     try {
       const declaredElsewhere = await declaredVarsInGame(rootPath);
-      const script = compilePreview(project, scene.id, undefined, undefined, inheritedBg ?? undefined, inheritedSprite ?? undefined, { declaredElsewhere });
+      const script = compilePreview(project, scene.id, { declaredElsewhere });
       const RENPY_LANGS: Record<string, string> = {
         es: "spanish", fr: "french", de: "german", ja: "japanese", ko: "korean", ru: "russian", zh: "simplified_chinese", "zh-TW": "traditional_chinese"
       };

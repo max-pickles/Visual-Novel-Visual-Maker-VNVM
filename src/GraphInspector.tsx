@@ -106,7 +106,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
   const sdkPendingRef = React.useRef<(() => void) | null>(null);
 
   // Compute effective bgs for all scenes at top level (hooks must not be conditional)
-  const { effectiveBg, effectiveMusic, inheritedMusic, inheritedBg, inheritedSprite } = useMemo(() => computeSceneBgs(project), [project]);
+  const { effectiveBg, effectiveMusic, inheritedMusic } = useMemo(() => computeSceneBgs(project), [project]);
   const id = selection.size === 1 ? Array.from(selection)[0] : null;
   const scene = id ? project.scenes.find(s => s.id === id) ?? null : null;
   const bgName = scene ? (effectiveBg[scene.id] ?? null) : null;
@@ -220,7 +220,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
                   try {
                     const sdk = localStorage.getItem(SDK_PATH_KEY) || undefined;
                     const declaredElsewhere = await declaredVarsInGame(rootPath);
-                    const rpy = compilePreview(project, MAIN_MENU_ID, undefined, playMode, undefined, undefined, { declaredElsewhere });
+                    const rpy = compilePreview(project, MAIN_MENU_ID, { playMode, declaredElsewhere });
                     await launchRenpyPreview(rootPath, rpy, sdk);
                   } catch (e) {
                     const msg = String(e);
@@ -441,7 +441,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
               try {
                 const sdk = localStorage.getItem(SDK_PATH_KEY) || undefined;
                 const declaredElsewhere = await declaredVarsInGame(rootPath);
-                const rpy = compilePreview(project, scene.id, musicTrack ?? undefined, playMode, inheritedBg[scene.id] ?? undefined, inheritedSprite[scene.id] ?? undefined, { declaredElsewhere });
+                const rpy = compilePreview(project, scene.id, { playMode, declaredElsewhere });
                 await launchRenpyPreview(rootPath, rpy, sdk);
               } catch (e) {
                 const msg = String(e);

@@ -10,8 +10,10 @@
  *   <name>-single   Export → Save .rpy (one compiled script.rpy)
  *   <name>-preview  the preview file written on every save, next to the game's own scripts
  *   <name>-play     Play from Here on the start scene (linted only: it loops by design)
+ *   <name>-from     Play from Here on a later scene, which must look as it would when played to
  * Playable layouts get a vnv_testcases.rpy (next to game/, since lint reports
- * testcase statements as unreachable) that clicks through to the end. An
+ * testcase statements as unreachable) that clicks through to the end, or for
+ * <name>-from, checks the game's state once the scene starts. An
  * export whose translations must still match its dialogue gets a
  * vnv_translations.txt listing the languages to check.
  */
@@ -98,6 +100,49 @@ function addPlaythrough(game: string, choices: string[]): void {
 }
 
 /**
+ * A testcase for Play from Here: once the scene's first line (`firstLine`) is
+ * on screen, each Python condition in `checks` must hold.
+ */
+function addStateChecks(game: string, firstLine: string, checks: string[]): void {
+  fs.writeFileSync(path.join(game, "..", "vnv_testcases.rpy"), [
+    "init python:",
+    "    def vnv_showing(text):",
+    '        """Whether an image whose file or name contains text is on the master layer."""',
+    "        def names(d, depth=0):",
+    "            if d is None or depth > 20:",
+    "                return",
+    '            for attr in ("filename", "name"):',
+    "                v = getattr(d, attr, None)",
+    "                if isinstance(v, (str, tuple)):",
+    '                    yield " ".join(v) if isinstance(v, tuple) else v',
+    "            # Transforms hold a child; images shown with an expression are a reference to it.",
+    '            for c in [getattr(d, a, None) for a in ("child", "target", "name")] + list(getattr(d, "children", None) or []):',
+    '                if hasattr(c, "render"):',
+    "                    yield from names(c, depth + 1)",
+    '        return any(text in n for e in renpy.game.context().scene_lists.layers["master"] for n in names(e.displayable))',
+    "",
+    "testsuite global:",
+    "    before testcase:",
+    "        $ _test.transition_timeout = 0.05",
+    "        $ _test.timeout = 20.0",
+    "    teardown:",
+    "        exit",
+    "",
+    "testcase vnv_play:",
+    `    assert eval (${JSON.stringify(firstLine)} in str(renpy.last_say().what)) timeout 20.0`,
+    ...checks.map(c => `    assert eval (${c})`),
+    "",
+  ].join("\n"));
+}
+
+/**
+ * A Python condition: an image whose file or name contains `text` is on screen.
+ * Ren'Py gives images shown with `show expression` made-up tags, so this looks
+ * inside what's shown (see addStateChecks).
+ */
+const showing = (text: string) => `vnv_showing(${JSON.stringify(text)})`;
+
+/**
  * Write every layout for `proj`. `fromGame` is the game folder the project
  * lives in (the template for new projects, the original game for imports);
  * `replaced` lists the scripts an export removes.
@@ -105,9 +150,13 @@ function addPlaythrough(game: string, choices: string[]): void {
 function emit(
   name: string,
   proj: VNProject,
-  opts: { fromGame?: string; files?: string[]; choices?: string[]; replaced?: string[]; translations?: string[] } = {},
+  opts: {
+    fromGame?: string; files?: string[]; choices?: string[]; replaced?: string[]; translations?: string[];
+    /** A later scene for Play from Here, and conditions that must hold when it starts. */
+    from?: { scene: string; checks: string[] };
+  } = {},
 ): void {
-  const { fromGame = TEMPLATE, files = [], choices = [], replaced = ["script.rpy"], translations = [] } = opts;
+  const { fromGame = TEMPLATE, files = [], choices = [], replaced = ["script.rpy"], translations = [], from } = opts;
 
   let game = newGame(`${name}-export`, fromGame);
   addPlaceholders(game, files);
@@ -129,18 +178,35 @@ function emit(
   game = newGame(`${name}-preview`, fromGame);
   addPlaceholders(game, files);
   fs.writeFileSync(path.join(game, "vnv_preview.rpy"),
-    compilePreview(proj, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere: declaredIn(game) }));
+    compilePreview(proj, "main_menu", { declaredElsewhere: declaredIn(game) }));
   addPlaythrough(game, choices);
 
   game = newGame(`${name}-play`, fromGame);
   addPlaceholders(game, files);
   fs.writeFileSync(path.join(game, "vnv_preview.rpy"),
-    compilePreview(proj, proj.start ?? undefined, undefined, undefined, undefined, undefined, { declaredElsewhere: declaredIn(game) }));
+    compilePreview(proj, proj.start ?? undefined, { declaredElsewhere: declaredIn(game) }));
+
+  if (from) {
+    game = newGame(`${name}-from`, fromGame);
+    addPlaceholders(game, files);
+    fs.writeFileSync(path.join(game, "vnv_preview.rpy"),
+      compilePreview(proj, from.scene, { declaredElsewhere: declaredIn(game) }));
+    const scene = proj.scenes.find(s => s.id === from.scene)!;
+    const firstLine = scene.events.find(e => e.type === "dialogue" || e.type === "narration")?.text ?? "";
+    addStateChecks(game, firstLine, from.checks);
+  }
 }
 
 // ─── The demo project from the New Project wizard ────────────────────────────
 
-emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] });
+{
+  const demo = newDemoProject("Demo", "Tester");
+  emit("demo", demo, {
+    choices: ["See a good ending"],
+    // The start scene's own background and its variable carry over.
+    from: { scene: demo.scenes.find(s => s.label === "good_end")!.id, checks: ["met_eileen", showing("gui/game_menu.png")] },
+  });
+}
 
 // ─── Names, variables and events that used to produce invalid Ren'Py ─────────
 
@@ -211,7 +277,19 @@ emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] 
   const rnd = newEvent("random"); rnd.random_scenes = [good.id, other.id]; rnd.random_weights = [2, 1]; bad.events.push(rnd);
   say(good, obrien, "The end."); good.ending_type = "good";
   say(other, mary, "Another end.");
-  emit("tricky", p, { files, choices: ["Go on"] });
+  emit("tricky", p, {
+    files,
+    choices: ["Go on"],
+    from: {
+      scene: good.id,
+      checks: [
+        'points == 1 and name == "Bob" and items == ["key"] and met_eileen',
+        showing("images/bg_room.png"),
+        showing("images/anim.png"),
+        'all(renpy.showing(tag) for tag in ["Mary_Jane", "at_", "Layer_Girl", "さくら"])',
+      ],
+    },
+  });
 }
 
 // ─── Ren'Py's sample game, imported through the app's importer ───────────────
@@ -234,6 +312,11 @@ emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] 
     // What the app's export removes; the game's translations stay and must still match.
     replaced: imported.filter(f => isReplacedByExport(f, imported)).map(f => f.slice("game/".length)),
     translations: fs.readdirSync(path.join(source, "tl")).filter(l => l !== "None"),
+    // Asking right away and picking the videogame: Sylvie smiles in the meadow, and the music plays on.
+    from: {
+      scene: project.scenes.find(s => s.renpy_label === "game")!.id,
+      checks: [showing("bg meadow"), showing("sylvie green smile"), `not ${showing("lecturehall")}`, 'renpy.music.get_playing() == "illurock.opus"'],
+    },
   });
   fs.rmSync(game, { recursive: true, force: true });
 }
@@ -265,7 +348,12 @@ emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] 
     const e = newEvent("setvar"); e.var_name = k; e.var_val = v;
     start.events.splice(start.events.length - 1, 0, e); // before the scene's final jump
   }
-  emit("affection", project, { fromGame: source, replaced: ["script.rpy"] });
+  emit("affection", project, {
+    fromGame: source,
+    replaced: ["script.rpy"],
+    // Both the game's own `$ affection += 1` and the one added in VNVMaker count.
+    from: { scene: project.scenes.find(s => s.renpy_label === "ending")!.id, checks: ['affection == 2 and met_eileen and route == "eileen"'] },
+  });
   fs.rmSync(source, { recursive: true, force: true });
 }
 

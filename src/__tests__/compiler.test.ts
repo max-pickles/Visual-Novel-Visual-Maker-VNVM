@@ -6,8 +6,8 @@
  */
 
 import { compileProject, compileProjectToFiles, compilePreview, getProjectStats } from "../compiler";
-import { newProject, newScene, newCharacter, newEvent } from "../types";
-import type { VNProject } from "../types";
+import { newProject, newScene, newCharacter, newEvent, newDemoProject, newOpt } from "../types";
+import type { VNProject, VNEvent, VNScene } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -643,5 +643,218 @@ describe("exports of an imported game", () => {
     expect(text).toContain(`label vns_scene_${proj.scenes[0].id}:`);
     expect(text).toContain(`define vnc_${proj.characters[0].id} = `);
     expect(text).not.toMatch(/^label start:$/m);
+  });
+});
+
+// ─── Live preview: the story so far ───────────────────────────────────────────
+
+describe("compilePreview – the story so far", () => {
+  /** Two scenes: `first` (the start) leads to `second` with its last event. */
+  function twoScenes(...firstEvents: VNEvent[]): { proj: VNProject; first: VNScene; second: VNScene } {
+    const proj = makeProj();
+    const first = proj.scenes[0];
+    const second = newScene("second");
+    proj.scenes.push(second);
+    first.events = [...firstEvents, { ...newEvent("jump"), scene_id: second.id }];
+    second.events = [{ ...newEvent("narration"), text: "Here." }];
+    return { proj, first, second };
+  }
+
+  /** The statements the preview runs before jumping to `sceneId`, trimmed. */
+  function entry(proj: VNProject, sceneId: string): string[] {
+    const text = compilePreview(proj, sceneId);
+    const block = text.slice(text.indexOf("label vnv_preview_entry:\n") + "label vnv_preview_entry:\n".length);
+    return block.slice(0, block.indexOf("\n\n")).split("\n").map(l => l.trimEnd()).filter(l => !l.trim().startsWith("##"));
+  }
+
+  const ev = (type: VNEvent["type"], fields: Partial<VNEvent>): VNEvent => ({ ...newEvent(type), ...fields });
+  const speaker = (proj: VNProject, name: string, poses: Record<string, string>) => {
+    const char = newCharacter(name);
+    Object.assign(char.sprites, poses);
+    proj.characters.push(char);
+    return char;
+  };
+
+  it("brings back the demo's background and variables when playing from its good ending", () => {
+    const proj = newDemoProject();
+    const goodEnd = proj.scenes.find(s => s.label === "good_end")!;
+    expect(entry(proj, goodEnd.id)).toEqual([
+      '    scene expression Transform("gui/game_menu.png", fit="cover", xsize=config.screen_width, ysize=config.screen_height)',
+      "    $ met_eileen = True",
+      `    jump vns_scene_${goodEnd.id}`,
+    ]);
+  });
+
+  it("adds nothing when playing from the start", () => {
+    const proj = newDemoProject();
+    expect(entry(proj, proj.start!)).toEqual([`    jump vns_scene_${proj.start}`]);
+  });
+
+  it("shows the sprites still on screen, each with its latest pose and position", () => {
+    const { proj, second } = twoScenes();
+    const eve = speaker(proj, "Eve", { neutral: "eve.png", happy: "eve_happy.png" });
+    const bob = speaker(proj, "Bob", { neutral: "bob.png" });
+    proj.scenes[0].events.unshift(
+      ev("dialogue", { char_id: eve.id, pose: "neutral", side: "left", text: "Hi." }),
+      ev("dialogue", { char_id: bob.id, pose: "neutral", side: "right", text: "Yo." }),
+      ev("dialogue", { char_id: eve.id, pose: "happy", side: "left", text: "Yay!" }),
+      ev("image", { image: "images/cat.png", side: "center", transition: "dissolve" }),
+    );
+    expect(entry(proj, second.id)).toEqual([
+      "    show Eve happy at left",
+      "    show Bob neutral at right",
+      '    show expression "images/cat.png" at center',
+      `    jump vns_scene_${second.id}`,
+    ]);
+  });
+
+  it("replays backgrounds and images in story order, for Ren'Py to clear and replace them as it plays", () => {
+    const { proj, second } = twoScenes();
+    const eve = speaker(proj, "Eve", { neutral: "eve.png" });
+    proj.scenes[0].events.unshift(
+      ev("dialogue", { char_id: eve.id, text: "Before." }),
+      ev("bg", { bg: "images/night.png", transition: "fade", atl_code: "zoom 1.1" }),
+      ev("image", { image: "images/moon.png" }),
+    );
+    expect(entry(proj, second.id)).toEqual([
+      "    show Eve neutral at center",
+      '    scene expression Transform("images/night.png", fit="cover", xsize=config.screen_width, ysize=config.screen_height):',
+      "        zoom 1.1",
+      '    show expression "images/moon.png" at center',
+      `    jump vns_scene_${second.id}`,
+    ]);
+  });
+
+  it("keeps every image show, since Ren'Py versions differ on which of them replace each other", () => {
+    // Ren'Py 8.4+ reads show expression "sylvie green smile" as show sylvie green smile.
+    const { proj, second } = twoScenes(
+      ev("image", { image: "sylvie green smile" }),
+      ev("image", { image: "sylvie green surprised" }),
+      ev("image", { image: "sylvie green smile" }),
+    );
+    expect(entry(proj, second.id)).toEqual([
+      '    show expression "sylvie green smile" at center',
+      '    show expression "sylvie green surprised" at center',
+      '    show expression "sylvie green smile" at center',
+      `    jump vns_scene_${second.id}`,
+    ]);
+  });
+
+  it("keeps the latest music, looping sound and camera, and every variable change in order", () => {
+    const { proj, second } = twoScenes(
+      ev("music", { music: "audio/old.ogg" }),
+      ev("setvar", { var_name: "points", var_val: "1" }),
+      ev("sfx", { sfx: "audio/rain.ogg", loop: true }),
+      ev("camera", { camera_x: 5, camera_dur: 2 }),
+      ev("music", { music: "audio/theme.ogg", volume: 0.5, loop: false }),
+      ev("setvar", { var_name: "points", var_val: "points + 2" }),
+      ev("camera", { camera_zoom: 1.5, camera_dur: 2 }),
+    );
+    expect(entry(proj, second.id)).toEqual([
+      "    $ points = 1",
+      "    $ points = points + 2",
+      "    camera:",
+      "        perspective True",
+      "        xpos 0 ypos 0 zpos 0 zoom 1.5",
+      '    play music "audio/theme.ogg" volume 0.5 noloop',
+      '    play sound "audio/rain.ogg" loop',
+      `    jump vns_scene_${second.id}`,
+    ]);
+  });
+
+  it("leaves out dialogue, pauses, transitions, one-off sounds, stopped music and achievements", () => {
+    const { proj, second } = twoScenes(
+      ev("music", { music: "audio/theme.ogg" }),
+      ev("narration", { text: "Once upon a time." }),
+      ev("wait", { dur: 2 }),
+      ev("effect", { kind: "fade" }),
+      ev("sfx", { sfx: "audio/rain.ogg", loop: true }),
+      ev("sfx", { sfx: "audio/ding.ogg" }),
+      ev("music", { music: "" }),
+      ev("achievement", { achievement_id: "Started" }),
+      ev("movie", { movie: "intro.webm" }),
+    );
+    expect(entry(proj, second.id)).toEqual([`    jump vns_scene_${second.id}`]);
+  });
+
+  it("follows a scene only as far as the event that leads on", () => {
+    const proj = makeProj();
+    const first = proj.scenes[0];
+    const early = newScene("early"), late = newScene("late");
+    proj.scenes.push(early, late);
+    const pick = newEvent("choice");
+    pick.opts = [{ ...newOpt("Early"), scene: early.id }];
+    first.events = [
+      ev("bg", { bg: "images/day.png" }),
+      pick,
+      ev("bg", { bg: "images/night.png" }),
+      ev("setvar", { var_name: "late", var_val: "True" }),
+      { ...newEvent("jump"), scene_id: late.id },
+    ];
+    expect(entry(proj, early.id).join("\n")).toContain("images/day.png");
+    expect(entry(proj, early.id).join("\n")).not.toMatch(/night|\$ late/);
+    expect(entry(proj, late.id)).toEqual([
+      '    scene expression Transform("images/day.png", fit="cover", xsize=config.screen_width, ysize=config.screen_height)',
+      '    scene expression Transform("images/night.png", fit="cover", xsize=config.screen_width, ysize=config.screen_height)',
+      "    $ late = True",
+      `    jump vns_scene_${late.id}`,
+    ]);
+  });
+
+  it("replays raw code that only shows things or sets variables, in story order and without transitions", () => {
+    const { proj, second } = twoScenes(
+      ev("raw", { raw_code: "show sylvie green smile at left with dissolve" }),
+      ev("raw", { raw_code: "show logo at truecenter:\n    alpha 0.5\nwith Dissolve(0.5)" }),
+      ev("raw", { raw_code: "$ affection += 1" }),
+      ev("raw", { raw_code: '$ route = "eileen"\n$ flags["met"] = True' }),
+      ev("raw", { raw_code: '$ name = renpy.input("Name?")' }),
+      ev("raw", { raw_code: '$ renpy.notify("Saved")' }),
+      ev("raw", { raw_code: "show eileen happy\n$ met = True" }),
+      ev("raw", { raw_code: "show expression portrait" }),
+      ev("raw", { raw_code: 'show text "stay with me"' }),
+    );
+    expect(entry(proj, second.id)).toEqual([
+      "    show sylvie green smile at left",
+      "    show logo at truecenter:",
+      "        alpha 0.5",
+      "    $ affection += 1",
+      '    $ route = "eileen"',
+      '    $ flags["met"] = True',
+      "    show expression portrait",
+      '    show text "stay with me"',
+      `    jump vns_scene_${second.id}`,
+    ]);
+  });
+
+  it("doesn't merge a sprite's shows across raw code that may hide it", () => {
+    const { proj, second } = twoScenes();
+    const eve = speaker(proj, "Eve", { neutral: "eve.png", happy: "eve_happy.png" });
+    proj.scenes[0].events.unshift(
+      ev("dialogue", { char_id: eve.id, text: "Hi." }),
+      ev("raw", { raw_code: "hide Eve" }),
+      ev("dialogue", { char_id: eve.id, pose: "happy", text: "Back!" }),
+    );
+    expect(entry(proj, second.id)).toEqual([
+      "    show Eve neutral at center",
+      "    hide Eve",
+      "    show Eve happy at center",
+      `    jump vns_scene_${second.id}`,
+    ]);
+  });
+
+  it("goes through every scene on the route, each with its own background and music", () => {
+    const proj = makeProj();
+    const [a, b, c] = [proj.scenes[0], newScene("b"), newScene("c")];
+    proj.scenes.push(b, c);
+    a.music = "audio/a.ogg";
+    a.events = [ev("setvar", { var_name: "seen_a", var_val: "True" }), { ...newEvent("jump"), scene_id: b.id }];
+    b.bg = "images/b.png";
+    b.events = [{ ...newEvent("if"), condition: "seen_a", scene_true: c.id, scene_false: null }];
+    expect(entry(proj, c.id)).toEqual([
+      "    $ seen_a = True",
+      '    scene expression Transform("images/b.png", fit="cover", xsize=config.screen_width, ysize=config.screen_height)',
+      '    play music "audio/a.ogg"',
+      `    jump vns_scene_${c.id}`,
+    ]);
   });
 });
