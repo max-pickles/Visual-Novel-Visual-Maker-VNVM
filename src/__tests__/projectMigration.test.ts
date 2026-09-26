@@ -8,7 +8,7 @@
  * because vite.config.ts sets `test.globals: true`.
  */
 
-import { migrateProject, newDemoProject, newCharacter } from "../types";
+import { migrateProject, newDemoProject, newCharacter, newEvent } from "../types";
 import type { VNProject } from "../types";
 
 /** Simulate saveVnvProject → loadVnvProject. */
@@ -113,6 +113,55 @@ describe("migrateProject – defaults for old or partial saves", () => {
     expect(loaded.scenes[0].events[0].id).toBeTruthy();
     expect(loaded.characters[0]).toMatchObject({ id: "c1", name: "Eileen", display: "Eileen" });
     expect(loaded.characters[0].poses.length).toBeGreaterThan(0);
+  });
+
+  it("clears the bg and music older importers copied from a scene's own events", () => {
+    const loaded = migrateProject({
+      scenes: [{
+        id: "walk", label: "walk", bg: "bg club", music: "walk.ogg", events: [
+          { id: "e1", type: "narration", text: "Still at the university." },
+          { id: "e2", type: "bg", bg: "bg meadow" },
+          { id: "e3", type: "music", music: "walk.ogg" },
+          { id: "e4", type: "bg", bg: "bg club" },
+        ],
+      }],
+    });
+    expect(loaded.scenes[0]).toMatchObject({ bg: null, music: null });
+    expect(loaded.scenes[0].events.map((e) => e.bg ?? e.music ?? e.text)).toEqual(
+      ["Still at the university.", "bg meadow", "walk.ogg", "bg club"],
+    );
+  });
+
+  it("clears what older importers copied into the scenes an if falls through to", () => {
+    const loaded = migrateProject({
+      scenes: [
+        { id: "start", label: "start", bg: "bg uni", music: "theme.ogg", events: [
+          { id: "e1", type: "bg", bg: "bg uni" },
+          { id: "e2", type: "music", music: "theme.ogg" },
+          { id: "e3", type: "if", condition: "has_key", scene_true: "inside", scene_false: "locked" },
+        ] },
+        { id: "locked", label: "start_bad_end", bg: "bg uni", music: "theme.ogg", events: [
+          { id: "e4", type: "narration", text: "Locked out." },
+          { id: "e5", type: "if", condition: "has_map", scene_true: "inside", scene_false: "lost" },
+        ] },
+        { id: "lost", label: "start_bad_end_bad_end", bg: "bg uni", music: "theme.ogg", events: [
+          { id: "e6", type: "narration", text: "Lost, too." },
+        ] },
+        { id: "inside", label: "inside", events: [] },
+      ],
+    });
+    expect(loaded.scenes.map((sc) => [sc.bg, sc.music])).toEqual([[null, null], [null, null], [null, null], [null, null]]);
+  });
+
+  it("keeps a scene's bg that no event shows, like the demo project's, even when its if loops back", () => {
+    const demo = newDemoProject();
+    const start = demo.scenes[0];
+    const loop = newEvent("if");
+    loop.condition = "not met_eileen";
+    loop.scene_false = start.id;
+    start.events.push(loop);
+    expect(start.bg).toBeTruthy();
+    expect(roundTrip(demo).scenes[0].bg).toBe(start.bg);
   });
 
   it("never restores runtime-only paths from the file contents", () => {

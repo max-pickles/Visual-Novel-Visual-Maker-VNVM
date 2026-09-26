@@ -195,9 +195,13 @@ export interface VNEvent {
 export interface VNScene {
   id: string;
   label: string;
-  /** Default background for this scene */
+  /**
+   * Background shown when the scene starts, before its events: the compiler
+   * puts it at the top of the label. Imported scenes leave it unset: the
+   * game's `scene` statements become `bg` events, at the same point.
+   */
   bg: string | null;
-  /** Default music for this scene */
+  /** Music started when the scene starts, before its events. Unset on imported scenes, like `bg`. */
   music: string | null;
   events: VNEvent[];
   /** Manual override: ID of the specific event to use as the scene's thumbnail snapshot */
@@ -795,7 +799,8 @@ export function extractVars(project: VNProject): VNVariable[] {
  *
  * Fields that aren't listed here are carried over untouched, so data saved by
  * newer features (or fields this function doesn't know about) survives a
- * load → save round-trip.
+ * load → save round-trip. Scenes also lose the backgrounds and music older
+ * versions of the importer copied into them (see {@link dropImportedDefaults}).
  */
 export function migrateProject(raw: Record<string, unknown>, filePath?: string): VNProject {
   const now = Date.now();
@@ -805,7 +810,7 @@ export function migrateProject(raw: Record<string, unknown>, filePath?: string):
     (filePath ? filePath.replace(/\\/g, '/').split('/').pop()?.replace(/\.vnvmaker$/, '') ?? uid() : uid());
 
   const scenes = Array.isArray(raw.scenes)
-    ? (raw.scenes as VNScene[]).map(migrateScene)
+    ? dropImportedDefaults((raw.scenes as VNScene[]).map(migrateScene))
     : [];
 
   const start = (raw.start as string | null) ?? scenes[0]?.id ?? null;
@@ -859,6 +864,40 @@ function migrateScene(raw: Partial<VNScene>): VNScene {
     events: Array.isArray(raw.events) ? raw.events.map(migrateEvent) : [],
     scene_ids: Array.isArray(raw.scene_ids) ? (raw.scene_ids as string[]) : [],
   };
+}
+
+/**
+ * Clear the `bg` and `music` older versions of the importer gave each scene:
+ * the label's last `scene` and `play music`. The compiler plays a scene's own
+ * `bg` and `music` at the top of its label, so an imported label showed its
+ * last background (hiding any sprites) before its first `scene` statement.
+ *
+ * Only copies are cleared, so nothing is lost: a value one of the scene's own
+ * events has, or, for the scene the importer split off after an `if`, the
+ * value of the scene whose `if` falls through to it.
+ */
+function dropImportedDefaults(scenes: VNScene[]): VNScene[] {
+  // Scene id → scenes with an `if` whose else branch goes there.
+  const elseOf = new Map<string, VNScene[]>();
+  for (const sc of scenes) {
+    for (const ev of sc.events) {
+      if (ev.type === 'if' && ev.scene_false) {
+        elseOf.set(ev.scene_false, [...(elseOf.get(ev.scene_false) ?? []), sc]);
+      }
+    }
+  }
+  const copied = (sc: VNScene, key: 'bg' | 'music') => {
+    const value = sc[key];
+    return !!value && (
+      sc.events.some(ev => ev.type === key && ev[key] === value) ||
+      (elseOf.get(sc.id) ?? []).some(from => from !== sc && from[key] === value)
+    );
+  };
+  return scenes.map(sc => ({
+    ...sc,
+    bg: copied(sc, 'bg') ? null : sc.bg,
+    music: copied(sc, 'music') ? null : sc.music,
+  }));
 }
 
 function migrateEvent(raw: Partial<VNEvent>): VNEvent {
