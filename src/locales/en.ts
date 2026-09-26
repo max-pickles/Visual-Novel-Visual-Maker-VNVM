@@ -264,6 +264,7 @@ export const en = {
       select_event_hint: "Select an event to inspect and edit it",
       choose_bg: "Choose Background",
       choose_image: "Choose Image",
+      choose_voice: "Choose Voice File",
       picker_hint: "\u2014 click \u201cUse This Image\u201d or double-click a tile to apply",
       armed_hint: "Click timeline to insert",
       arm_tooltip: "Click to arm {tool}, then click timeline to insert",

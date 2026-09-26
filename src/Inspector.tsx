@@ -103,7 +103,7 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
           </div>
           <div className="col gap4">
             <Label>{tr('inspector.voice')}</Label>
-            <AssetPicker value={ev.voice ?? ""} onChange={(v) => set("voice", v)} onOpenFullBrowser={() => openFullBrowser && openFullBrowser("audio", "voice")} />
+            <AssetPicker value={ev.voice ?? ""} onChange={(v) => set("voice", v)} onOpenFullBrowser={openFullBrowser && (() => openFullBrowser("audio", "voice"))} />
           </div>
         </>
       )}
@@ -122,6 +122,10 @@ export function Inspector({ ev, project, rootPath, onChange, onOpenAnimTrack, op
           <div className="col gap4">
             <Label>{tr('inspector.narration_text')}</Label>
             <RichTextarea value={ev.text ?? ""} onChange={v => set("text", v)} placeholder={tr('inspector.narration_ph')} />
+          </div>
+          <div className="col gap4">
+            <Label>{tr('inspector.voice')}</Label>
+            <AssetPicker value={ev.voice ?? ""} onChange={(v) => set("voice", v)} onOpenFullBrowser={openFullBrowser && (() => openFullBrowser("audio", "voice"))} />
           </div>
         </>
       )}

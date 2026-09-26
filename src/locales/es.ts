@@ -264,6 +264,7 @@ export const es = {
       select_event_hint: "Selecciona un evento para inspeccionarlo y editarlo",
       choose_bg: "Elegir Fondo",
       choose_image: "Elegir Imagen",
+      choose_voice: "Elegir Archivo de Voz",
       picker_hint: "\u2014 haz clic en \u201cUsar esta imagen\u201d o doble clic en un mosaico",
       armed_hint: "Clic en la línea de tiempo para insertar",
       arm_tooltip: "Clic para armar {tool}, luego clic en la línea de tiempo",

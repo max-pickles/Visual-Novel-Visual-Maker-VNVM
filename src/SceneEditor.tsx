@@ -25,6 +25,7 @@ import { parseGuiRpy } from "./guiParser";
 import type { GuiConfig } from "./guiParser";
 import { useTranslation } from "./translationContext";
 import { SidebarAssetBrowser } from "./SidebarAssetBrowser";
+import { assetFieldFor, assetFieldValue, assetKindFor, assetKindOf } from "./eventAssets";
 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -73,8 +74,13 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal]   = useState("");
   const [, setTick]             = useState(0);
-  // Picker modal opened from clicking bg/sprite in the preview
-  const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" } | null>(null);
+  // Picker modal opened from clicking bg/sprite in the preview, or from a voice field (below)
+  const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" | "voice" } | null>(null);
+  // A voice field's Open Full Browser in the Inspector opens the picker on the project's audio.
+  // The picker needs the project folder, so without one the Inspector doesn't offer it.
+  const openFullBrowser = project._rootPath
+    ? (_tab: string, field: string) => { if (field === "voice") setPickerModal({ field }); }
+    : undefined;
   // Ren'Py live preview
   const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(SDK_PATH_KEY) ?? "");
   const [showSdkModal, setShowSdkModal] = useState(false);
@@ -436,7 +442,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
             title="Reset zoom">{t('canvas.fit_all')}</button>
           <div style={{ width: 1, height: 14, background: "var(--bdr)", margin: "0 2px" }} />
           <button onClick={() => setShowGuides(g => !g)}
-            style={{ background: showGuides ? "var(--teal)" : "none", border: "none", color: showGuides ? "#000" : "var(--faint)", cursor: "pointer", fontSize: 11, borderRadius: 4, padding: "2px 6px" }}
+            style={{ background: showGuides ? "var(--teal)" : "none", border: "none", color: showGuides ? "var(--bg0)" : "var(--faint)", cursor: "pointer", fontSize: 11, borderRadius: 4, padding: "2px 6px" }}
             title="Toggle Composition Guides (Rule of Thirds & Safe Zones)">⌗</button>
         </div>
 
@@ -500,7 +506,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
           <div style={{
             width: leftWidth, flexShrink: 0, position: "relative",
             display: "flex", flexDirection: "column",
-            background: "rgba(13, 15, 26, 0.75)", backdropFilter: "blur(12px)",
+            background: "color-mix(in srgb, var(--bg1) 75%, transparent)", backdropFilter: "blur(12px)",
             border: "1px solid var(--bdr)", borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)", overflow: "hidden", zIndex: 10,
           }}>
@@ -519,7 +525,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
             />
 
             {/* Headers Area (Horizontal Tabs) */}
-            <div style={{ flexShrink: 0, display: "flex", background: "rgba(0,0,0,0.3)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ flexShrink: 0, display: "flex", background: "color-mix(in srgb, var(--bg0) 30%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--text) 5%, transparent)" }}>
               {(["scenes", "images", "audio", "effects"] as const).map(mode => {
                 const isActive = leftMode === mode;
                 const icons = { scenes: "🎬", images: "🖼", audio: "🎵", effects: "✨" };
@@ -536,7 +542,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     onClick={() => setLeftMode(mode)}
                     style={{
                       flex: 1, padding: "10px 0",
-                      background: isActive ? "rgba(255,255,255,0.05)" : "transparent",
+                      background: isActive ? "color-mix(in srgb, var(--text) 5%, transparent)" : "transparent",
                       border: "none", borderBottom: isActive ? "2px solid var(--teal)" : "2px solid transparent",
                       color: isActive ? "var(--teal)" : "var(--dim)",
                       cursor: "pointer", transition: "all 0.15s",
@@ -551,7 +557,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
             </div>
 
             {/* Content Area */}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "rgba(0,0,0,0.15)" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "color-mix(in srgb, var(--bg0) 15%, transparent)" }}>
               {isAnimMode ? (
                 <AnimPropertiesPanel 
                   frames={selEvent.animation_keyframes || []}
@@ -624,7 +630,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     ))}
                   </div>
                 </div>
-                <div style={{ padding: "8px", borderTop: "1px solid rgba(255,255,255,0.1)", background: "rgba(0,0,0,0.2)" }}>
+                <div style={{ padding: "8px", borderTop: "1px solid color-mix(in srgb, var(--text) 10%, transparent)", background: "color-mix(in srgb, var(--bg0) 20%, transparent)" }}>
                   <button className="btn" style={{ width: "100%", fontSize: 11 }}
                     onClick={() => {
                       const s = newScene(`Scene ${project.scenes.length + 1}`);
@@ -637,26 +643,14 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                           </div>
                         </>
                       ) : (
-                        <SidebarAssetBrowser 
-                          project={project} 
-                          mode={leftMode as any} 
-                          onPick={path => {
-                            if (selEvent && selIdx !== null) {
-                              const key = leftMode === "images" ? (selEvent.type === "bg" ? "bg" : "image") : (leftMode === "audio" ? "music" : "");
-                              if (key) {
-                                const updated = { ...selEvent, [key]: path } as VNEvent;
-                                const newScenes = project.scenes.map(sc => {
-                                  if (scene && sc.id === scene.id) {
-                                    const copy = JSON.parse(JSON.stringify(sc)) as VNScene;
-                                    copy.events[selIdx] = updated;
-                                    return copy;
-                                  }
-                                  return sc;
-                                });
-                                onProjectChange({ ...project, scenes: newScenes });
-                                refresh();
-                              }
-                            }
+                        // A movie event takes a video, so the images tab lists videos while one is selected.
+                        <SidebarAssetBrowser
+                          project={project}
+                          mode={leftMode === "images" && selEvent && assetKindFor(selEvent.type) === "video" ? "video" : leftMode}
+                          onPick={(path, kind) => {
+                            if (!selEvent) return;
+                            const field = assetFieldFor(selEvent.type, kind);
+                            if (field) onEventChange({ ...selEvent, [field]: assetFieldValue(field, path) });
                           }}
                         />
                       )}
@@ -763,7 +757,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
           <div style={{
             width: rightWidth, flexShrink: 0, position: "relative",
             display: "flex", flexDirection: "column",
-            background: "rgba(13, 15, 26, 0.75)", backdropFilter: "blur(12px)",
+            background: "color-mix(in srgb, var(--bg1) 75%, transparent)", backdropFilter: "blur(12px)",
             border: "1px solid var(--bdr)", borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)", overflow: "hidden", zIndex: 10,
           }}>
@@ -807,10 +801,10 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               <>
                 {/* Inspector header */}
                 <div style={{
-                  padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.1)",
+                  padding: "8px 14px", borderBottom: "1px solid color-mix(in srgb, var(--text) 10%, transparent)",
                   display: "flex", alignItems: "center", gap: 8,
                   fontSize: 10, fontWeight: 700, color: "var(--dim)",
-                  letterSpacing: ".1em", textTransform: "uppercase", background: "rgba(0,0,0,0.2)"
+                  letterSpacing: ".1em", textTransform: "uppercase", background: "color-mix(in srgb, var(--bg0) 20%, transparent)"
                 }}>
                   <span style={{ fontSize: 14 }}>{TOOL_ICONS[selEvent.type] ?? "○"}</span>
                   <span style={{ color: TOOL_COLORS[selEvent.type] ?? "var(--dim)" }}>{selEvent.type || "empty"}</span>
@@ -825,13 +819,14 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     rootPath={project._rootPath ?? ""}
                     onChange={onEventChange}
                     onOpenAnimTrack={() => setShowAnimTrack(true)}
+                    openFullBrowser={openFullBrowser}
                   />
                 </div>
 
                 {/* Action buttons */}
                 <div style={{
-                  padding: "8px 10px", borderTop: "1px solid rgba(255,255,255,0.1)",
-                  display: "flex", flexWrap: "wrap", gap: 4, background: "rgba(0,0,0,0.2)"
+                  padding: "8px 10px", borderTop: "1px solid color-mix(in srgb, var(--text) 10%, transparent)",
+                  display: "flex", flexWrap: "wrap", gap: 4, background: "color-mix(in srgb, var(--bg0) 20%, transparent)"
                 }}>
                   <button className="btn" style={{ flex: 1, fontSize: 11, minWidth: 60 }}
                     title="Copy event (Ctrl+C)"
@@ -855,7 +850,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 {/* Scene Notes */}
                 {scene && (
-                  <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--text) 6%, transparent)" }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: "var(--dim)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                       <span>📝</span> {t('editor.scene.scene_notes')}
                     </div>
@@ -866,15 +861,15 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                       rows={5}
                       style={{
                         width: "100%", boxSizing: "border-box",
-                        background: "rgba(251,191,36,0.04)",
-                        border: "1px solid rgba(251,191,36,0.2)",
+                        background: "color-mix(in srgb, var(--amber) 4%, transparent)",
+                        border: "1px solid color-mix(in srgb, var(--amber) 20%, transparent)",
                         borderRadius: 8, color: "var(--text)", fontSize: 12,
                         padding: "10px 12px", resize: "vertical", outline: "none",
                         fontFamily: "inherit", lineHeight: 1.6,
                         transition: "border-color 0.15s",
                       }}
-                      onFocus={e => e.currentTarget.style.borderColor = "rgba(251,191,36,0.5)"}
-                      onBlur={e => e.currentTarget.style.borderColor = "rgba(251,191,36,0.2)"}
+                      onFocus={e => e.currentTarget.style.borderColor = "color-mix(in srgb, var(--amber) 50%, transparent)"}
+                      onBlur={e => e.currentTarget.style.borderColor = "color-mix(in srgb, var(--amber) 20%, transparent)"}
                     />
                     {scene.description && (
                       <div style={{ fontSize: 10, color: "var(--faint)", marginTop: 4, textAlign: "right" }}>
@@ -900,7 +895,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                 </div>
                 {/* Scene-level color grading when no event is selected */}
                 {scene && (
-                  <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                  <div style={{ padding: "16px", borderTop: "1px solid color-mix(in srgb, var(--text) 10%, transparent)" }}>
                     <ColorGradePanel
                       grade={scene.color_grade}
                       onChange={g => updateScene(sc => { sc.color_grade = g; })}
@@ -1052,13 +1047,15 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               padding: "12px 18px", borderBottom: "1px solid var(--bdr)",
               background: "var(--bg2)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
             }}>
-              <span style={{ fontSize: 16 }}>{pickerModal.field === "bg" ? "🖼" : "🎨"}</span>
+              <span style={{ fontSize: 16 }}>{{ bg: "🖼", image: "🎨", voice: "🎙" }[pickerModal.field]}</span>
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
-                {pickerModal.field === "bg" ? t('editor.scene.choose_bg') : t('editor.scene.choose_image')}
+                {t({ bg: 'editor.scene.choose_bg', image: 'editor.scene.choose_image', voice: 'editor.scene.choose_voice' }[pickerModal.field])}
               </span>
-              <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 4 }}>
-                {t('editor.scene.picker_hint')}
-              </span>
+              {pickerModal.field !== "voice" && (
+                <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 4 }}>
+                  {t('editor.scene.picker_hint')}
+                </span>
+              )}
               <button
                 onClick={() => setPickerModal(null)}
                 style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--faint)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
@@ -1071,11 +1068,12 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
               <AssetBrowser
                 rootPath={project._rootPath}
                 project={project}
+                initialType={pickerModal.field === "voice" ? "audio" : "images"}
                 onPick={(path) => {
-                  if (selEvent && selIdx !== null) {
-                    const key = pickerModal.field === "bg" ? "bg" : "image";
-                    onEventChange({ ...selEvent, [key]: path });
-                  }
+                  // The file goes in the field the event takes, if it's that kind of file.
+                  const kind = assetKindOf(path);
+                  const field = selEvent && kind && assetFieldFor(selEvent.type, kind);
+                  if (selEvent && field) onEventChange({ ...selEvent, [field]: assetFieldValue(field, path) });
                   setPickerModal(null);
                 }}
               />
