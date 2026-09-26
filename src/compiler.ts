@@ -24,8 +24,9 @@
  * No Rust/Tauri required — pure string generation from VNProject JSON.
  */
 
-import type { VNProject, VNEvent, VNScene, VNCharacter } from "./types";
-import { extractVars, findChar, findScene } from "./types";
+import type { VNProject, VNEvent, VNScene, VNCharacter, VNKeyframe } from "./types";
+import { characterSprite, extractVars, findChar, findScene } from "./types";
+import { replayTo, type ReplayStep } from "./routeReplay";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -176,6 +177,125 @@ function compileAtl(atl: string, lines: string[], prefix: string): void {
   }
 }
 
+/** A background image filling the screen, for `scene expression`. */
+function bgTransform(bg: string): string {
+  return `Transform("${esc(bg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+}
+
+/** The `scene` statement (and ATL block) for a bg event, without its transition. */
+function bgScene(ev: VNEvent): string[] {
+  if (!ev.bg) return [];
+  const head = `scene expression ${bgTransform(ev.bg)}`;
+  if (!ev.atl_code) return [head];
+  const block: string[] = [];
+  compileAtl(ev.atl_code, block, "    ");
+  return [`${head}:`, ...block];
+}
+
+/** The `show` statement (and ATL block) for an image event, without its transition. */
+function imageShow(ev: VNEvent): string[] {
+  const img = esc(ev.image ?? "");
+  if (!img) return [];
+  const side = ev.side ?? "center";
+  if (ev.atl_code) {
+    const block: string[] = [];
+    compileAtl(ev.atl_code, block, "    ");
+    return [`show expression "${img}" at ${atPosition(side)}:`, ...block];
+  }
+  const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
+  return [`show expression "${img}"${at}`];
+}
+
+/** The `show <character> <pose>` a dialogue line starts with, or null if its speaker has no sprite. */
+function speakerShow(ev: VNEvent, proj: VNProject): string | null {
+  const char = findChar(proj, ev.char_id);
+  const sprite = char ? characterSprite(char, ev.pose) : null;
+  const poseAttr = sprite ? imageNameComponent(sprite.pose) : "";
+  return char && poseAttr ? `show ${charImageTag(char)} ${poseAttr} at ${atPosition(ev.side)}` : null;
+}
+
+/** An animation keyframe's properties as ATL (`xalign 0.5 zoom 1.2 …`). */
+function keyframeProps(p: VNKeyframe["props"]): string {
+  const props = [];
+  if (p.xalign !== undefined) props.push(`xalign ${p.xalign}`);
+  if (p.yalign !== undefined) props.push(`yalign ${p.yalign}`);
+  if (p.xpos !== undefined) props.push(`xpos ${p.xpos}`);
+  if (p.ypos !== undefined) props.push(`ypos ${p.ypos}`);
+  if (p.xanchor !== undefined) props.push(`xanchor ${p.xanchor}`);
+  if (p.yanchor !== undefined) props.push(`yanchor ${p.yanchor}`);
+  if (p.zoom !== undefined) props.push(`zoom ${p.zoom}`);
+  if (p.xzoom !== undefined) props.push(`xzoom ${p.xzoom}`);
+  if (p.yzoom !== undefined) props.push(`yzoom ${p.yzoom}`);
+  if (p.rotate !== undefined) props.push(`rotate ${p.rotate}`);
+  if (p.alpha !== undefined) props.push(`alpha ${p.alpha}`);
+  if (p.additive !== undefined) props.push(`additive ${p.additive}`);
+  if (p.blur !== undefined) props.push(`blur ${p.blur}`);
+
+  // Crop
+  if (p.cropX !== undefined || p.cropY !== undefined || p.cropW !== undefined || p.cropH !== undefined) {
+    props.push(`crop (${p.cropX ?? 0}, ${p.cropY ?? 0}, ${p.cropW ?? 1920}, ${p.cropH ?? 1080})`);
+  }
+
+  // MatrixColor
+  if (p.hue !== undefined || p.contrast !== undefined || p.saturate !== undefined || p.bright !== undefined || p.invert !== undefined) {
+    const matrices = [];
+    if (p.invert !== undefined && p.invert !== 0) matrices.push(`InvertMatrix(${p.invert})`);
+    if (p.contrast !== undefined && p.contrast !== 1.0) matrices.push(`ContrastMatrix(${p.contrast})`);
+    if (p.saturate !== undefined && p.saturate !== 1.0) matrices.push(`SaturationMatrix(${p.saturate})`);
+    if (p.bright !== undefined && p.bright !== 0) matrices.push(`BrightnessMatrix(${p.bright})`);
+    if (p.hue !== undefined && p.hue !== 0) matrices.push(`HueMatrix(${p.hue})`);
+
+    if (matrices.length > 0) {
+      props.push(`matrixcolor ${matrices.join(" * ")}`);
+    }
+  }
+
+  return props.join(" ");
+}
+
+/** The camera statement for a camera event: easing to its position, or already there. */
+function cameraLines(ev: VNEvent, animate: boolean): string[] {
+  const x = ev.camera_x ?? 0;
+  const y = ev.camera_y ?? 0;
+  const z = ev.camera_z ?? 0;
+  const zoom = ev.camera_zoom ?? 1.0;
+  const pitch = ev.camera_pitch ?? 0;
+  const yaw = ev.camera_yaw ?? 0;
+  const roll = ev.camera_roll ?? 0;
+  const dur = ev.camera_dur ?? 1.0;
+
+  // Pitch/yaw/roll rotate the camera around the x/y/z axes (Ren'Py 8 3D stage).
+  const rotation = [
+    pitch ? ` xrotate ${pitch}` : "",
+    yaw ? ` yrotate ${yaw}` : "",
+    roll ? ` zrotate ${roll}` : "",
+  ].join("");
+
+  const move = `xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}${rotation}`;
+  return [`camera:`, `    perspective True`, animate ? `    ease ${dur} ${move}` : `    ${move}`];
+}
+
+/** `play music` for a music event with a track. */
+function musicPlay(ev: VNEvent): string {
+  const parts = [`play music "${esc(ev.music ?? "")}"`];
+  if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
+  if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
+  if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
+  if (ev.loop === false) parts.push(`noloop`); // 'loop' is default for music, so we use 'noloop' if false
+  else if (ev.loop === true) parts.push(`loop`);
+  return parts.join(" ");
+}
+
+/** `play sound` for an sfx event with a file. */
+function soundPlay(ev: VNEvent): string {
+  const parts = [`play sound "${esc(ev.sfx ?? "")}"`];
+  if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
+  if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
+  if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
+  if (ev.loop === true) parts.push(`loop`); // 'noloop' is default for sound
+  return parts.join(" ");
+}
+
 // ─── Per-event code generator ─────────────────────────────────────────────────
 // Mirrors _vn_compile_events() in vn_compile.rpy
 
@@ -205,15 +325,9 @@ function compileEvent(
 
   // ── Background ──────────────────────────────────────────────────────────────
   if (t === "bg") {
-    const bg = esc(ev.bg ?? "");
-    if (!bg) return;
-    const fill = `Transform("${bg}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
-    if (ev.atl_code) {
-      lines.push(`${prefix}scene expression ${fill}:`);
-      compileAtl(ev.atl_code, lines, prefix + "    ");
-    } else {
-      lines.push(`${prefix}scene expression ${fill}`);
-    }
+    const scene = bgScene(ev);
+    if (!scene.length) return;
+    for (const line of scene) lines.push(`${prefix}${line}`);
     if (ev.transition) {
       lines.push(`${prefix}with ${safeTrans(ev.transition)}`);
     }
@@ -221,16 +335,9 @@ function compileEvent(
 
   // ── Sprite / image ──────────────────────────────────────────────────────────
   else if (t === "image") {
-    const img = esc(ev.image ?? "");
-    if (!img) return;
-    const side = ev.side ?? "center";
-    const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
-    if (ev.atl_code) {
-      lines.push(`${prefix}show expression "${img}" at ${atPosition(side)}:`);
-      compileAtl(ev.atl_code, lines, prefix + "    ");
-    } else {
-      lines.push(`${prefix}show expression "${img}"${at}`);
-    }
+    const show = imageShow(ev);
+    if (!show.length) return;
+    for (const line of show) lines.push(`${prefix}${line}`);
     if (ev.transition) {
       lines.push(`${prefix}with ${safeTrans(ev.transition)}`);
     }
@@ -248,45 +355,10 @@ function compileEvent(
     }
     
     lines.push(`${prefix}show expression "${img}":`);
-    
+
     for (let i = 0; i < kfs.length; i++) {
       const kf = kfs[i];
-      const p = kf.props;
-      const props = [];
-      if (p.xalign !== undefined) props.push(`xalign ${p.xalign}`);
-      if (p.yalign !== undefined) props.push(`yalign ${p.yalign}`);
-      if (p.xpos !== undefined) props.push(`xpos ${p.xpos}`);
-      if (p.ypos !== undefined) props.push(`ypos ${p.ypos}`);
-      if (p.xanchor !== undefined) props.push(`xanchor ${p.xanchor}`);
-      if (p.yanchor !== undefined) props.push(`yanchor ${p.yanchor}`);
-      if (p.zoom !== undefined) props.push(`zoom ${p.zoom}`);
-      if (p.xzoom !== undefined) props.push(`xzoom ${p.xzoom}`);
-      if (p.yzoom !== undefined) props.push(`yzoom ${p.yzoom}`);
-      if (p.rotate !== undefined) props.push(`rotate ${p.rotate}`);
-      if (p.alpha !== undefined) props.push(`alpha ${p.alpha}`);
-      if (p.additive !== undefined) props.push(`additive ${p.additive}`);
-      if (p.blur !== undefined) props.push(`blur ${p.blur}`);
-
-      // Crop
-      if (p.cropX !== undefined || p.cropY !== undefined || p.cropW !== undefined || p.cropH !== undefined) {
-        props.push(`crop (${p.cropX ?? 0}, ${p.cropY ?? 0}, ${p.cropW ?? 1920}, ${p.cropH ?? 1080})`);
-      }
-
-      // MatrixColor
-      if (p.hue !== undefined || p.contrast !== undefined || p.saturate !== undefined || p.bright !== undefined || p.invert !== undefined) {
-        const matrices = [];
-        if (p.invert !== undefined && p.invert !== 0) matrices.push(`InvertMatrix(${p.invert})`);
-        if (p.contrast !== undefined && p.contrast !== 1.0) matrices.push(`ContrastMatrix(${p.contrast})`);
-        if (p.saturate !== undefined && p.saturate !== 1.0) matrices.push(`SaturationMatrix(${p.saturate})`);
-        if (p.bright !== undefined && p.bright !== 0) matrices.push(`BrightnessMatrix(${p.bright})`);
-        if (p.hue !== undefined && p.hue !== 0) matrices.push(`HueMatrix(${p.hue})`);
-        
-        if (matrices.length > 0) {
-          props.push(`matrixcolor ${matrices.join(" * ")}`);
-        }
-      }
-      
-      const propStr = props.join(" ");
+      const propStr = keyframeProps(kf.props);
       if (i === 0) {
         lines.push(`${prefix}    ${propStr || "pass"}`);
       } else {
@@ -299,15 +371,8 @@ function compileEvent(
 
   // ── Music ───────────────────────────────────────────────────────────────────
   else if (t === "music") {
-    const m = esc(ev.music ?? "");
-    if (m) {
-      const parts = [`play music "${m}"`];
-      if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
-      if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
-      if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
-      if (ev.loop === false) parts.push(`noloop`); // 'loop' is default for music, so we use 'noloop' if false
-      else if (ev.loop === true) parts.push(`loop`);
-      lines.push(`${prefix}${parts.join(" ")}`);
+    if (ev.music) {
+      lines.push(`${prefix}${musicPlay(ev)}`);
     } else {
       // Stopping music
       const fo = ev.fadeout ? ` fadeout ${ev.fadeout}` : ` fadeout 0.5`;
@@ -317,14 +382,8 @@ function compileEvent(
 
   // ── SFX ─────────────────────────────────────────────────────────────────────
   else if (t === "sfx") {
-    const s = esc(ev.sfx ?? "");
-    if (s) {
-      const parts = [`play sound "${s}"`];
-      if (ev.volume !== undefined) parts.push(`volume ${ev.volume}`);
-      if (ev.fadein) parts.push(`fadein ${ev.fadein}`);
-      if (ev.fadeout) parts.push(`fadeout ${ev.fadeout}`);
-      if (ev.loop === true) parts.push(`loop`); // 'noloop' is default for sound
-      lines.push(`${prefix}${parts.join(" ")}`);
+    if (ev.sfx) {
+      lines.push(`${prefix}${soundPlay(ev)}`);
     }
   }
 
@@ -334,31 +393,8 @@ function compileEvent(
     const cRef = char ? names.character(char.id) : "narrator";
 
     // Show character sprite if available
-    if (ev.char_id && char) {
-      let pose = ev.pose ?? "neutral";
-      let hasSprite = false;
-
-      if (char.is_layered) {
-        if (char.layered_sprites && Object.keys(char.layered_sprites[pose] || {}).length > 0) {
-          hasSprite = true;
-        } else if (char.layered_sprites && Object.keys(char.layered_sprites["neutral"] || {}).length > 0) {
-          pose = "neutral";
-          hasSprite = true;
-        }
-      } else {
-        if (char.sprites?.[pose]) {
-          hasSprite = true;
-        } else if (char.sprites?.["neutral"]) {
-          pose = "neutral";
-          hasSprite = true;
-        }
-      }
-
-      const poseAttr = imageNameComponent(pose);
-      if (hasSprite && poseAttr) {
-        lines.push(`${prefix}show ${charImageTag(char)} ${poseAttr} at ${atPosition(ev.side)}`);
-      }
-    }
+    const show = speakerShow(ev, proj);
+    if (show) lines.push(`${prefix}${show}`);
 
     if (ev.voice) {
       lines.push(`${prefix}voice "${esc(ev.voice)}"`);
@@ -463,25 +499,7 @@ function compileEvent(
 
   // ── Camera (3D Stage) ───────────────────────────────────────────────────────
   else if (t === "camera") {
-    const x = ev.camera_x ?? 0;
-    const y = ev.camera_y ?? 0;
-    const z = ev.camera_z ?? 0;
-    const zoom = ev.camera_zoom ?? 1.0;
-    const pitch = ev.camera_pitch ?? 0;
-    const yaw = ev.camera_yaw ?? 0;
-    const roll = ev.camera_roll ?? 0;
-    const dur = ev.camera_dur ?? 1.0;
-
-    // Pitch/yaw/roll rotate the camera around the x/y/z axes (Ren'Py 8 3D stage).
-    const rotation = [
-      pitch ? ` xrotate ${pitch}` : "",
-      yaw ? ` yrotate ${yaw}` : "",
-      roll ? ` zrotate ${roll}` : "",
-    ].join("");
-
-    lines.push(`${prefix}camera:`);
-    lines.push(`${prefix}    perspective True`);
-    lines.push(`${prefix}    ease ${dur} xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}${rotation}`);
+    for (const line of cameraLines(ev, true)) lines.push(`${prefix}${line}`);
   }
 
   // ── Achievement grant ─────────────────────────────────────────────────────
@@ -833,7 +851,157 @@ export function compileProjectToFiles(proj: VNProject, opts: ExportOptions = {})
   return files;
 }
 
+// ─── Route replay ─────────────────────────────────────────────────────────────
+
+/** A statement the replay may run, and what it changes. */
+interface ReplayStatement {
+  lines: string[];
+  /**
+   * `display`: the images on the master layer. `audio:<channel>`: what that
+   * channel plays. `camera`, `var` (a variable) or `keep` (screens and other
+   * layers, which a `scene` statement doesn't clear).
+   */
+  target: string;
+  /** A `scene` statement, which removes the images shown before it. */
+  clears?: boolean;
+  /** An audio statement: starts something still playing, queues a track, or leaves the channel silent. */
+  audio?: "play" | "queue" | "silent";
+}
+
+/** `$ name = value`, `$ name += value`, `$ obj.attr[key] = value`… but not `$ name == value` or a call. */
+const RAW_ASSIGNMENT = /^\$\s*[A-Za-z_][\w.]*(\[[^\]]*\])?\s*(\*\*|\/\/|<<|>>|[-+*/%&|^])?=(?!=)/;
+
+/** A transition at the end of a scene/show/hide line, which would play while the replay runs. */
+const WITH_CLAUSE = /\s+with\s+[A-Za-z_][\w.]*(\([^()"']*\))?(?=\s*:?\s*$)/;
+
+/** Raw code's top-level statements, each with the lines of its block. */
+function rawStatements(code: string): string[][] {
+  const lines = code.split("\n").filter(l => l.trim());
+  const indentOf = (l: string) => l.length - l.trimStart().length;
+  const base = Math.min(...lines.map(indentOf));
+  const statements: string[][] = [];
+  for (const line of lines) {
+    if (indentOf(line) === base) statements.push([line.slice(base)]);
+    else statements[statements.length - 1]?.push(line.slice(base));
+  }
+  return statements;
+}
+
+/**
+ * What raw code changes, statement by statement: images, audio, the camera and
+ * assignments at its top level. Dialogue, menus, jumps, pauses and code inside
+ * `if` or `python` blocks are left out.
+ */
+function rawReplay(code: string): ReplayStatement[] {
+  return rawStatements(code).flatMap((block): ReplayStatement[] => {
+    const [head, ...rest] = block;
+    const words = head.trim().split(/\s+/);
+    const keyword = words[0].replace(/:$/, "");
+    if (keyword === "$") {
+      return RAW_ASSIGNMENT.test(head.trim()) ? [{ target: "var", lines: block }] : [];
+    }
+    if (keyword === "scene" || keyword === "show" || keyword === "hide") {
+      if (words[1] === "screen" || words.includes("onlayer")) return [{ target: "keep", lines: block }];
+      return [{ target: "display", clears: keyword === "scene", lines: [head.replace(WITH_CLAUSE, ""), ...rest] }];
+    }
+    if ((keyword === "play" || keyword === "queue" || keyword === "stop") && words[1]) {
+      const target = `audio:${words[1]}`;
+      if (keyword === "stop") return [{ target, audio: "silent", lines: [] }];
+      if (keyword === "queue") return [{ target, audio: "queue", lines: block }];
+      const lasts = words[1] === "music" || /\bloop\b/.test(head);
+      return [{ target, audio: lasts ? "play" : "silent", lines: block }];
+    }
+    if (keyword === "camera") return [{ target: "camera", lines: block }];
+    return [];
+  });
+}
+
+/** What one replayed step changes, as statements that run without waiting. */
+function replayStatements(step: ReplayStep, proj: VNProject): ReplayStatement[] {
+  if (step.kind === "enter") {
+    // What compileScene puts at the top of the label.
+    const { bg, music } = step.scene;
+    const out: ReplayStatement[] = [];
+    if (bg) out.push({ target: "display", clears: true, lines: [`scene expression ${bgTransform(bg)}`] });
+    if (music) out.push({ target: "audio:music", audio: "play", lines: [`play music "${esc(music)}"`] });
+    return out;
+  }
+  const ev = step.event;
+  switch (ev.type) {
+    case "bg": {
+      const scene = bgScene(ev);
+      return scene.length ? [{ target: "display", clears: true, lines: scene }] : [];
+    }
+    case "image": {
+      const show = imageShow(ev);
+      return show.length ? [{ target: "display", lines: show }] : [];
+    }
+    case "animation": {
+      // Where the animation ends up, rather than playing it again.
+      const img = esc(ev.image ?? "");
+      if (!img) return [];
+      const kfs = ev.animation_keyframes ?? [];
+      if (!kfs.length) return [{ target: "display", lines: [`show expression "${img}"`] }];
+      const end = Object.assign({}, ...kfs.map(kf => kf.props));
+      return [{ target: "display", lines: [`show expression "${img}":`, `    ${keyframeProps(end) || "pass"}`] }];
+    }
+    case "dialogue": {
+      const show = speakerShow(ev, proj);
+      return show ? [{ target: "display", lines: [show] }] : [];
+    }
+    case "music":
+      return [ev.music
+        ? { target: "audio:music", audio: "play", lines: [musicPlay(ev)] }
+        : { target: "audio:music", audio: "silent", lines: [] }];
+    case "sfx":
+      // Only a looping sound is still playing later on.
+      return ev.sfx ? [{ target: "audio:sound", audio: ev.loop === true ? "play" : "silent", lines: [soundPlay(ev)] }] : [];
+    case "setvar":
+      return [{ target: "var", lines: [`$ ${ev.var_name?.trim() || "var"} = ${ev.var_val ?? "False"}`] }];
+    case "camera":
+      return [{ target: "camera", lines: cameraLines(ev, false) }];
+    case "raw":
+      return rawReplay(ev.raw_code ?? "");
+    default:
+      return [];
+  }
+}
+
+/**
+ * Statements that put the game where `steps` left it, in the order they ran:
+ * every assignment, the background and images shown since the last `scene`,
+ * the camera, and whatever each audio channel is still playing. Nothing in
+ * them waits for the player or plays a transition, so they run instantly.
+ */
+function compileReplay(proj: VNProject, steps: ReplayStep[], prefix: string): string[] {
+  const statements = steps.flatMap(step => replayStatements(step, proj));
+  const lastIndex = (test: (s: ReplayStatement) => boolean) =>
+    statements.reduce((last, s, i) => (test(s) ? i : last), -1);
+  const lastScene = lastIndex(s => s.target === "display" && !!s.clears);
+  const lastCamera = lastIndex(s => s.target === "camera");
+  // Each channel plays from its last play or stop on.
+  const channelStart = new Map<string, number>();
+  statements.forEach((s, i) => { if (s.audio === "play" || s.audio === "silent") channelStart.set(s.target, i); });
+
+  return statements
+    .filter((s, i) => {
+      if (s.target === "display") return i >= lastScene;
+      if (s.target === "camera") return i === lastCamera;
+      if (s.audio) return i >= (channelStart.get(s.target) ?? -1) && s.audio !== "silent";
+      return true;
+    })
+    .flatMap(s => s.lines.map(line => `${prefix}${line}`));
+}
+
 // ─── Preview compiler ──────────────────────────────────────────────────────────
+
+/** Options for {@link compilePreview}. */
+export interface PreviewOptions extends DefaultsOptions {
+  /** Start at this line (event id) of the target scene instead of its first. */
+  startEventId?: string | null;
+  /** Force the preview window to a size mode. */
+  playMode?: 'windowed' | 'fullscreen';
+}
 
 /**
  * Compile a **live preview** script for a specific scene.
@@ -843,25 +1011,28 @@ export function compileProjectToFiles(proj: VNProject, opts: ExportOptions = {})
  * but sets `label start:` to jump directly to `targetSceneId` so Ren'Py
  * enters on exactly the scene you're editing.
  *
+ * Before jumping there it replays the route that leads there (see
+ * `replayTo`): the background, sprites, music, camera and variables a player
+ * would have by then. Starting at a later line of the scene runs that scene's
+ * earlier lines' changes too, then continues from a copy of its remaining lines.
+ *
  * Unlike {@link compileProject} there is **no resolution `init python:` block**
  * because the project's existing `gui.rpy` / `options.rpy` already configure
  * screen dimensions — adding a second block would cause a redefinition error.
  *
  * @param proj          - The project to compile.
  * @param targetSceneId - Scene id to jump to on `label start:`.
- * @param opts          - `declaredElsewhere`: variables the game's other scripts
- *                        already declare (the preview always sits next to them).
+ * @param opts          - `startEventId`, `playMode`, and `declaredElsewhere`:
+ *                        variables the game's other scripts already declare
+ *                        (the preview always sits next to them).
  * @returns Multi-line Ren'Py `.rpy` string.
  */
 export function compilePreview(
   proj: VNProject,
   targetSceneId?: string,
-  inheritedMusic?: string,
-  playMode?: 'windowed' | 'fullscreen',
-  inheritedBg?: string,
-  inheritedSprite?: string,
-  opts: DefaultsOptions = {},
+  opts: PreviewOptions = {},
 ): string {
+  const { playMode } = opts;
   if (!targetSceneId) {
     targetSceneId = proj.scenes[0]?.id ?? "start";
   }
@@ -922,17 +1093,28 @@ export function compilePreview(
     lines.push(`define config.label_overrides = {"start": "vnv_preview_entry"}`);
     lines.push(``);
     lines.push(`label vnv_preview_entry:`);
-    if (inheritedBg) {
-      const fill = `Transform("${esc(inheritedBg)}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
-      lines.push(`    scene expression ${fill}`);
+    const startIdx = Math.max(0, targetScene?.events.findIndex(ev => ev.id === opts.startEventId) ?? 0);
+    const sceneName = (sc: VNScene) => (sc.label || sc.id).replace(/\s+/g, " ");
+    if (targetScene) {
+      const replay = replayTo(proj, targetScene.id, startIdx);
+      const setup = compileReplay(proj, replay.steps, "    ");
+      if (setup.length) {
+        lines.push(`    ## Set up as if played through ${[...replay.route, targetScene].map(sceneName).join(" → ")}`);
+        lines.push(...setup);
+      }
     }
-    if (inheritedSprite) {
-      lines.push(`    show expression "${esc(inheritedSprite)}" at center`);
+    if (targetScene && startIdx > 0) {
+      lines.push(`    jump vnv_preview_from`);
+      lines.push(``);
+      lines.push(`## ${sceneName(targetScene)}, from line ${startIdx + 1}`);
+      lines.push(`label vnv_preview_from:`);
+      for (const ev of targetScene.events.slice(startIdx)) {
+        if (ev.type) compileEvent(ev, proj, lines, "    ", names);
+      }
+      lines.push(`    return`);
+    } else {
+      lines.push(`    jump ${names.label(targetSceneId)}`);
     }
-    if (inheritedMusic) {
-      lines.push(`    play music "${esc(inheritedMusic)}" fadein 0.5`);
-    }
-    lines.push(`    jump ${names.label(targetSceneId)}`);
     lines.push(``);
   }
 

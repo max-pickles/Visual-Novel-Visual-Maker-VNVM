@@ -10,6 +10,10 @@
  *   <name>-single   Export → Save .rpy (one compiled script.rpy)
  *   <name>-preview  the preview file written on every save, next to the game's own scripts
  *   <name>-play     Play from Here on the start scene (linted only: it loops by design)
+ *   <name>-later    Play from Here on the scene furthest into the story, which
+ *                   replays the route there first (linted only, like -play)
+ *   <name>-line     the same from the middle line of that scene
+ * The replay-* games check what Play from Here sets up in a running game.
  * Playable layouts get a vnv_testcases.rpy (next to game/, since lint reports
  * testcase statements as unreachable) that clicks through to the end. An
  * export whose translations must still match its dialogue gets a
@@ -18,8 +22,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { newProject, newDemoProject, newCharacter, newEvent, newScene } from "../src/types";
-import type { VNProject, VNCharacter, VNScene } from "../src/types";
+import type { VNProject, VNCharacter, VNEvent, VNScene } from "../src/types";
 import { compileProject, compileProjectToFiles, compilePreview } from "../src/compiler";
+import { findRoute } from "../src/routeReplay";
 import { importFromRpyFiles } from "../src/rpyImporter";
 import { declaredVarNames, declaredLabelNames } from "../src/rpyDeclarations";
 import { isReplacedByExport } from "../src/exportScripts";
@@ -129,13 +134,36 @@ function emit(
   game = newGame(`${name}-preview`, fromGame);
   addPlaceholders(game, files);
   fs.writeFileSync(path.join(game, "vnv_preview.rpy"),
-    compilePreview(proj, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere: declaredIn(game) }));
+    compilePreview(proj, "main_menu", { declaredElsewhere: declaredIn(game) }));
   addPlaythrough(game, choices);
 
   game = newGame(`${name}-play`, fromGame);
   addPlaceholders(game, files);
   fs.writeFileSync(path.join(game, "vnv_preview.rpy"),
-    compilePreview(proj, proj.start ?? undefined, undefined, undefined, undefined, undefined, { declaredElsewhere: declaredIn(game) }));
+    compilePreview(proj, proj.start ?? undefined, { declaredElsewhere: declaredIn(game) }));
+
+  const later = furthestScene(proj);
+  if (later) {
+    game = newGame(`${name}-later`, fromGame);
+    addPlaceholders(game, files);
+    fs.writeFileSync(path.join(game, "vnv_preview.rpy"), compilePreview(proj, later.id, { declaredElsewhere: declaredIn(game) }));
+
+    game = newGame(`${name}-line`, fromGame);
+    addPlaceholders(game, files);
+    const startEventId = later.events[Math.floor(later.events.length / 2)]?.id;
+    fs.writeFileSync(path.join(game, "vnv_preview.rpy"), compilePreview(proj, later.id, { declaredElsewhere: declaredIn(game), startEventId }));
+  }
+}
+
+/** The scene with the longest route from the start, where Play from Here replays the most. */
+function furthestScene(proj: VNProject): VNScene | null {
+  let furthest: VNScene | null = null;
+  let steps = 0;
+  for (const sc of proj.scenes) {
+    const route = findRoute(proj, sc.id);
+    if (route && route.length > steps) { furthest = sc; steps = route.length; }
+  }
+  return furthest;
 }
 
 // ─── The demo project from the New Project wizard ────────────────────────────
@@ -267,6 +295,86 @@ emit("demo", newDemoProject("Demo", "Tester"), { choices: ["See a good ending"] 
   }
   emit("affection", project, { fromGame: source, replaced: ["script.rpy"] });
   fs.rmSync(source, { recursive: true, force: true });
+}
+
+// ─── Play from Here further into a story: what the replayed route sets up ─────
+
+/** A short silent WAV, so the music a check listens for can really play. */
+function silentWav(seconds = 1, rate = 8000): Buffer {
+  const samples = seconds * rate;
+  const wav = Buffer.alloc(44 + samples, 0x80); // 8-bit PCM silence
+  wav.write("RIFF", 0); wav.writeUInt32LE(36 + samples, 4); wav.write("WAVE", 8);
+  wav.write("fmt ", 12); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate, 28); wav.writeUInt16LE(1, 32); wav.writeUInt16LE(8, 34);
+  wav.write("data", 36); wav.writeUInt32LE(samples, 40);
+  return wav;
+}
+
+{
+  const p = newProject("Replay", "Tester");
+  const e = (type: VNEvent["type"], fields: Partial<VNEvent> = {}): VNEvent => ({ ...newEvent(type), ...fields });
+  const eileen = newCharacter("Eileen");
+  eileen.sprites.happy = "images/eileen_happy.png";
+  p.characters.push(eileen);
+  const start = p.scenes[0];
+  const later = newScene("later");
+  p.scenes.push(later);
+  start.events = [
+    e("bg", { bg: "images/room.png", transition: "dissolve" }),
+    e("image", { image: "images/old.png", side: "right" }),
+    e("bg", { bg: "images/park.png" }),
+    e("image", { image: "images/cat.png", side: "left" }),
+    e("dialogue", { char_id: eileen.id, pose: "happy", side: "right", text: "Hi!" }),
+    e("music", { music: "audio/theme.wav" }),
+    e("sfx", { sfx: "audio/rain.wav", loop: true }),
+    e("setvar", { var_name: "met", var_val: "True" }),
+    e("raw", { raw_code: [
+      'show expression "images/raw.png" as rawimg at center with dissolve',
+      "$ met_count = 3",
+      "$ met_count += 2",
+      "$ renpy.pause(30.0)",
+      "if met_count > 99:",
+      "    $ secret = True",
+    ].join("\n") }),
+    e("camera", { camera_x: 10, camera_zoom: 1.2, camera_dur: 4 }),
+    e("wait", { dur: 30 }),
+    e("jump", { scene_id: later.id }),
+  ];
+  later.events = [e("narration", { text: "Later on." }), e("bg", { bg: "images/night.png" }), e("narration", { text: "At night." })];
+  const images = ["room", "old", "park", "cat", "eileen_happy", "raw", "night"].map(f => `images/${f}.png`);
+
+  // Each check waits until play stops at the first line of `label`, then looks
+  // at what the replay set up. The long pauses above would time it out if the
+  // replay ran them.
+  const check = (name: string, label: string, asserts: string[], startEventId?: string) => {
+    const game = newGame(`replay-${name}`, TEMPLATE);
+    addPlaceholders(game, images);
+    fs.mkdirSync(path.join(game, "audio"), { recursive: true });
+    for (const f of ["audio/theme.wav", "audio/rain.wav"]) fs.writeFileSync(path.join(game, f), silentWav());
+    const rpy = compilePreview(p, later.id, { declaredElsewhere: declaredIn(game), startEventId });
+    fs.writeFileSync(path.join(game, "vnv_preview.rpy"), rpy);
+    const lines = rpy.split("\n");
+    const firstLine = lines.indexOf(`label ${label}:`) + 2; // 1-based line after the label
+    fs.writeFileSync(path.join(game, "..", "vnv_testcases.rpy"), [
+      "testcase vnv_play:",
+      `    assert eval renpy.get_filename_line()[0].endswith("vnv_preview.rpy") and renpy.get_filename_line()[1] == ${firstLine} timeout 20.0`,
+      ...asserts.map(a => `    assert eval ${a}`),
+      '    assert eval renpy.music.get_playing("music") == "audio/theme.wav" timeout 10.0',
+      '    assert eval renpy.music.get_playing("sound") == "audio/rain.wav" timeout 10.0',
+      "    assert eval met is True and met_count == 5 and not hasattr(store, 'secret')",
+      "    exit",
+      "",
+    ].join("\n"));
+  };
+  check("later", `vns_scene_${later.id}`, [
+    'renpy.showing("images/cat.png") and renpy.showing("Eileen") and renpy.showing("rawimg")',
+    'not renpy.showing("images/old.png")',
+  ]);
+  // From the last line, after the night background cleared the sprites.
+  check("line", "vnv_preview_from", [
+    'len(renpy.get_showing_tags("master")) == 1',
+    'not renpy.showing("images/cat.png") and not renpy.showing("Eileen")',
+  ], later.events[2].id);
 }
 
 console.log(`Wrote ${fs.readdirSync(OUT).length} games to ${OUT}`);

@@ -5,11 +5,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { renderRenpyText } from "./renpyText";
 import { evalPy, pyTruthy } from "./pyExpr";
-import type { VNEvent, VNProject } from "./types";
+import type { VNProject } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "./translationContext";
 import { useMusicPlayer } from "./musicPlayerContext";
 import { MusicPlayerBar } from "./MusicPlayerBar";
+import { replayTo } from "./routeReplay";
+import { applyEvent, enterScene, musicSource, replayStage, type Stage } from "./playtestStage";
 
 const EXTS = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
 
@@ -52,8 +54,6 @@ function useResolvedImage(rootPath: string, name: string | null) {
   return { url, onErr };
 }
 
-const RENPY_COLORS = new Set(["black", "white", "transparent"]);
-
 /** Evaluate an `if` condition. Unknown names or unsupported syntax count as false. */
 function evaluateCondition(cond: string, vars: Record<string, any>): boolean {
   if (!cond) return true;
@@ -65,25 +65,27 @@ function evaluateCondition(cond: string, vars: Record<string, any>): boolean {
   }
 }
 
-/** Apply `name = value` (or `+=`, `-=`); a value that can't be evaluated is kept as text. */
-function evaluateAssignment(expr: string, vars: Record<string, any>): Record<string, any> {
-  const match = expr.match(/^\s*([a-zA-Z_]\w*)\s*(={1,2}|\+=|-=)\s*(.+)$/);
-  if (!match) return vars;
+/**
+ * Where play starts, and what with: the stage the route to that scene (and
+ * the scene's lines before the start line) leaves behind, see routeReplay.ts.
+ * At a scene's first line that includes entering the scene.
+ */
+function startOf(project: VNProject, sceneId: string, eventId: string | null | undefined) {
+  const scene = project.scenes.find(s => s.id === sceneId);
+  const eventIdx = Math.max(0, scene?.events.findIndex(ev => ev.id === eventId) ?? 0);
+  const replay = replayTo(project, sceneId, eventIdx);
+  const stage = replayStage(replay.steps, project);
+  return {
+    eventIdx,
+    stage: scene && eventIdx === 0 ? enterScene(stage, scene, project) : stage,
+    history: [...replay.route, ...(scene ? [scene] : [])].slice(-20).map(sc => ({ sceneId: sc.id, label: sc.label })),
+  };
+}
 
-  const [_, name, op, valExpr] = match;
-  let val: any;
-  try {
-    val = evalPy(valExpr, vars);
-  } catch {
-    val = valExpr.trim();
-  }
-
-  const newVars = { ...vars };
-  if (op === '=' || op === '==') newVars[name] = val;
-  else if (op === '+=') newVars[name] = (newVars[name] || 0) + val;
-  else if (op === '-=') newVars[name] = (newVars[name] || 0) - val;
-
-  return newVars;
+/** Another layer of a layered character's sprite, drawn over the first. */
+function SpriteLayer({ rootPath, file, style }: { rootPath: string; file: string; style: React.CSSProperties }) {
+  const img = useResolvedImage(rootPath, file);
+  return img.url ? <img src={img.url} alt="" onError={img.onErr} draggable={false} style={style} /> : null;
 }
 
 function SpriteRenderer({ spEv, rootPath }: any) {
@@ -125,6 +127,15 @@ function SpriteRenderer({ spEv, rootPath }: any) {
     if (last.rotate !== undefined) atlRotate = last.rotate;
   }
 
+  const imgStyle: React.CSSProperties = {
+    height: "100%",
+    objectFit: "contain",
+    transform: `translate(${atlXOffset}px, ${atlYOffset}px) scale(${atlZoom}) rotate(${atlRotate}deg)`,
+    transformOrigin: `center ${base_yalign * 100}%`,
+    opacity: atlAlpha,
+  };
+  const moreLayers: string[] = spEv.layers?.slice(1) ?? [];
+
   return (
     <div
       style={{
@@ -138,15 +149,10 @@ function SpriteRenderer({ spEv, rootPath }: any) {
         transition: "transform 0.2s, left 0.2s, opacity 0.2s"
       }}
     >
-      <img src={spriteImg.url} alt="sprite" onError={spriteImg.onErr} draggable={false}
-        style={{
-          height: "100%",
-          objectFit: "contain",
-          transform: `translate(${atlXOffset}px, ${atlYOffset}px) scale(${atlZoom}) rotate(${atlRotate}deg)`,
-          transformOrigin: `center ${base_yalign * 100}%`,
-          opacity: atlAlpha,
-        }}
-      />
+      <img src={spriteImg.url} alt="sprite" onError={spriteImg.onErr} draggable={false} style={imgStyle} />
+      {moreLayers.map((file, i) => (
+        <SpriteLayer key={i} rootPath={rootPath} file={file} style={{ ...imgStyle, position: "absolute", left: 0, top: 0 }} />
+      ))}
     </div>
   );
 }
@@ -155,24 +161,28 @@ interface Props {
   project: VNProject;
   rootPath: string;
   startSceneId: string;
+  /** Start at this line of the start scene instead of its first. */
+  startEventId?: string | null;
   onClose: () => void;
 }
 
-export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Props) {
+export function PlaytestEngine({ project, rootPath, startSceneId, startEventId, onClose }: Props) {
+  // What the story has shown and set by the start point, as if played there
+  const [start] = useState(() => startOf(project, startSceneId, startEventId));
   const [sceneId, setSceneId] = useState(startSceneId);
-  const [eventIdx, setEventIdx] = useState(0);
+  const [eventIdx, setEventIdx] = useState(start.eventIdx);
   const [isBooting, setIsBooting] = useState(true);
+  // Bumped by Restart, so the start line runs again even when play is still on it
+  const [run, setRun] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsBooting(false), 800);
     return () => clearTimeout(timer);
   }, []);
 
-  const [variables, setVariables] = useState<Record<string, any>>({});
-  const [bg, setBg] = useState<string | null>(null);
-  const [sprites, setSprites] = useState<Map<string, VNEvent>>(new Map());
+  const [stage, setStage] = useState<Stage>(start.stage);
   const [showDebug, setShowDebug] = useState(false);
-  const [history, setHistory] = useState<{ sceneId: string; label: string }[]>([]);
+  const [history, setHistory] = useState<{ sceneId: string; label: string }[]>(start.history);
   const [grantedAchievements, setGrantedAchievements] = useState<string[]>([]);
   const [achievementToast, setAchievementToast] = useState<string | null>(null);
 
@@ -225,6 +235,17 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
     }
   }
 
+  /** Go to the first line of a scene, after its own background and music, like the top of its label. */
+  const goToScene = (id: string) => {
+    const scene = project.scenes.find(s => s.id === id);
+    if (scene) {
+      setStage(s => enterScene(s, scene, project));
+      if (scene.music) player.play(musicSource(scene.music), rootPath, []);
+    }
+    setSceneId(id);
+    setEventIdx(0);
+  };
+
   // Effect to process the current event on load/advance
   useEffect(() => {
     if (!currentEvent) return;
@@ -233,32 +254,12 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
     const processEvent = () => {
       let ev = currentEvent;
 
-      if (ev.type === "bg") {
-        setBg(ev.bg || null);
-        if (ev.bg && !RENPY_COLORS.has(ev.bg.toLowerCase())) {
-          setSprites(new Map()); // clear sprites
-        }
-      }
-      else if (ev.type === "image" || ev.type === "animation") {
-        if (ev.image) {
-          const name = ev.image.replace(/\\/g, "/").split("/").pop() || ev.image;
-          const tag = name.split(/[\s_]/)[0].toLowerCase();
-          setSprites(prev => {
-            const next = new Map(prev);
-            if (ev.kind === "hide") next.delete(tag);
-            else next.set(tag, ev);
-            return next;
-          });
-        }
-      }
-      else if (ev.type === "music") {
+      // Background, sprites, variables and the current track (playtestStage.ts)
+      setStage(s => applyEvent(s, ev, project));
+
+      if (ev.type === "music") {
         if (ev.music) {
-          const clean = ev.music.replace(/['"]/g, '');
-          let src = clean;
-          if (!clean.startsWith('game/')) {
-            src = clean.startsWith('audio/') ? `game/${clean}` : clean;
-          }
-          player.play(src, rootPath, []);
+          player.play(musicSource(ev.music), rootPath, []);
         } else {
           player.stop();
         }
@@ -286,12 +287,6 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
           tryPlaySfx(0);
         }
       }
-      else if (ev.type === "setvar") {
-        const name = ev.var_name?.trim();
-        if (name) setVariables(v => evaluateAssignment(`${name} = ${ev.var_val ?? "False"}`, v));
-        else if (ev.condition) setVariables(v => evaluateAssignment(ev.condition!, v));
-      }
-
       else if (ev.type === "achievement") {
         const name = ev.achievement_id ?? ev.condition ?? "";
         if (name && !grantedAchievements.includes(name)) {
@@ -309,10 +304,9 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
       // Conditional jump, same as the compiled game: go to scene_true or
       // scene_false, or carry on with the next event.
       if (ev.type === "if") {
-        const target = evaluateCondition(ev.condition || "", variables) ? ev.scene_true : ev.scene_false;
+        const target = evaluateCondition(ev.condition || "", stage.variables) ? ev.scene_true : ev.scene_false;
         if (target && project.scenes.some(sc => sc.id === target)) {
-          setSceneId(target);
-          setEventIdx(0);
+          goToScene(target);
         } else {
           setEventIdx(i => i + 1);
         }
@@ -345,8 +339,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
           } else {
             picked = ids[Math.floor(Math.random() * ids.length)];
           }
-          setSceneId(picked);
-          setEventIdx(0);
+          goToScene(picked);
         } else {
           setEventIdx(i => i + 1);
         }
@@ -354,8 +347,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
 
       if (ev.type === "jump") {
         if (ev.scene_id) {
-          setSceneId(ev.scene_id);
-          setEventIdx(0);
+          goToScene(ev.scene_id);
         } else {
           setEventIdx(i => i + 1);
         }
@@ -363,7 +355,29 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
     };
 
     processEvent();
-  }, [currentEvent, rootPath, grantedAchievements]);
+  }, [currentEvent, rootPath, grantedAchievements, run]);
+
+  // Start the music the route left playing. On a timer, because the editor
+  // stops all music when its tab changes, which runs after these effects.
+  useEffect(() => {
+    const music = start.stage.music;
+    if (!music) return;
+    const timer = setTimeout(() => player.play(musicSource(music), rootPath, []), 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Back to the start point, with the stage the route leaves there. */
+  const restart = () => {
+    const again = startOf(project, startSceneId, startEventId);
+    setSceneId(startSceneId);
+    setEventIdx(again.eventIdx);
+    setStage(again.stage);
+    setHistory(again.history);
+    setRun(r => r + 1);
+    if (again.stage.music) player.play(musicSource(again.stage.music), rootPath, []);
+    else player.stop();
+  };
 
   // Track scene history
   useEffect(() => {
@@ -469,7 +483,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
     }
   };
 
-  const bgImg = useResolvedImage(rootPath, bg);
+  const bgImg = useResolvedImage(rootPath, stage.bg);
   const textboxImg = useResolvedImage(rootPath, char?.textbox_bg || "gui/textbox.png");
   const nameboxImg = useResolvedImage(rootPath, "gui/namebox.png");
   const choiceBgImg = useResolvedImage(rootPath, "gui/button/choice_idle_background.png");
@@ -555,7 +569,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
           >
             🐛 {showDebug ? t('playtest.debug_on') : t('playtest.debug_off')}
           </button>
-          <button className="btn btn-ghost" onClick={() => { setSceneId(startSceneId); setEventIdx(0); setVariables({}); setSprites(new Map()); setBg(null); }} style={{ fontSize: 11, height: 30 }} title="Restart from beginning">
+          <button className="btn btn-ghost" onClick={restart} style={{ fontSize: 11, height: 30 }} title="Restart from where this playtest started">
             {t('playtest.restart')}
           </button>
           <button className="btn btn-ghost" onClick={onClose} style={{ color: "var(--err)", fontSize: 11, height: 30 }}>{t('playtest.exit')}</button>
@@ -567,11 +581,11 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
         {showDebug && (
           <div className="col" style={{ width: 240, borderRight: "1px solid var(--bdr)", background: "var(--bg1)", overflowY: "auto", flexShrink: 0 }}>
             <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--bdr)", fontSize: 11, fontWeight: 700, color: "var(--teal)" }}>{t('playtest.debug_title')}</div>
-            {Object.keys(variables).length === 0 ? (
+            {Object.keys(stage.variables).length === 0 ? (
               <div style={{ padding: 16, fontSize: 11, color: "var(--faint)" }}>{t('playtest.no_vars')}</div>
             ) : (
               <div className="col" style={{ padding: 8, gap: 4 }}>
-                {Object.entries(variables).map(([k, v]) => (
+                {Object.entries(stage.variables).map(([k, v]) => (
                   <div key={k} className="row" style={{ justifyContent: "space-between", padding: "4px 8px", borderRadius: 4, background: "var(--bg2)", gap: 8 }}>
                     <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--acc2)" }}>{k}</span>
                     <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: typeof v === 'boolean' ? (v ? "var(--teal)" : "var(--err)") : "var(--warn)" }}>
@@ -623,7 +637,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
             )}
 
             {/* Sprites */}
-            {Array.from(sprites.values()).map((sp) => (
+            {Array.from(stage.sprites.values()).map((sp) => (
               <SpriteRenderer
                 key={sp.id}
                 spEv={sp}
@@ -723,10 +737,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                   }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (o.scene) {
-                        setSceneId(o.scene);
-                        setEventIdx(0);
-                      }
+                      if (o.scene) goToScene(o.scene);
                     }}
                     onMouseEnter={(e) => { if (o.scene) e.currentTarget.style.transform = "scale(1.02)"; }}
                     onMouseLeave={(e) => { if (o.scene) e.currentTarget.style.transform = "scale(1)"; }}
@@ -770,7 +781,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                         <div style={{ fontSize: 11, color: "var(--dim)", fontWeight: 700, marginBottom: 4 }}>{t('playtest.continue_to')}</div>
                         {unique.map(sc => (
                           <button key={sc.id}
-                            onClick={() => { setSceneId(sc.id); setEventIdx(0); }}
+                            onClick={() => goToScene(sc.id)}
                             style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13, transition: "border-color 0.15s, background 0.15s" }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.background = "color-mix(in srgb, var(--teal) 10%, transparent)"; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
@@ -786,7 +797,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
 
                   <div className="row gap8" style={{ padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(0,0,0,0.3)" }}>
                     <button className="btn btn-ghost" style={{ flex: 1 }}
-                      onClick={() => { setSceneId(startSceneId); setEventIdx(0); setVariables({}); setSprites(new Map()); setBg(null); }}>
+                      onClick={restart}>
                       {t('playtest.restart')}
                     </button>
                     <button className="btn" style={{ flex: 1, background: "var(--err)", border: "none", color: "#fff" }} onClick={onClose}>
