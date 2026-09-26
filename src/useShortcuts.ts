@@ -60,10 +60,6 @@ export function getShortcuts(): Record<ShortcutAction, ShortcutBinding> {
   return { ...DEFAULT_SHORTCUTS };
 }
 
-export function saveShortcuts(map: Record<ShortcutAction, ShortcutBinding>) {
-  localStorage.setItem("vnv_shortcuts", JSON.stringify(map));
-}
-
 export type ShortcutHandlers = Partial<Record<ShortcutAction, () => void>>;
 
 export function useShortcuts(handlers: ShortcutHandlers) {

@@ -2,25 +2,25 @@
  * StartScreen.tsx — App launch screen.
  * Handles opening and creating projects, and recent files list.
  */
-import React, { useState, useEffect } from "react";
-import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, createProjectInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, findRenpySdk } from "./tauriApi";
-import { newProject, newDemoProject, migrateProject } from "./types";
+import { useState, useEffect } from "react";
+import { loadVnvProject, saveVnvProject, scaffoldNewProject, applyProjectTheme, projectRootInGamesDir, readRpyFolder, showInExplorer, deleteProjectFolder, copyDirRecursive, getGamesDir, validateRenpyProject, listAssetFiles, listDirEntries, ProjectFileMissingError, pathExists, dirHasFiles, samePath } from "./tauriApi";
+import { newProject, newDemoProject } from "./types";
 import { importFromRpyFiles } from "./rpyImporter";
-import type { VNProject, RpyProject } from "./types";
+import type { VNProject } from "./types";
 
 import type { AppPrefs } from "./App";
 import { useTranslation } from "./translationContext";
-import { ToastManager } from "./toastContext";
+import { PreferencesPanel, LanguagePanel } from "./PreferencesPanel";
+import { NewProjectWizard, useNewProjectWizard } from "./NewProjectWizard";
 
 interface Props {
-  onLoadRpy: (project: RpyProject) => void;
   onLoadVnv: (project: VNProject) => void;
   prefs: AppPrefs;
 }
 
-export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
+export function StartScreen({ onLoadVnv, prefs }: Props) {
   const { t } = useTranslation();
-  const { bgLevel, setBgLevel, glowEnabled, setGlowEnabled, scanlinesEnabled, setScanlinesEnabled, uiScale, setUiScale, autoSave, setAutoSave, theme, setTheme, language, setLanguage } = prefs;
+  const { bgLevel, glowEnabled, scanlinesEnabled, uiScale, language, setLanguage } = prefs;
   type BgLevel = 'darker' | 'default' | 'lighter';
   // Theme-relative: each theme's --bg0/2/3 defines the base background
   const bgMap: Record<BgLevel, string> = { darker: 'var(--bg0)', default: 'var(--bg2)', lighter: 'var(--bg3)' };
@@ -32,12 +32,6 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
   const [showCredits, setShowCredits] = useState(false);
   const [selectedCredit, setSelectedCredit] = useState<number | null>(null);
 
-  const LANGUAGES = [
-    { code: 'en', englishName: 'English', nativeName: 'English' },
-    { code: 'es', englishName: 'Spanish', nativeName: 'Español' },
-    { code: 'ja', englishName: 'Japanese', nativeName: '日本語' }
-  ];
-  
   const CREDITS = [
     {
       name: "Ren'Py",
@@ -158,13 +152,9 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
     }
   ];
 
-  const [newTitle, setNewTitle] = useState("My Visual Novel");
-  const [newAuthor, setNewAuthor] = useState("Me");
-  const [newRes, setNewRes] = useState("1920x1080");
-  const [newAccent, setNewAccent] = useState("#0099cc");
-  const [newBg, setNewBg] = useState("#1a1a2e");
-  const [wizardStep, setWizardStep] = useState<0|1|2|3|4>(0); // 0=name,1=template,2=res,3=colors,4=processing
-  const [newTemplate, setNewTemplate] = useState<"blank" | "demo">("blank");
+  // Kept here rather than in the wizard so its fields survive leaving and reopening it
+  const wizard = useNewProjectWizard();
+  const { newTitle, newAuthor, newRes, newAccent, newBg, newTemplate, setWizardStep } = wizard;
   const [loading, setLoading] = useState(false);
   const [importResult, setImportResult] = useState<{ warnings: string[]; title: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ path: string; title: string; folder: string } | null>(null);
@@ -189,7 +179,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
 
   useEffect(() => {
     if (activeTab === 'open') {
-      listDirEntries(getGamesDir()).then(entries => {
+      getGamesDir().then(listDirEntries).then(entries => {
         const vnvProjects = entries
           .filter(e => e.is_vnv_project)
           .map(e => ({ path: `${e.path}/project.vnvmaker`, title: e.name }));
@@ -222,10 +212,26 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
         return;
       }
 
-      // Step 2 — Copy entire source folder into GAMES_DIR
-      const destRoot = `${getGamesDir()}/${folderName}`;
+      // Step 2 — Copy entire source folder into GAMES_DIR (unless it's already there).
+      // Never copy over a different folder that happens to have the same name.
+      const destRoot = `${await getGamesDir()}/${folderName}`;
       const vnvPath  = `${destRoot}/project.vnvmaker`;
-      await copyDirRecursive(srcNorm, destRoot);
+      if (!samePath(srcNorm, destRoot)) {
+        if (await dirHasFiles(destRoot)) {
+          alert(`❌ Cannot import — your games folder already has a folder named "${folderName}". Rename or move it first.`);
+          setLoading(false);
+          return;
+        }
+        await copyDirRecursive(srcNorm, destRoot);
+      }
+
+      // Already a VNVMaker project: open it rather than re-importing over it.
+      if (await pathExists(vnvPath)) {
+        const existing = await loadVnvProject(vnvPath);
+        setLoading(false);
+        onLoadVnv(existing);
+        return;
+      }
 
       // Step 3 — Build VNVMaker project from the copied scripts.
       // Translate gameDirPath (points at src) -> equivalent path under destRoot.
@@ -237,6 +243,10 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
       const { project, warnings } = importFromRpyFiles(files, rpyRoot, folderName, "Author", images);
       project._rootPath = destRoot;
       project._filePath = vnvPath;
+      // Remember which scripts came from the original game, so export can replace
+      // them with the compiled story while keeping scripts added later.
+      const rpyRel = rpyRoot.slice(destRoot.length).replace(/^\/+/, "");
+      project.imported_scripts = files.map(f => (rpyRel ? `${rpyRel}/${f.name}` : f.name));
 
       // Step 4 — Save .vnvmaker and update recent list
       if (warnings.length) setImportResult({ warnings, title: project.title });
@@ -254,14 +264,17 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
       try {
         const proj = await loadVnvProject(p.path);
         onLoadVnv(proj);
-      } catch (_) {
-        // Fallback: it's a Ren'Py project that hasn't been imported yet
+      } catch (loadErr) {
+        // Only a missing project file means "Ren'Py game that hasn't been imported
+        // yet". A damaged one must never be replaced by a fresh import.
+        if (!(loadErr instanceof ProjectFileMissingError)) throw loadErr;
         const folder = p.path.replace(/\/[^/]+$/, ""); // parent dir
         const files = await readRpyFolder(folder);
         const images = await listAssetFiles(folder, "images");
         const { project } = importFromRpyFiles(files, folder, p.title, "Author", images);
         project._rootPath = folder;
         project._filePath = p.path;
+        project.imported_scripts = files.map(f => f.name);
         setLoading(false);
         onLoadVnv(project);
       }
@@ -282,7 +295,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
         ? newDemoProject(newTitle, newAuthor, [w, h]) 
         : newProject(newTitle, newAuthor, [w, h]);
         
-      const rootPath = await createProjectInGamesDir(newTitle);
+      const rootPath = await projectRootInGamesDir(newTitle);
       proj._rootPath = rootPath;
       proj._filePath = rootPath + "/project.vnvmaker";
 
@@ -329,7 +342,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
     <>
     <div style={{ display: 'flex', height: '100%', background: bgMap[bgLevel], fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: uiScale === '125%' ? '112.5%' : uiScale === '150%' ? '125%' : '100%' }}>
       {/* Subtle scanline overlay */}
-      {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,200,0.012) 2px, rgba(0,212,200,0.012) 4px)', pointerEvents: 'none', opacity: 0.6, zIndex: 0 }} />}
+      {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 4px)', pointerEvents: 'none', opacity: 0.6, zIndex: 0 }} />}
       {/* Left Sidebar Menu */}
       <div style={{ 
         width: 240, borderRight: '1px solid rgba(var(--teal-rgb,0,212,200),0.12)', 
@@ -339,7 +352,7 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
         transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Sidebar glow */}
-        <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,212,200,0.06) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, color-mix(in srgb, var(--teal) 6%, transparent) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 0 16px' }}>
 
           {/* Credits — pinned to very top */}
@@ -416,8 +429,8 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
         {/* Atmospheric gradient glows — on top of solid bg */}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: bgMap[bgLevel], zIndex: 0 }}>
           {glowEnabled && <>
-            <div style={{ position: 'absolute', top: '5%', left: '10%', width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, rgba(75,108,247,0.18) 0%, transparent 65%)', filter: 'blur(30px)' }} />
-            <div style={{ position: 'absolute', bottom: '5%', right: '5%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,212,200,0.14) 0%, transparent 65%)', filter: 'blur(30px)' }} />
+            <div style={{ position: 'absolute', top: '5%', left: '10%', width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, color-mix(in srgb, var(--acc) 18%, transparent) 0%, transparent 65%)', filter: 'blur(30px)' }} />
+            <div style={{ position: 'absolute', bottom: '5%', right: '5%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, color-mix(in srgb, var(--teal) 14%, transparent) 0%, transparent 65%)', filter: 'blur(30px)' }} />
             <div style={{ position: 'absolute', top: '35%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(244,114,182,0.08) 0%, transparent 65%)', filter: 'blur(50px)' }} />
           </>}
         </div>
@@ -498,486 +511,11 @@ export function StartScreen({ onLoadRpy, onLoadVnv, prefs }: Props) {
             </div>
           </div>
         ) : activeTab === 'preferences' ? (
-          <div style={{ width: '100%', maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, background: 'var(--bg1)', padding: '32px 40px', display: 'flex', flexDirection: 'column', gap: 28 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{t("prefs.title")}</div>
-
-              {/* ── Window Mode (top) ── */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                {[
-                  { val: 'windowed',   label: `⬜  ${t("prefs.windowed")}` },
-                  { val: 'fullscreen', label: `⛶  ${t("prefs.fullscreen")}` },
-                ].map(m => {
-                  const sel = windowMode === m.val;
-                  return (
-                    <div key={m.val} onClick={async () => {
-                      setWindowMode(m.val);
-                      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-                      const win = getCurrentWindow();
-                      if (m.val === 'fullscreen') {
-                        // True fullscreen — covers taskbar entirely
-                        await win.setFullscreen(true);
-                      } else {
-                        // Windowed — exit fullscreen AND un-maximize so taskbar returns
-                        await win.setFullscreen(false);
-                        await win.unmaximize();
-                      }
-                    }}
-                      style={{ flex: 1, padding: '12px 16px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'rgba(0,212,200,0.1)' : 'rgba(0,0,0,0.2)', color: sel ? 'var(--teal)' : 'var(--dim)', fontWeight: 600, textAlign: 'center', transition: 'all 0.15s ease', fontSize: 13 }}>
-                      {m.label}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* ── Graphics ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--acc)', letterSpacing: '.15em', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>{t("prefs.graphics")}</div>
-
-                {/* Theme Selector */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.color_theme")}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                    {[
-                      { val: 'vnv-dark',       labelKey: 'themes.vnv_dark',      teal: '#00d4c8', acc: '#4b6cf7', bg: '#05080f' },
-                      { val: 'frappe',         labelKey: 'themes.frappe',        teal: '#81c8be', acc: '#8caaee', bg: '#232634' },
-                      { val: 'nord',           labelKey: 'themes.nord',          teal: '#8fbcbb', acc: '#88c0d0', bg: '#2e3440' },
-                      { val: 'tokyo-night',    labelKey: 'themes.tokyo_night',   teal: '#7dcfff', acc: '#bb9af7', bg: '#1a1b26' },
-                      { val: 'solarized-dark', labelKey: 'themes.solarized_dark',teal: '#2aa198', acc: '#268bd2', bg: '#002b36' },
-                      { val: 'aura',           labelKey: 'themes.aura',          teal: '#61ffca', acc: '#a277ff', bg: '#15141b' },
-                      { val: 'amber',          labelKey: 'themes.amber',         teal: '#ffb000', acc: '#ff8800', bg: '#0f0a00' },
-                      { val: 'light',          labelKey: 'themes.light',         teal: '#0ea5e9', acc: '#3b82f6', bg: '#f8fafc' },
-                      { val: 'cherry',         labelKey: 'themes.cherry',        teal: '#d96262', acc: '#bf4a4a', bg: '#140d0d' },
-                      { val: 'forest',         labelKey: 'themes.forest',        teal: '#34d399', acc: '#10b981', bg: '#050f0a' },
-                      { val: 'sunset',         labelKey: 'themes.sunset',        teal: '#fbbf24', acc: '#f59e0b', bg: '#1a0b12' },
-                      { val: 'royal',          labelKey: 'themes.royal',         teal: '#d8b4fe', acc: '#c084fc', bg: '#0d0514' },
-                      { val: 'gruvbox',        labelKey: 'themes.gruvbox',       teal: '#8ec07c', acc: '#fabd2f', bg: '#282828' },
-                      { val: 'oceanic',        labelKey: 'themes.oceanic',       teal: '#5fb3b3', acc: '#6699cc', bg: '#1b2b34' },
-                      { val: 'rose-pine',      labelKey: 'themes.rose_pine',     teal: '#9ccfd8', acc: '#31748f', bg: '#191724' },
-                      { val: 'midnight',       labelKey: 'themes.midnight',      teal: '#38bdf8', acc: '#818cf8', bg: '#000000' },
-                    ].map(th => {
-                      const sel = theme === th.val;
-                      return (
-                        <div key={th.val} onClick={() => setTheme(th.val)}
-                          style={{ padding: '10px 8px', borderRadius: 8, cursor: 'pointer', border: sel ? `1px solid ${th.teal}` : '1px solid rgba(255,255,255,0.08)', background: th.bg, textAlign: 'center', transition: 'all 0.15s ease', boxShadow: sel ? `0 0 10px ${th.teal}44` : 'none' }}>
-                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginBottom: 6 }}>
-                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: th.teal }} />
-                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: th.acc }} />
-                          </div>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: sel ? th.teal : '#7e95ab', letterSpacing: '.05em' }}>{t(th.labelKey)}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Background Level */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.bg_darkness")}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {[
-                      { label: t("prefs.bg_darker"), val: 'darker', bg: '#05080f' },
-                      { label: t("prefs.bg_default"), val: 'default', bg: '#0d1117' },
-                      { label: t("prefs.bg_lighter"), val: 'lighter', bg: '#141b26' },
-                    ].map(opt => {
-                      const sel = bgLevel === opt.val;
-                      return (
-                        <div key={opt.val} onClick={() => setBgLevel(opt.val as any)}
-                          style={{ flex: 1, padding: '10px 12px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'rgba(0,212,200,0.1)' : opt.bg, transition: 'all 0.15s ease', textAlign: 'center' }}>
-                          <div style={{ width: 24, height: 24, borderRadius: 4, background: opt.bg, border: '1px solid rgba(255,255,255,0.15)', margin: '0 auto 6px' }} />
-                          <div style={{ fontSize: 11, fontWeight: 600, color: sel ? 'var(--teal)' : '#7e95ab' }}>{opt.label}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Glow Effects */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.glow_effects")}</div>
-                    <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t("prefs.glow_effects_desc")}</div>
-                  </div>
-                  <div onClick={() => setGlowEnabled(v => !v)}
-                    style={{ width: 40, height: 20, borderRadius: 10, background: glowEnabled ? 'var(--teal)' : '#2d3748', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-                    <div style={{ position: 'absolute', top: 2, left: glowEnabled ? 22 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-                  </div>
-                </div>
-
-                {/* Scanlines */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.scanlines")}</div>
-                    <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t("prefs.scanlines_desc")}</div>
-                  </div>
-                  <div onClick={() => setScanlinesEnabled(v => !v)}
-                    style={{ width: 40, height: 20, borderRadius: 10, background: scanlinesEnabled ? 'var(--teal)' : '#2d3748', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-                    <div style={{ position: 'absolute', top: 2, left: scanlinesEnabled ? 22 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* ── General ── */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--acc)', letterSpacing: '.15em', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 8 }}>{t("prefs.general")}</div>
-
-                {/* Games Directory */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.games_dir")}</div>
-                  <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.4 }}>{t("prefs.games_dir_desc")}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="input" style={{ flex: 1, fontSize: 12, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--dim)' }} readOnly value={prefs.gamesDir} />
-                    <button className="btn btn-ghost" onClick={async () => {
-                      const { open } = await import('@tauri-apps/plugin-dialog');
-                      const dir = await open({ directory: true, defaultPath: prefs.gamesDir });
-                      if (dir && typeof dir === 'string') prefs.setGamesDir(dir.replace(/\\/g, '/'));
-                    }} style={{ fontSize: 12, padding: '0 16px', border: '1px solid var(--bdr)', borderRadius: 6 }}>{t("prefs.change_btn")}</button>
-                  </div>
-                </div>
-
-                {/* Ren'Py SDK Directory */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.renpy_sdk_dir") || "Ren'Py SDK Directory"}</div>
-                  <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.4 }}>{t("prefs.renpy_sdk_dir_desc") || "Directory containing the Ren'Py executable (renpy.exe / renpy.sh)."}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input className="input" style={{ flex: 1, fontSize: 12, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--dim)' }} readOnly value={prefs.renpySdkPath} />
-
-                    <button className="btn btn-ghost" onClick={async () => {
-                      const { open } = await import('@tauri-apps/plugin-dialog');
-                      const dir = await open({ directory: true, defaultPath: prefs.renpySdkPath });
-                      if (dir && typeof dir === 'string') prefs.setRenpySdkPath(dir.replace(/\\/g, '/'));
-                    }} style={{ fontSize: 12, padding: '0 16px', border: '1px solid var(--bdr)', borderRadius: 6 }}>{t("prefs.change_btn")}</button>
-                  </div>
-                </div>
-
-                {/* UI Scaling */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.ui_scaling")}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {['100%', '125%', '150%'].map(s => {
-                      const sel = uiScale === s;
-                      return (
-                        <div key={s} onClick={() => setUiScale(s)}
-                          style={{ flex: 1, padding: '10px 16px', borderRadius: 6, cursor: 'pointer', border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.08)', background: sel ? 'rgba(0, 212, 200, 0.1)' : 'rgba(0,0,0,0.2)', color: sel ? 'var(--teal)' : 'var(--dim)', fontWeight: 600, textAlign: 'center', transition: 'all 0.15s ease' }}>{s}</div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Auto-Save */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 12, color: '#a8bccf', fontWeight: 600 }}>{t("prefs.auto_save")}</div>
-                    <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>{t("prefs.auto_save_desc")}</div>
-                  </div>
-                  <div onClick={() => setAutoSave(v => !v)}
-                    style={{ width: 40, height: 20, borderRadius: 10, background: autoSave ? 'var(--teal)' : '#2d3748', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-                    <div style={{ position: 'absolute', top: 2, left: autoSave ? 22 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-                  </div>
-                </div>
-
-                {/* Language */}
-                <div 
-                  onClick={() => setActiveTab('language')} 
-                  style={{ 
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                    padding: '18px 24px', borderRadius: 8, cursor: 'pointer',
-                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)',
-                    transition: 'all 0.15s', marginTop: 8
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ fontSize: 16, color: '#a8bccf', fontWeight: 700 }}>{t("prefs.language")}</div>
-                    <div style={{ fontSize: 14, color: 'var(--dim)' }}>
-                      {t("prefs.language_current")} <span style={{ color: 'var(--teal)' }}>{LANGUAGES.find(l => l.code === language)?.englishName || language}</span>
-                    </div>
-                  </div>
-                  <div style={{ 
-                    fontSize: 15, fontWeight: 600, 
-                    padding: '10px 20px', background: 'var(--teal)', color: '#000', borderRadius: 6,
-                    boxShadow: '0 4px 12px rgba(0,212,200,0.3)'
-                  }}>
-                    {t("prefs.change_language")}
-                  </div>
-                </div>
-
-              </div>
-
-            </div>
-          </div>
+          <PreferencesPanel prefs={prefs} windowMode={windowMode} setWindowMode={setWindowMode} onOpenLanguage={() => setActiveTab('language')} />
         ) : activeTab === 'language' ? (
-          <div style={{ width: '100%', maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, background: 'var(--bg1)', padding: '32px 40px', display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 16 }}>
-                <button className="btn btn-ghost" onClick={() => setActiveTab('preferences')} style={{ padding: '8px 12px', color: 'var(--dim)', background: 'rgba(0,0,0,0.2)' }}>← {t("prefs.back")}</button>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal)', letterSpacing: '.05em', textTransform: 'uppercase' }}>{t("prefs.select_language")}</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {LANGUAGES.map(l => {
-                  const sel = language === l.code;
-                  return (
-                    <button key={l.code} className={`btn ${sel ? 'btn-accent' : 'btn-ghost'}`}
-                      onClick={() => { setLanguage(l.code); setActiveTab('preferences'); }}
-                      style={{ 
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                        padding: '16px 20px', borderRadius: 8, textAlign: 'left',
-                        border: sel ? '1px solid var(--teal)' : '1px solid rgba(255,255,255,0.05)',
-                        background: sel ? 'rgba(0, 212, 200, 0.1)' : 'rgba(0,0,0,0.2)',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      <span style={{ fontSize: 14, fontWeight: 600, color: sel ? 'var(--teal)' : 'var(--text)' }}>{l.englishName}</span>
-                      <span style={{ fontSize: 14, color: 'var(--dim)' }}>{l.nativeName}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          <LanguagePanel language={language} setLanguage={setLanguage} onBack={() => setActiveTab('preferences')} />
         ) : (
-          // ── Create Project Wizard ──────────────────────────────────────────
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
-            backdropFilter: 'blur(12px)', zIndex: 120,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <div style={{
-              width: 560, background: 'linear-gradient(145deg,#0d1220,#111827)',
-              border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16,
-              boxShadow: '0 32px 80px rgba(0,0,0,.9)',
-              display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            }}>
-
-              {/* Step indicator */}
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 10, padding: '24px 0 0' }}>
-                {([t("wizard.step_name"), t("wizard.step_template"), t("wizard.step_res"), t("wizard.step_color"), t("wizard.step_create")].map((label, i) => (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
-                    <div style={{
-                      width: i <= wizardStep ? 28 : 20,
-                      height: i <= wizardStep ? 28 : 20,
-                      borderRadius: '50%',
-                      background: i < wizardStep ? 'var(--teal)' : i === wizardStep ? 'var(--acc)' : 'rgba(255,255,255,0.07)',
-                      border: `2px solid ${i === wizardStep ? 'var(--acc)' : i < wizardStep ? 'var(--teal)' : 'rgba(255,255,255,0.12)'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, fontWeight: 700, color: i <= wizardStep ? '#fff' : 'var(--dim)',
-                      transition: 'all 0.25s',
-                    }}>{i < wizardStep ? '✓' : i + 1}</div>
-                    <div style={{ fontSize: 9, color: i === wizardStep ? 'var(--acc)' : 'var(--dim)', letterSpacing: '.08em', fontWeight: i === wizardStep ? 700 : 400 }}>{label}</div>
-                  </div>
-                )))}
-              </div>
-
-              {/* Divider */}
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '20px 32px 0' }} />
-
-              {/* Step content */}
-              <div style={{ padding: '28px 40px 24px', minHeight: 240 }}>
-
-                {/* Step 0: Project Name */}
-                {wizardStep === 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', letterSpacing: '-.01em', marginBottom: 6 }}>{t("wizard.name_title")}</div>
-                      <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.6 }}>
-                        {t("wizard.name_desc")} <code style={{ color: 'var(--teal)', fontFamily: 'var(--mono)', fontSize: 11 }}>VNVMAKER/games/</code>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ fontSize: 10, letterSpacing: '.10em', color: 'var(--dim)', fontWeight: 700 }}>{t("wizard.project_title")}</div>
-                      <input autoFocus className="input" style={{ fontSize: 15, padding: '10px 14px' }}
-                        value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && newTitle.trim() && setWizardStep(1)} />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ fontSize: 10, letterSpacing: '.10em', color: 'var(--dim)', fontWeight: 700 }}>{t("wizard.author")}</div>
-                      <input className="input" style={{ fontSize: 14, padding: '10px 14px' }}
-                        value={newAuthor} onChange={e => setNewAuthor(e.target.value)} />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 1: Template */}
-                {wizardStep === 1 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{t("wizard.template_title")}</div>
-                      <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.6 }}>
-                        {t("wizard.template_desc")}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      {/* Blank Option */}
-                      <div onClick={() => setNewTemplate('blank')} style={{
-                        flex: 1, padding: '20px', borderRadius: 8, cursor: 'pointer',
-                        border: `1px solid ${newTemplate === 'blank' ? 'var(--acc)' : 'rgba(255,255,255,0.07)'}`,
-                        background: newTemplate === 'blank' ? 'rgba(75,108,247,0.12)' : 'rgba(255,255,255,0.025)',
-                        transition: 'all 0.15s',
-                      }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: newTemplate === 'blank' ? '#fff' : '#aaa', marginBottom: 8 }}>{t("wizard.blank_title")}</div>
-                        <div style={{ fontSize: 11, color: newTemplate === 'blank' ? 'var(--acc)' : 'var(--dim)' }}>{t("wizard.blank_desc")}</div>
-                      </div>
-                      
-                      {/* Demo Option */}
-                      <div onClick={() => setNewTemplate('demo')} style={{
-                        flex: 1, padding: '20px', borderRadius: 8, cursor: 'pointer',
-                        border: `1px solid ${newTemplate === 'demo' ? 'var(--acc)' : 'rgba(255,255,255,0.07)'}`,
-                        background: newTemplate === 'demo' ? 'rgba(75,108,247,0.12)' : 'rgba(255,255,255,0.025)',
-                        transition: 'all 0.15s',
-                      }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: newTemplate === 'demo' ? '#fff' : '#aaa', marginBottom: 8 }}>{t("wizard.demo_title")}</div>
-                        <div style={{ fontSize: 11, color: newTemplate === 'demo' ? 'var(--acc)' : 'var(--dim)' }}>{t("wizard.demo_desc")}</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 2: Resolution */}
-                {wizardStep === 2 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{t("wizard.res_title")}</div>
-                      <div style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 1.6 }}>
-                        {t("wizard.res_desc")}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {[
-                        { val: '1280x720',  label: '1280 × 720',  note: 'HD' },
-                        { val: '1920x1080', label: '1920 × 1080', note: 'Full HD — recommended' },
-                        { val: '2560x1440', label: '2560 × 1440', note: '2K' },
-                        { val: '3840x2160', label: '3840 × 2160', note: '4K' },
-                      ].map(r => {
-                        const sel = newRes === r.val;
-                        return (
-                          <div key={r.val} onClick={() => setNewRes(r.val)} style={{
-                            padding: '13px 18px', borderRadius: 8, cursor: 'pointer',
-                            border: `1px solid ${sel ? 'var(--acc)' : 'rgba(255,255,255,0.07)'}`,
-                            background: sel ? 'rgba(75,108,247,0.12)' : 'rgba(255,255,255,0.025)',
-                            display: 'flex', alignItems: 'center', gap: 14, transition: 'all 0.15s',
-                          }}>
-                            <div style={{
-                              width: 16, height: 16, borderRadius: '50%',
-                              border: `2px solid ${sel ? 'var(--acc)' : 'rgba(255,255,255,0.2)'}`,
-                              background: sel ? 'var(--acc)' : 'transparent',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                            }}>
-                              {sel && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
-                            </div>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 14, color: sel ? '#fff' : '#aaa', fontWeight: sel ? 700 : 400, flex: 1 }}>{r.label}</div>
-                            <div style={{ fontSize: 11, color: sel ? 'var(--acc)' : 'var(--dim)' }}>{r.note}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 3: Colors */}
-                {wizardStep === 3 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{t("wizard.color_title")}</div>
-                      <div style={{ fontSize: 12, color: 'var(--dim)' }}>{t("wizard.color_desc")}</div>
-                    </div>
-                    {/* Accent swatches */}
-                    <div>
-                      <div style={{ fontSize: 10, letterSpacing: '.10em', color: 'var(--dim)', fontWeight: 700, marginBottom: 10 }}>{t("wizard.accent_color")}</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
-                        {[
-                          '#00b8c3','#6eb5ff','#00cc88','#e6c84a','#e67c00',
-                          '#4b6cf7','#9b59b6','#00d4c8','#e91e8c','#e74c3c',
-                          '#ffffff','#0099cc',
-                        ].map(c => (
-                          <div key={c} onClick={() => setNewAccent(c)}
-                            title={c}
-                            style={{
-                              height: 34, borderRadius: 7, background: c, cursor: 'pointer',
-                              border: newAccent === c ? '3px solid #fff' : '2px solid transparent',
-                              boxShadow: newAccent === c ? `0 0 12px ${c}88` : 'none',
-                              transform: newAccent === c ? 'scale(1.12)' : 'scale(1)',
-                              transition: 'all 0.15s',
-                            }} />
-                        ))}
-                      </div>
-                    </div>
-                    {/* Background swatches */}
-                    <div>
-                      <div style={{ fontSize: 10, letterSpacing: '.10em', color: 'var(--dim)', fontWeight: 700, marginBottom: 10 }}>{t("wizard.bg_color")}</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
-                        {[
-                          '#0d0d1a','#0d1b2a','#0d1a0d','#1a1a00','#1a0d00',
-                          '#000820','#0d001a','#001a1a','#1a0011','#1a0000',
-                          '#111111','#1a1a2e',
-                        ].map(c => (
-                          <div key={c} onClick={() => setNewBg(c)}
-                            title={c}
-                            style={{
-                              height: 34, borderRadius: 7, background: c, cursor: 'pointer',
-                              border: newBg === c ? `3px solid ${newAccent}` : '2px solid rgba(255,255,255,0.10)',
-                              boxShadow: newBg === c ? `0 0 10px ${newAccent}66` : 'none',
-                              transform: newBg === c ? 'scale(1.12)' : 'scale(1)',
-                              transition: 'all 0.15s',
-                            }} />
-                        ))}
-                      </div>
-                    </div>
-                    {/* Preview bar */}
-                    <div style={{ borderRadius: 8, padding: '12px 16px', background: newBg, border: `1px solid ${newAccent}44`, display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 12, height: 12, borderRadius: '50%', background: newAccent }} />
-                      <div style={{ fontSize: 13, color: newAccent, fontWeight: 700 }}>{newTitle}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginLeft: 'auto' }}>{t("wizard.preview")}</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 4: Creating */}
-                {wizardStep === 4 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28, height: 200 }}>
-                    <div style={{
-                      width: 56, height: 56, borderRadius: '50%',
-                      border: '3px solid rgba(255,255,255,0.08)',
-                      borderTop: `3px solid ${newAccent}`,
-                      animation: 'spin 0.9s linear infinite',
-                    }} />
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', textAlign: 'center' }}>{t("wizard.creating_title")}</div>
-                      <div style={{ fontSize: 12, color: 'var(--dim)', textAlign: 'center', marginTop: 6 }}>{newTitle}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer buttons */}
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 32px' }} />
-              <div style={{ padding: '18px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                {wizardStep < 4 ? (
-                  <>
-                    <button className="btn btn-ghost" onClick={() => {
-                      if (wizardStep === 0) setActiveTab('open');
-                      else setWizardStep(s => (s - 1) as 0|1|2|3|4);
-                    }} style={{ fontSize: 13, color: 'var(--dim)' }}>
-                      {wizardStep === 0 ? t("wizard.btn_cancel") : `← ${t("wizard.btn_back")}`}
-                    </button>
-                    <button
-                      className="btn"
-                      disabled={wizardStep === 0 && !newTitle.trim()}
-                      onClick={() => {
-                        if (wizardStep < 3) setWizardStep(s => (s + 1) as 0|1|2|3|4);
-                        else handleCreateNew();
-                      }}
-                      style={{ background: 'var(--acc)', color: '#fff', border: 'none', padding: '10px 28px', fontSize: 14, fontWeight: 700, borderRadius: 8, letterSpacing: '.04em', cursor: wizardStep === 0 && !newTitle.trim() ? 'not-allowed' : 'pointer', opacity: wizardStep === 0 && !newTitle.trim() ? 0.4 : 1 }}
-                    >
-                      {wizardStep === 3 ? `✨ ${t("wizard.btn_create")}` : `${t("wizard.btn_continue")} →`}
-                    </button>
-                  </>
-                ) : (
-                  <div style={{ flex: 1, textAlign: 'center', fontSize: 11, color: 'var(--dim)' }}>{t("wizard.btn_wait")}</div>
-                )}
-              </div>
-            </div>
-          </div>
+          <NewProjectWizard wizard={wizard} onCreate={handleCreateNew} onCancel={() => setActiveTab('open')} />
         )}
 
 

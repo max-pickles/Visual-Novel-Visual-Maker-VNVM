@@ -229,7 +229,6 @@ export function ColorPicker({ onPick, onChange, projectColors, initialColor = "#
   const [hexInput, setHexInput] = useState(initialColor);
   const [alpha, setAlpha]      = useState(255);
   const [recent, setRecent]    = useState<string[]>(loadRecent);
-  const [showPalette, setShowPalette] = useState(false);
   const [paletteId, setPaletteId]     = useState("renpy-dark");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -266,7 +265,7 @@ export function ColorPicker({ onPick, onChange, projectColors, initialColor = "#
       setHsb(([, s, bv]) => [newHue, s, bv]);
     } else {
       // Invert barycentric from triangle
-      const [hue, sat, bri] = hsb;
+      const [hue] = hsb;
       const hRad = hue * 2 * Math.PI - Math.PI / 2;
       const A = { x: triR * Math.cos(hRad),                        y: triR * Math.sin(hRad) };
       const B = { x: triR * Math.cos(hRad + (2 * Math.PI) / 3),   y: triR * Math.sin(hRad + (2 * Math.PI) / 3) };

@@ -127,20 +127,3 @@ export const BUILT_IN_PALETTES: ColorPalette[] = [
   HTML_NAMED,
 ];
 
-/** Expand 3-digit hex shorthand (#abc → #aabbcc). */
-export function expandHex(hex: string): string {
-  const trimmed = hex.replace(/^#/, "");
-  if (trimmed.length === 3) {
-    return "#" + trimmed.split("").map((c) => c + c).join("");
-  }
-  return hex.toUpperCase().startsWith("#") ? hex.toUpperCase() : "#" + hex.toUpperCase();
-}
-
-/** Returns a contrasting text color (black or white) based on perceived luminance. */
-export function contrastColor(hex: string): string {
-  const h = expandHex(hex).replace("#", "");
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55 ? "#1a1a1a" : "#ffffff";
-}

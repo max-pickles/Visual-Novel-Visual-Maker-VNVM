@@ -3,3 +3,5 @@ dist
 src-tauri/target
 .vnvmaker_layout.json
 renpy-*
+playwright-report
+test-results

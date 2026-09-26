@@ -2,13 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { VNProject } from './types';
 import { useCanvasStore, useShallow } from './store/canvasStore';
 import { useTranslation } from './translationContext';
-
-export const MAIN_MENU_ID = 'main_menu';
+import { MAIN_MENU_ID } from './hooks/useCanvasData';
 
 export interface CanvasToolbarProps {
   canvasRef: React.RefObject<HTMLDivElement>;
   displayNodes: any[];
-  isVN: boolean;
   project: any;
   handleFitToScreen: () => void;
   handleAddScene: () => void;
@@ -16,33 +14,26 @@ export interface CanvasToolbarProps {
   handleAddFolder: () => void;
   addStickyNote: () => void;
   handleAutoLayout: (mode?: 'vn' | 'sugiyama' | 'rpg' | 'auto') => 'vn' | 'sugiyama' | 'rpg' | void;
-  onEditScene?: (id: string) => void;
-  pushRecentScene: (id: string) => void;
-  handleNodeDoubleClick: (id: string, kind: string, label: string) => void;
-  handleDeleteSelected: () => void;
-  handleSetStart: () => void;
-  onGoScene?: (id: string) => void;
 }
 
 export function CanvasToolbar(props: CanvasToolbarProps) {
   const {
-    canvasRef, displayNodes, isVN, project, handleFitToScreen,
+    canvasRef, displayNodes, project, handleFitToScreen,
     handleAddScene, handleAddScreen, handleAddFolder, addStickyNote,
-    handleAutoLayout, onEditScene, pushRecentScene, handleNodeDoubleClick,
-    handleDeleteSelected, handleSetStart, onGoScene
+    handleAutoLayout,
   } = props;
 
   const {
     folderStack, setFolderStack, setSelection, zoom, setZoom, setPan,
-    search, setSearch, charFilter, setCharFilter, tool, setTool, selection,
-    isConnectionMode, setIsConnectionMode, setCompositorKick, uiVisible, setUiVisible,
+    search, setSearch, charFilter, setCharFilter, tool, setTool,
+    isConnectionMode, setIsConnectionMode, setUiVisible,
   } = useCanvasStore(useShallow(s => ({
     folderStack: s.folderStack, setFolderStack: s.setFolderStack,
     setSelection: s.setSelection, zoom: s.zoom, setZoom: s.setZoom, setPan: s.setPan,
     search: s.search, setSearch: s.setSearch, charFilter: s.charFilter, setCharFilter: s.setCharFilter,
-    tool: s.tool, setTool: s.setTool, selection: s.selection,
+    tool: s.tool, setTool: s.setTool,
     isConnectionMode: s.isConnectionMode, setIsConnectionMode: s.setIsConnectionMode,
-    setCompositorKick: s.setCompositorKick, uiVisible: s.uiVisible, setUiVisible: s.setUiVisible,
+    setUiVisible: s.setUiVisible,
   })));
 
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
@@ -142,132 +133,125 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
         {/* GROUP 1: View */}
         <button className="btn btn-ghost" style={{ flexShrink: 0 }} onClick={() => { handleFitToScreen(); setUiVisible(false); }}>{t('canvas.fit_all')}</button>
 
-        {isVN && (
-          <button className="btn btn-ghost" style={{ flexShrink: 0 }} onClick={() => {
-            const node = displayNodes.find(n => n.id === MAIN_MENU_ID);
-            const rect = canvasRef.current?.getBoundingClientRect();
-            if (!rect || !node) return;
-            const targetZoom = 3.0;
-            setZoom(targetZoom);
-            setPan({
-              x: rect.width  / 2 - (node.x + node.w / 2) * targetZoom,
-              y: rect.height / 2 - (node.y + node.h / 2) * targetZoom,
+        <button className="btn btn-ghost" style={{ flexShrink: 0 }} onClick={() => {
+          const node = displayNodes.find(n => n.id === MAIN_MENU_ID);
+          const rect = canvasRef.current?.getBoundingClientRect();
+          if (!rect || !node) return;
+          const targetZoom = 3.0;
+          setZoom(targetZoom);
+          setPan({
+            x: rect.width  / 2 - (node.x + node.w / 2) * targetZoom,
+            y: rect.height / 2 - (node.y + node.h / 2) * targetZoom,
+          });
+          setSelection(new Set([MAIN_MENU_ID]));
+        }}>{t('canvas.main_menu')}</button>
+
+        <div style={{ width: 1, height: 20, background: 'var(--bdr)', flexShrink: 0, marginLeft: 4, marginRight: 4 }} />
+
+        {/* GROUP 2: Interaction Tools */}
+        <button
+          className={`btn ${tool === 'pointer' ? 'active' : 'btn-ghost'}`}
+          style={{ flexShrink: 0, ...(tool === 'pointer' ? { background: 'var(--acc2)', color: '#fff', borderColor: 'var(--acc2)' } : {}) }}
+          onClick={() => setTool('pointer')}
+        >{t('canvas.select')}</button>
+
+        <button
+          className={`btn ${tool === 'pan' ? 'active' : 'btn-ghost'}`}
+          style={{ flexShrink: 0, ...(tool === 'pan' ? { background: 'var(--acc2)', color: '#fff', borderColor: 'var(--acc2)' } : {}) }}
+          onClick={() => setTool('pan')}
+        >{t('canvas.pan')}</button>
+
+        {/* 🔗 Connector Mode — animated toggle slider */}
+        <button
+          className={`btn ${isConnectionMode ? 'active' : 'btn-ghost'}`}
+          style={{
+            flexShrink: 0,
+            ...(isConnectionMode
+              ? { background: 'color-mix(in srgb, var(--acc) 10%, var(--bg2))', color: '#fff', borderColor: 'var(--acc)' }
+              : {})
+          }}
+          onClick={() => {
+            setIsConnectionMode(prev => {
+              if (!prev && tool === 'pan') setTool('pointer');
+              return !prev;
             });
-            setSelection(new Set([MAIN_MENU_ID]));
-          }}>{t('canvas.main_menu')}</button>
-        )}
-
-        {isVN && (
-          <>
-            <div style={{ width: 1, height: 20, background: 'var(--bdr)', flexShrink: 0, marginLeft: 4, marginRight: 4 }} />
-
-            {/* GROUP 2: Interaction Tools */}
-            <button
-              className={`btn ${tool === 'pointer' ? 'active' : 'btn-ghost'}`}
-              style={{ flexShrink: 0, ...(tool === 'pointer' ? { background: 'var(--acc2)', color: '#fff', borderColor: 'var(--acc2)' } : {}) }}
-              onClick={() => setTool('pointer')}
-            >{t('canvas.select')}</button>
-
-            <button
-              className={`btn ${tool === 'pan' ? 'active' : 'btn-ghost'}`}
-              style={{ flexShrink: 0, ...(tool === 'pan' ? { background: 'var(--acc2)', color: '#fff', borderColor: 'var(--acc2)' } : {}) }}
-              onClick={() => setTool('pan')}
-            >{t('canvas.pan')}</button>
-
-            {/* 🔗 Connector Mode — animated toggle slider */}
-            <button
-              className={`btn ${isConnectionMode ? 'active' : 'btn-ghost'}`}
-              style={{
-                flexShrink: 0,
-                ...(isConnectionMode
-                  ? { background: 'color-mix(in srgb, var(--acc) 10%, var(--bg2))', color: '#fff', borderColor: 'var(--acc)' }
-                  : {})
-              }}
-              onClick={() => {
-                setIsConnectionMode(prev => {
-                  if (!prev && tool === 'pan') setTool('pointer');
-                  return !prev;
-                });
-                setCompositorKick(prev => prev + 1);
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span>{t('canvas.connector_mode')}</span>
-                <div style={{
-                  width: 32, height: 18, borderRadius: 18,
-                  background: isConnectionMode ? 'var(--acc)' : 'var(--bg0)',
-                  border: `1px solid ${isConnectionMode ? 'var(--acc)' : 'var(--bdr)'}`,
-                  position: 'relative', transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
-                  display: 'flex', alignItems: 'center',
-                  boxShadow: isConnectionMode ? 'inset 0 1px 3px rgba(0,0,0,0.2)' : 'none',
-                  flexShrink: 0,
-                }}>
-                  <div style={{
-                    width: 14, height: 14, borderRadius: '50%',
-                    background: '#fff', position: 'absolute',
-                    left: isConnectionMode ? 15 : 1,
-                    transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                  }} />
-                </div>
-              </div>
-            </button>
-
-            <div style={{ width: 1, height: 20, background: 'var(--bdr)', flexShrink: 0, marginLeft: 4, marginRight: 4 }} />
-
-            {/* GROUP 3: Creation */}
-            <button className="btn btn-accent" style={{ flexShrink: 0 }} title="Create a new narrative scene" onClick={handleAddScene}>{t('canvas.add_scene')}</button>
-            <button className="btn btn-ghost" style={{ flexShrink: 0, borderColor: '#22d3ee44', color: '#22d3ee' }} title="Create a new UI screen" onClick={handleAddScreen}>{t('canvas.add_screen')}</button>
-            {folderStack.length === 0 && <button className="btn btn-ghost" style={{ flexShrink: 0 }} title="Create a new organizational folder" onClick={handleAddFolder}>{t('canvas.add_folder')}</button>}
-            <button className="btn btn-ghost" style={{ flexShrink: 0 }} title="Add a sticky note to the canvas" onClick={addStickyNote}>{t('canvas.add_note')}</button>
-
-            <div style={{ width: 1, height: 20, background: 'var(--bdr)', flexShrink: 0, marginLeft: 4, marginRight: 4 }} />
-
-
-
-            {/* GROUP 5: Layout — button + mode selector */}
-            <div style={{ display: 'flex', alignItems: 'stretch' }}>
-              <button
-                className="btn btn-ghost"
-                title="Automatically organize the canvas layout"
-                style={{ flexShrink: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none' }}
-                onClick={() => {
-                  const determinedMode = handleAutoLayout('auto');
-                  if (determinedMode) setLayoutMode(determinedMode);
-                }}
-              >{t('canvas.auto_layout')}</button>
-              <select
-                className="btn btn-ghost"
-                title="Select a specific layout algorithm"
-                style={{ flexShrink: 0, paddingRight: 8, cursor: 'pointer', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
-                value={layoutMode}
-                onChange={e => {
-                  const mode = e.target.value as typeof layoutMode;
-                  setLayoutMode(mode);
-                  handleAutoLayout(mode);
-                }}
-              >
-                <option value="vn">{t('canvas.layout_vn')}</option>
-                <option value="sugiyama">{t('canvas.layout_sugiyama')}</option>
-                <option value="rpg">{t('canvas.layout_rpg')}</option>
-              </select>
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>{t('canvas.connector_mode')}</span>
+            <div style={{
+              width: 32, height: 18, borderRadius: 18,
+              background: isConnectionMode ? 'var(--acc)' : 'var(--bg0)',
+              border: `1px solid ${isConnectionMode ? 'var(--acc)' : 'var(--bdr)'}`,
+              position: 'relative', transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+              display: 'flex', alignItems: 'center',
+              boxShadow: isConnectionMode ? 'inset 0 1px 3px rgba(0,0,0,0.2)' : 'none',
+              flexShrink: 0,
+            }}>
+              <div style={{
+                width: 14, height: 14, borderRadius: '50%',
+                background: '#fff', position: 'absolute',
+                left: isConnectionMode ? 15 : 1,
+                transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+              }} />
             </div>
+          </div>
+        </button>
 
-            {/* Character filter */}
-            {(() => {
-              const p = project as VNProject;
-              const chars = p.characters ?? [];
-              if (chars.length === 0) return null;
-              return (
-                <select value={charFilter} onChange={e => setCharFilter(e.target.value)}
-                  style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--bg2)', border: '1px solid var(--bdr)', color: 'var(--dim)', flexShrink: 0, cursor: 'pointer' }}>
-                  <option value="">{t('canvas.all_chars')}</option>
-                  {chars.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              );
-            })()}
-          </>
-        )}
+        <div style={{ width: 1, height: 20, background: 'var(--bdr)', flexShrink: 0, marginLeft: 4, marginRight: 4 }} />
+
+        {/* GROUP 3: Creation */}
+        <button className="btn btn-accent" style={{ flexShrink: 0 }} title="Create a new narrative scene" onClick={handleAddScene}>{t('canvas.add_scene')}</button>
+        <button className="btn btn-ghost" style={{ flexShrink: 0, borderColor: '#22d3ee44', color: '#22d3ee' }} title="Create a new UI screen" onClick={handleAddScreen}>{t('canvas.add_screen')}</button>
+        {folderStack.length === 0 && <button className="btn btn-ghost" style={{ flexShrink: 0 }} title="Create a new organizational folder" onClick={handleAddFolder}>{t('canvas.add_folder')}</button>}
+        <button className="btn btn-ghost" style={{ flexShrink: 0 }} title="Add a sticky note to the canvas" onClick={addStickyNote}>{t('canvas.add_note')}</button>
+
+        <div style={{ width: 1, height: 20, background: 'var(--bdr)', flexShrink: 0, marginLeft: 4, marginRight: 4 }} />
+
+
+
+        {/* GROUP 5: Layout — button + mode selector */}
+        <div style={{ display: 'flex', alignItems: 'stretch' }}>
+          <button
+            className="btn btn-ghost"
+            title="Automatically organize the canvas layout"
+            style={{ flexShrink: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none' }}
+            onClick={() => {
+              const determinedMode = handleAutoLayout('auto');
+              if (determinedMode) setLayoutMode(determinedMode);
+            }}
+          >{t('canvas.auto_layout')}</button>
+          <select
+            className="btn btn-ghost"
+            title="Select a specific layout algorithm"
+            style={{ flexShrink: 0, paddingRight: 8, cursor: 'pointer', borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
+            value={layoutMode}
+            onChange={e => {
+              const mode = e.target.value as typeof layoutMode;
+              setLayoutMode(mode);
+              handleAutoLayout(mode);
+            }}
+          >
+            <option value="vn">{t('canvas.layout_vn')}</option>
+            <option value="sugiyama">{t('canvas.layout_sugiyama')}</option>
+            <option value="rpg">{t('canvas.layout_rpg')}</option>
+          </select>
+        </div>
+
+        {/* Character filter */}
+        {(() => {
+          const p = project as VNProject;
+          const chars = p.characters ?? [];
+          if (chars.length === 0) return null;
+          return (
+            <select value={charFilter} onChange={e => setCharFilter(e.target.value)}
+              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--bg2)', border: '1px solid var(--bdr)', color: 'var(--dim)', flexShrink: 0, cursor: 'pointer' }}>
+              <option value="">{t('canvas.all_chars')}</option>
+              {chars.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          );
+        })()}
 
         <div style={{ flex: 1 }} />
 

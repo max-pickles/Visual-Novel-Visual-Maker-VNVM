@@ -77,8 +77,8 @@ export function Minimap({ items, pan, zoom, canvasWidth, canvasHeight, onPanChan
       top:    (vy - bounds.minY) * mmScale + offsetY,
       width:  vw * mmScale,
       height: vh * mmScale,
-      border: "1.5px solid rgba(75,108,247,0.85)",
-      background: "rgba(75,108,247,0.12)",
+      border: "1.5px solid color-mix(in srgb, var(--acc) 85%, transparent)",
+      background: "color-mix(in srgb, var(--acc) 12%, transparent)",
       cursor: "grab",
       transition: "all 0.1s ease-out",
     };
@@ -132,7 +132,7 @@ export function Minimap({ items, pan, zoom, canvasWidth, canvasHeight, onPanChan
       title="Minimap — click or drag to navigate"
       style={{
         width: W, height: H,
-        background: "rgba(13,18,32,0.88)",
+        background: "color-mix(in srgb, var(--bg2) 88%, transparent)",
         border: "1px solid var(--bdr, #2a3050)",
         borderRadius: 10,
         boxShadow: "0 8px 32px rgba(0,0,0,0.5)",

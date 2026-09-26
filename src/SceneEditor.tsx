@@ -15,8 +15,7 @@ import { ScenePreview } from "./ScenePreview";
 import { AssetBrowser } from "./AssetBrowser";
 import { computeSceneBgs } from "./sceneGraphUtils";
 import { compilePreview, compileSingleAnimationPreview } from "./compiler";
-import { launchRenpyPreview, findRenpySdk, DEFAULT_RENPY_SDK, listAssetFiles } from "./tauriApi";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { launchRenpyPreview, findRenpySdk, declaredVarsInGame, SDK_PATH_KEY } from "./tauriApi";
 import { AnimPropertiesPanel, AnimActionsPanel, AnimTimelinePanel } from "./AnimationTrack";
 import { SdkSetupModal } from "./SdkSetupModal";
 import { ToastManager } from "./toastContext";
@@ -25,8 +24,8 @@ import { readTextFile } from "@tauri-apps/plugin-fs";
 import { parseGuiRpy } from "./guiParser";
 import type { GuiConfig } from "./guiParser";
 import { useTranslation } from "./translationContext";
+import { SidebarAssetBrowser } from "./SidebarAssetBrowser";
 
-const LS_SDK_KEY = "vnv_renpy_sdk_path";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -59,91 +58,6 @@ interface Props {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-function SidebarAssetBrowser({ project, mode, onPick }: { project: VNProject, mode: "images" | "audio" | "effects", onPick: (path: string) => void }) {
-  const [files, setFiles] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
-  const { t } = useTranslation();
-  
-  useEffect(() => {
-    if (!project._rootPath) return;
-    const typeMap = { images: "images", audio: "audio", effects: "images" } as const;
-    if (mode === "effects") {
-      setFiles([]); return;
-    }
-    listAssetFiles(project._rootPath, typeMap[mode]).then(setFiles).catch(() => setFiles([]));
-  }, [project._rootPath, mode]);
-
-  const filtered = useMemo(() => files.filter(f => f.toLowerCase().includes(search.toLowerCase())), [files, search]);
-
-  return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-        <input 
-          className="input" 
-          placeholder={t('editor.scene.search_placeholder').replace('{mode}', mode)}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: "100%", padding: "4px 8px", fontSize: 11, background: "rgba(0,0,0,0.2)", border: "1px solid var(--bdr)" }}
-        />
-      </div>
-      <div className="hide-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
-        {mode === "images" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
-            {filtered.map(f => {
-              const url = convertFileSrc(`${project._rootPath}/${f}`);
-              const name = f.split('/').pop() || f;
-              return (
-                <div key={f} 
-                  onClick={() => onPick(f)}
-                  title={name}
-                  style={{ 
-                    aspectRatio: "1", background: "var(--bg2)", borderRadius: 4, overflow: "hidden", 
-                    cursor: "pointer", border: "1px solid var(--bdr)", transition: "border 0.1s" 
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--teal)"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--bdr)"}
-                >
-                  <img src={url} alt={name} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {mode === "audio" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {filtered.map(f => {
-              const name = f.split('/').pop();
-              return (
-                <div key={f}
-                  onClick={() => onPick(f)}
-                  title={name}
-                  style={{
-                    padding: "6px 8px", background: "var(--bg2)", borderRadius: 4, cursor: "pointer",
-                    border: "1px solid var(--bdr)", fontSize: 11, color: "var(--text)",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--teal)"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--bdr)"}
-                >
-                  🎵 {name}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {mode === "effects" && (
-          <div style={{ padding: 12, color: "var(--dim)", fontSize: 11, textAlign: "center" }}>
-            (Effects preset list coming soon)
-          </div>
-        )}
-        {filtered.length === 0 && (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--faint)", fontSize: 11 }}>{t('editor.scene.no_results')}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo, canRedo, onUndo, onRedo }: Props) {
   const { t } = useTranslation();
   const [selSceneId, setSelSceneId] = useState<string | null>(
@@ -162,7 +76,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   // Picker modal opened from clicking bg/sprite in the preview
   const [pickerModal, setPickerModal] = useState<{ field: "bg" | "image" } | null>(null);
   // Ren'Py live preview
-  const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(LS_SDK_KEY) ?? DEFAULT_RENPY_SDK);
+  const [sdkPath, setSdkPath] = useState<string>(() => localStorage.getItem(SDK_PATH_KEY) ?? "");
   const [showSdkModal, setShowSdkModal] = useState(false);
   const [previewState, setPreviewState] = useState<"idle" | "launching" | "ok" | "err">("idle");
   const [previewMsg, setPreviewMsg]   = useState("");
@@ -213,10 +127,10 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
 
   // Auto-detect Ren'Py SDK on first mount
   useEffect(() => {
-    const saved = localStorage.getItem(LS_SDK_KEY);
+    const saved = localStorage.getItem(SDK_PATH_KEY);
     if (!saved) {
       findRenpySdk().then(found => {
-        if (found) { setSdkPath(found); localStorage.setItem(LS_SDK_KEY, found); }
+        if (found) { setSdkPath(found); localStorage.setItem(SDK_PATH_KEY, found); }
       }).catch(() => { /* ignore */ });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -274,7 +188,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   }, [selIdx]); // Fire when selection changes
 
   // ── Scene update helper ──────────────────────────────────────────────────
-  const updateScene = useCallback((fn: (sc: VNScene) => void, label: string) => {
+  const updateScene = useCallback((fn: (sc: VNScene) => void) => {
     if (!scene) return;
     const sceneId = scene.id;
     const newScenes = project.scenes.map(s => {
@@ -292,23 +206,13 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   const commitRename = () => {
     if (!scene || !nameVal.trim()) { setEditingName(false); return; }
     const val = nameVal.trim();
-    updateScene(sc => { sc.label = val; }, "Rename scene");
+    updateScene(sc => { sc.label = val; });
     setEditingName(false);
   };
 
-  // ── Add event ────────────────────────────────────────────────────────────
-  const addEvent = useCallback((type: EventType) => {
-    if (!scene) return;
-    const ev = newEvent(type);
-    const insertAt = selIdx !== null ? selIdx + 1 : events.length;
-    updateScene(sc => { sc.events.splice(insertAt, 0, ev); }, `Add ${type}`);
-    setSelIdx(insertAt);
-    setArmedTool(null);
-  }, [scene, selIdx, events.length, updateScene]);
-
   // ── Delete event ─────────────────────────────────────────────────────────
   const deleteEvent = useCallback((i: number) => {
-    updateScene(sc => { sc.events.splice(i, 1); }, "Delete event");
+    updateScene(sc => { sc.events.splice(i, 1); });
     setSelIdx(prev => prev === i ? null : prev !== null && prev > i ? prev - 1 : prev);
   }, [updateScene]);
 
@@ -316,7 +220,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   const duplicateEvent = useCallback((i: number) => {
     if (!scene) return;
     const copy = { ...scene.events[i], id: `ev_${Date.now()}` };
-    updateScene(sc => { sc.events.splice(i + 1, 0, copy); }, "Duplicate event");
+    updateScene(sc => { sc.events.splice(i + 1, 0, copy); });
     setSelIdx(i + 1);
   }, [scene, updateScene]);
 
@@ -326,14 +230,14 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     updateScene(sc => {
       const [item] = sc.events.splice(from, 1);
       sc.events.splice(to, 0, item);
-    }, "Reorder event");
+    });
     setSelIdx(to);
   }, [scene, updateScene]);
 
   // ── Event change from Inspector ───────────────────────────────────────────
   const onEventChange = useCallback((updated: VNEvent) => {
     if (!scene || selIdx === null) return;
-    updateScene(sc => { sc.events[selIdx] = updated; }, "Edit event");
+    updateScene(sc => { sc.events[selIdx] = updated; });
   }, [scene, selIdx, updateScene]);
 
   // ── Copy / Cut / Paste ───────────────────────────────────────────────────
@@ -353,13 +257,19 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     if (!_evClipboard || !scene) return;
     const pasted = { ..._evClipboard, id: `ev_${Date.now()}` };
     const insertAt = selIdx !== null ? selIdx + 1 : events.length;
-    updateScene(sc => { sc.events.splice(insertAt, 0, pasted); }, "Paste event");
+    updateScene(sc => { sc.events.splice(insertAt, 0, pasted); });
     setSelIdx(insertAt);
   }, [scene, selIdx, events.length, updateScene]);
 
   // ── Keyboard nav ──────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // The image picker is modal: Escape closes it, and the scene's shortcuts
+      // (Delete, paste, arrows...) must not act on the events behind it.
+      if (pickerModal) {
+        if (e.key === "Escape") setPickerModal(null);
+        return;
+      }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       const ctrl = e.ctrlKey || e.metaKey;
@@ -380,7 +290,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [events.length, selIdx, deleteEvent, duplicateEvent, copyEvent, cutEvent, pasteEvent]);
+  }, [events.length, selIdx, deleteEvent, duplicateEvent, copyEvent, cutEvent, pasteEvent, pickerModal]);
 
   // ── Nav between scenes ────────────────────────────────────────────────────
   const goScene = (delta: number) => {
@@ -400,7 +310,8 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     }
     setPreviewState("launching"); setPreviewMsg("");
     try {
-      const script = compilePreview(project, scene.id, undefined, undefined, inheritedBg ?? undefined, inheritedSprite ?? undefined);
+      const declaredElsewhere = await declaredVarsInGame(rootPath);
+      const script = compilePreview(project, scene.id, undefined, undefined, inheritedBg ?? undefined, inheritedSprite ?? undefined, { declaredElsewhere });
       const RENPY_LANGS: Record<string, string> = {
         es: "spanish", fr: "french", de: "german", ja: "japanese", ko: "korean", ru: "russian", zh: "simplified_chinese", "zh-TW": "traditional_chinese"
       };
@@ -408,7 +319,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
       const envLang = RENPY_LANGS[prefLang] || "";
       const usedPath = await launchRenpyPreview(rootPath, script, sdk || null, envLang);
       // Cache the confirmed path
-      setSdkPath(usedPath); localStorage.setItem(LS_SDK_KEY, usedPath);
+      setSdkPath(usedPath); localStorage.setItem(SDK_PATH_KEY, usedPath);
       setPreviewState("ok"); setPreviewMsg("Launched!");
       setTimeout(() => setPreviewState("idle"), 3000);
     } catch (err) {
@@ -565,7 +476,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
           initialPath={sdkPath}
           onConfirm={(path) => {
             setSdkPath(path);
-            localStorage.setItem(LS_SDK_KEY, path);
+            localStorage.setItem(SDK_PATH_KEY, path);
             setShowSdkModal(false);
             // If we were triggered by a Play button, re-fire preview
             const root = pendingLaunchRef.current;
@@ -660,7 +571,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                           onClick={() => setSelSceneId(s.id)}
                           style={{
                             flex: 1, textAlign: "left", padding: "8px 12px", borderRadius: 6,
-                            background: selSceneId === s.id ? "rgba(0, 212, 200, 0.15)" : "transparent",
+                            background: selSceneId === s.id ? "color-mix(in srgb, var(--teal) 15%, transparent)" : "transparent",
                             border: selSceneId === s.id ? "1px solid var(--teal)" : "1px solid transparent",
                             color: selSceneId === s.id ? "var(--teal)" : "var(--text)",
                             fontSize: 13, fontWeight: selSceneId === s.id ? 700 : 500,
@@ -734,7 +645,6 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                               const key = leftMode === "images" ? (selEvent.type === "bg" ? "bg" : "image") : (leftMode === "audio" ? "music" : "");
                               if (key) {
                                 const updated = { ...selEvent, [key]: path } as VNEvent;
-                                const snap = JSON.parse(JSON.stringify(scene?.events || [])) as VNEvent[];
                                 const newScenes = project.scenes.map(sc => {
                                   if (scene && sc.id === scene.id) {
                                     const copy = JSON.parse(JSON.stringify(sc)) as VNScene;
@@ -837,13 +747,13 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                   if (!scene) return;
                   const idx = scene.events.findIndex(e => e.id === id);
                   if (idx === -1) return;
-                  updateScene(sc => { sc.events[idx] = { ...sc.events[idx], ...partial }; }, "Drag sprite");
+                  updateScene(sc => { sc.events[idx] = { ...sc.events[idx], ...partial }; });
                 }}
                 isCurrentThumbnail={scene?.thumbnail_event_id === selEvent?.id}
                 onSetThumbnail={(id) => {
                   updateScene(sc => {
                     sc.thumbnail_event_id = sc.thumbnail_event_id === id ? undefined : id;
-                  }, "Toggle Thumbnail Override");
+                  });
                 }}
               />
             </div>
@@ -951,7 +861,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     </div>
                     <textarea
                       value={scene.description ?? ""}
-                      onChange={e => updateScene(sc => { sc.description = e.target.value; }, "Edit scene notes")}
+                      onChange={e => updateScene(sc => { sc.description = e.target.value; })}
                       placeholder={t('editor.scene.notes_placeholder')}
                       rows={5}
                       style={{
@@ -977,7 +887,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                       <input 
                         type="checkbox" 
                         checked={!!scene.thumbnail_hide_sprites}
-                        onChange={e => updateScene(sc => { sc.thumbnail_hide_sprites = e.target.checked; }, "Toggle thumbnail sprites")}
+                        onChange={e => updateScene(sc => { sc.thumbnail_hide_sprites = e.target.checked; })}
                         style={{ accentColor: "var(--teal)" }}
                       />
                       {t('editor.scene.hide_sprites')}
@@ -993,7 +903,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                   <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
                     <ColorGradePanel
                       grade={scene.color_grade}
-                      onChange={g => updateScene(sc => { sc.color_grade = g; }, "Color grade")}
+                      onChange={g => updateScene(sc => { sc.color_grade = g; })}
                     />
                   </div>
                 )}
@@ -1040,12 +950,11 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                   onSelect={setSelIdx}
                   onMove={moveEvent}
                   onDelete={deleteEvent}
-                  onDuplicate={duplicateEvent}
                   armedToolType={armedTool}
                   onToolDrop={(type, insertAt) => {
                     if (!scene) return;
                     const ev = newEvent(type);
-                    updateScene(sc => { sc.events.splice(insertAt, 0, ev); }, `Add ${type}`);
+                    updateScene(sc => { sc.events.splice(insertAt, 0, ev); });
                     setSelIdx(insertAt);
                     setArmedTool(null);
                     armedToolOrigin.current = null;

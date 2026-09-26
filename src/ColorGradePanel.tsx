@@ -3,7 +3,7 @@
  * Provides presets (Night, Sepia, B&W, etc.) + fine-tune sliders.
  * Compiles to Ren'Py MatrixColor on bg events via the compiler.
  */
-import React, { useState } from "react";
+import { useState } from "react";
 import type { VNColorGrade } from "./types";
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ export function ColorGradePanel({ grade, onChange }: Props) {
                   title={p.label}
                   style={{
                     padding: "4px 8px", fontSize: 11, borderRadius: 6, cursor: "pointer",
-                    background: isCurrent ? "rgba(75,108,247,0.2)" : "var(--bg3)",
+                    background: isCurrent ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "var(--bg3)",
                     border: `1px solid ${isCurrent ? "var(--acc2)" : "var(--bdr)"}`,
                     color: isCurrent ? "var(--acc2)" : "var(--dim)",
                     display: "flex", alignItems: "center", gap: 4,

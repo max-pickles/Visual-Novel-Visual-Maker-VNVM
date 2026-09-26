@@ -106,6 +106,7 @@ export interface VNEvent {
   type: EventType;
 
   // ── dialogue / narration ──
+  /** The speaker. On a choice, the character who says its prompt. */
   char_id?: string | null;
   pose?: Pose;
   text?: string;
@@ -220,6 +221,11 @@ export interface VNScene {
   description?: string;
   /** Scenes contained within this scene (if it acts as a folder) */
   scene_ids?: string[];
+  /**
+   * The label this scene had in the Ren'Py game it was imported from. Exports
+   * keep it, so the game's translations still match its dialogue.
+   */
+  renpy_label?: string;
 }
 
 /** Color grading settings applied to all bg events in this scene.
@@ -242,6 +248,12 @@ export interface VNCharacter {
   name: string;
   /** Name shown in the dialogue box */
   display: string;
+  /**
+   * The variable this character had in the Ren'Py game it was imported from
+   * (`define s = Character(…)`). Exports keep it, so the game's translations
+   * still match its dialogue.
+   */
+  renpy_name?: string;
   /** Hex color for the character name in dialogue */
   color: string;
   /** Dialogue Mode: ADV (default), NVL (full screen), or Speech Bubble */
@@ -421,6 +433,13 @@ export interface VNProject {
   translations?: Record<string, Record<string, string>>;
   /** The original source language of the game's text (e.g., 'English', 'Japanese') */
   originalLanguage?: string;
+  /**
+   * Scripts (relative to the project folder, e.g. "game/script.rpy") copied in
+   * when the project was imported from an existing Ren'Py game. A project-folder
+   * export replaces these with the compiled story and keeps any other scripts.
+   * Missing on projects saved before this was tracked.
+   */
+  imported_scripts?: string[];
 }
 
 // ─── Main Menu Configuration ──────────────────────────────────────────────────
@@ -461,37 +480,9 @@ export interface VNMainMenu {
   };
 }
 
-// ─── Legacy Ren'Py Graph Types (read-only viewer) ────────────────────────────
+// ─── Canvas Graph Types ──────────────────────────────────────────────────────
 
-export type NodeKind = 'label' | 'menu' | 'init' | 'screen' | 'unknown';
 export type LinkType = 'jump' | 'call';
-
-export interface NodeLink {
-  target_label: string;
-  link_type: LinkType;
-}
-
-export interface SceneNode {
-  id: string;
-  label: string;
-  kind: NodeKind;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  file_path: string;
-  line_number: number;
-  links: NodeLink[];
-  content: string[];
-}
-
-export interface RpyProject {
-  root_path: string;
-  nodes: SceneNode[];
-  files: string[];
-}
-
-export type LayoutPositions = Record<string, [number, number]>;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -506,19 +497,6 @@ export const VN_TRANSITIONS: EffectKind[] = [
 export const VN_EFFECTS: EffectKind[] = ['dissolve', 'fade', 'flash', 'pixellate'];
 
 export const VN_SIDES: Side[] = ['left', 'center', 'right'];
-
-export const VN_PALETTE: string[] = [
-  '#c8d0ff', '#f472b6', '#fb923c', '#facc15', '#4ade80',
-  '#22d3ee', '#818cf8', '#e879f9', '#f87171', '#34d399',
-  '#60a5fa', '#a78bfa', '#fbbf24', '#f9a8d4', '#6ee7b7',
-  '#93c5fd', '#c4b5fd', '#fca5a5', '#86efac', '#67e8f9',
-];
-
-export const VN_FONT_OPTIONS: string[] = [
-  'DejaVuSans.ttf',
-  'NotoSans-Regular.ttf',
-  'SourceHanSans.ttf',
-];
 
 // ─── Factory Functions ────────────────────────────────────────────────────────
 // Mirrors the vn_new_* constructors in vn_data.rpy
@@ -545,6 +523,7 @@ export function newProject(
     scenes: [startScene],
     folders: [],
     achievements: [],
+    imported_scripts: [],
     start: startScene.id,
     text_tpls: [defaultTextTpl()],
     trans_tpls: [defaultTransTpl()],
@@ -679,14 +658,6 @@ export function newOpt(text = 'Option'): VNChoiceOpt {
   return { id: uid(6), text, scene: null };
 }
 
-export function newTextTpl(name = 'Text Style'): TextTemplate {
-  return { ...defaultTextTpl(), id: uid(), name };
-}
-
-export function newTransTpl(name = 'Transition'): TransTemplate {
-  return { ...defaultTransTpl(), id: uid(), name };
-}
-
 // ─── Lookup Utilities ─────────────────────────────────────────────────────────
 // Mirrors vn_find_char, vn_find_scene, vn_char_sprite from vn_data.rpy
 
@@ -700,80 +671,119 @@ export function findScene(project: VNProject, sceneId: string | null | undefined
   return project.scenes.find(s => s.id === sceneId) ?? null;
 }
 
-export function charSprite(project: VNProject, charId: string | null | undefined, pose: string): string | null {
-  const char = findChar(project, charId);
-  if (!char) return null;
-  return char.sprites[pose] || char.sprites['neutral'] || null;
-}
-
 /**
- * Find the effective background for a scene.
- * Checks scene.bg first, then scans events for a 'bg' event,
- * then walks incoming jump sources (mirrors vn_get_scene_bg).
+ * Names that must never get an auto-generated `default`: Python keywords and
+ * builtins, and the Ren'Py objects that conditions and generated code rely on.
+ * `default renpy = False` or `default len = False` would break the game.
  */
-export function getSceneBg(scene: VNScene, project?: VNProject, visited: Set<string> = new Set()): string | null {
-  if (visited.has(scene.id)) return null;
-  visited.add(scene.id);
+export const RESERVED_VAR_NAMES = new Set([
+  // Python keywords and constants
+  'True', 'False', 'None', 'and', 'or', 'not', 'is', 'in', 'if', 'else', 'elif',
+  'for', 'while', 'lambda', 'return', 'def', 'class', 'import', 'from', 'as',
+  'with', 'pass', 'del', 'global', 'nonlocal', 'try', 'except', 'finally',
+  'raise', 'yield', 'assert', 'break', 'continue', 'async', 'await',
+  // Python builtins
+  'len', 'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple', 'min',
+  'max', 'abs', 'sum', 'any', 'all', 'range', 'round', 'sorted', 'reversed',
+  'enumerate', 'zip', 'map', 'filter', 'isinstance', 'hasattr', 'getattr',
+  'type', 'print', 'object', 'id', 'hash', 'chr', 'ord', 'divmod', 'pow',
+  // Ren'Py objects and names used by the generated script
+  'renpy', 'config', 'persistent', 'store', 'gui', 'preferences', 'achievement',
+  'build', 'style', 'ui', 'im', 'layout', 'narrator', 'centered', 'extend',
+  'nvl', 'adv', 'Character', 'Transform', 'Fixed', 'Solid', 'Dissolve', 'Fade',
+  'Pixellate',
+]);
 
-  if (scene.bg) return scene.bg;
-  for (const ev of scene.events) {
-    if (ev.type === 'bg' && ev.bg) return ev.bg;
-    // Check layer sub-events
-    for (let i = 1; i <= 9; i++) {
-      const layer = ev[`layer${i}`] as VNEvent | undefined;
-      if (layer?.type === 'bg' && layer.bg) return layer.bg;
-    }
-  }
-
-  // Walk incoming scenes
-  if (project) {
-    for (const other of project.scenes) {
-      if (other.id === scene.id) continue;
-      const isIncoming = other.events.some(ev => {
-        if (ev.type === 'jump' && ev.scene_id === scene.id) return true;
-        if (ev.type === 'choice') {
-          return (ev.opts ?? []).some(o => o.scene === scene.id);
-        }
-        return false;
-      });
-      if (isIncoming) {
-        const bg = getSceneBg(other, project, visited);
-        if (bg) return bg;
-      }
-    }
-  }
-  return null;
-}
+const PY_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Scan all setvar and if events in a project to collect auto-initializable variables.
+ * Names of story variables a Python condition reads.
+ *
+ * Skips attribute names (`persistent.seen` → neither), words inside string
+ * literals, names starting with `_`, and everything in {@link RESERVED_VAR_NAMES}.
+ * Names that are called, indexed or have attributes read (`f(x)`, `inv["key"]`,
+ * `player.hp`) are skipped too unless `allReads` is set: they aren't plain
+ * values, so they can't safely default to `False`.
+ */
+export function conditionVarNames(condition: string, { allReads = false } = {}): string[] {
+  // Blank out string literals so words inside them aren't mistaken for names.
+  const code = condition.replace(/(["'])(?:\\.|(?!\1)[^\\])*\1/g, '""');
+  const names: string[] = [];
+  for (const m of code.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
+    const name = m[0];
+    const start = m.index ?? 0;
+    const before = code.slice(0, start);
+    const after = code.slice(start + name.length).trimStart();
+    if (/[0-9.]$/.test(before) || before.trimEnd().endsWith('.')) continue; // 1e5, 0xff, obj.attr
+    if (!allReads && /^[.([]/.test(after)) continue;                        // obj.x, f(), x[0]
+    if (name.startsWith('_') || RESERVED_VAR_NAMES.has(name)) continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+type ValueKind = 'bool' | 'number' | 'string' | 'list' | 'dict' | 'none' | 'unknown';
+
+/** Rough Python type of a setvar value such as `True`, `3`, `"Bob"` or `points + 1`. */
+function valueKind(raw: string): ValueKind {
+  const v = raw.trim();
+  if (v === 'True' || v === 'False') return 'bool';
+  if (v === 'None') return 'none';
+  if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(v)) return 'number';
+  if (/^[rRuUbBfF]?(["'])[\s\S]*\1$/.test(v) && !/["']\s*[-+*/%]/.test(v)) return 'string';
+  if (v.startsWith('[')) return 'list';
+  if (v.startsWith('{')) return 'dict';
+  if (/^not\b/.test(v) || /==|!=|<=|>=|<|>|\band\b|\bor\b/.test(v)) return 'bool';
+  if (/[-+*/%]\s*[\d.]/.test(v) || /[\d.]\s*[-+*/%]/.test(v)) return 'number';
+  return 'unknown';
+}
+
+const DEFAULT_FOR_KIND: Record<ValueKind, string> = {
+  bool: 'False', number: '0', string: '""', list: '[]', dict: '{}', none: 'None', unknown: 'None',
+};
+
+/**
+ * Scan all setvar, if and choice-condition events in a project to collect
+ * auto-initializable variables.
+ *
+ * The default is the "empty" value of the variable's type — `False`, `0`,
+ * `""`, `[]` — not the first value it is assigned: a flag set to `True` on one
+ * branch must still start out `False`, and `points = points + 1` can't be its
+ * own default. Names only read by conditions default to `False`.
  * Mirrors _vn_extract_vars from vn_compile.rpy.
  */
 export function extractVars(project: VNProject): VNVariable[] {
-  const keywords = new Set(['True', 'False', 'None', 'and', 'or', 'not', 'is', 'in']);
-  const found = new Map<string, string>();
+  const assigned = new Map<string, string[]>();
+  const read = new Set<string>();
 
   for (const sc of project.scenes) {
     for (const ev of sc.events) {
       if (ev.type === 'setvar' && ev.var_name?.trim()) {
         const name = ev.var_name.trim();
-        if (!found.has(name)) {
-          // Infer type from value
-          const val = ev.var_val ?? 'False';
-          found.set(name, val);
-        }
+        const values = assigned.get(name) ?? [];
+        values.push(ev.var_val ?? 'False');
+        assigned.set(name, values);
       } else if (ev.type === 'if' && ev.condition) {
-        const tokens = ev.condition.match(/\b([a-zA-Z_]\w*)\b/g) ?? [];
-        for (const t of tokens) {
-          if (!keywords.has(t) && !found.has(t)) {
-            found.set(t, 'False');
-          }
+        conditionVarNames(ev.condition).forEach(n => read.add(n));
+      } else if (ev.type === 'choice') {
+        for (const opt of ev.opts ?? []) {
+          if (opt.condition) conditionVarNames(opt.condition).forEach(n => read.add(n));
         }
       }
     }
   }
 
+  const found = new Map<string, string>();
+  for (const [name, values] of assigned) {
+    const kind = values.map(valueKind).find(k => k !== 'unknown') ?? 'unknown';
+    found.set(name, DEFAULT_FOR_KIND[kind]);
+  }
+  for (const name of read) {
+    if (!found.has(name)) found.set(name, 'False');
+  }
+
   return [...found.entries()]
+    .filter(([name]) => PY_IDENT.test(name) && !RESERVED_VAR_NAMES.has(name))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, default_val]) => ({ name, default_val }));
 }
@@ -782,6 +792,10 @@ export function extractVars(project: VNProject): VNVariable[] {
  * Migrate a raw JSON object loaded from disk into a valid VNProject,
  * filling in any missing fields with safe defaults.
  * Mirrors _vn_migrate_project from vn_data.rpy.
+ *
+ * Fields that aren't listed here are carried over untouched, so data saved by
+ * newer features (or fields this function doesn't know about) survives a
+ * load → save round-trip.
  */
 export function migrateProject(raw: Record<string, unknown>, filePath?: string): VNProject {
   const now = Date.now();
@@ -796,7 +810,11 @@ export function migrateProject(raw: Record<string, unknown>, filePath?: string):
 
   const start = (raw.start as string | null) ?? scenes[0]?.id ?? null;
 
+  // Runtime-only paths are never restored from the file contents.
+  const { _rootPath: _ignoredRoot, _filePath: _ignoredFile, ...rest } = raw;
+
   return {
+    ...(rest as Partial<VNProject>),
     id,
     title: (raw.title as string) ?? 'Untitled Project',
     author: (raw.author as string) ?? 'Author',
@@ -833,6 +851,7 @@ export function migrateProject(raw: Record<string, unknown>, filePath?: string):
 
 function migrateScene(raw: Partial<VNScene>): VNScene {
   return {
+    ...raw,
     id: raw.id ?? uid(),
     label: raw.label ?? 'Scene',
     bg: raw.bg ?? null,
@@ -853,6 +872,7 @@ function migrateEvent(raw: Partial<VNEvent>): VNEvent {
 
 function migrateCharacter(raw: Partial<VNCharacter>): VNCharacter {
   return {
+    ...raw,
     id: raw.id ?? uid(),
     name: raw.name ?? 'Character',
     display: raw.display ?? raw.name ?? 'Character',
@@ -888,59 +908,4 @@ function defaultTransTpl(): TransTemplate {
 
 export function uid(len = 8): string {
   return Math.random().toString(36).slice(2, 2 + len).padEnd(len, '0');
-}
-
-// ─── RpyProject → VNProject Converter ────────────────────────────────────────
-// Lets the Legacy Ren'Py viewer load into the full VNEditor UI (read-only).
-
-export function rpyToVnProject(rpy: RpyProject): VNProject {
-  const now = Date.now();
-
-  const labelToId: Record<string, string> = {};
-  for (const node of rpy.nodes) {
-    labelToId[node.label] = node.id;
-  }
-
-  const scenes: VNScene[] = rpy.nodes.map(node => {
-    const events: VNEvent[] = [];
-
-    for (const line of node.content) {
-      if (line.trim()) {
-        events.push({ id: uid(), type: 'narration', text: line });
-      }
-    }
-
-    for (const link of node.links) {
-      const targetId = labelToId[link.target_label] ?? link.target_label;
-      events.push({ id: uid(), type: 'jump', scene_id: targetId, transition: 'dissolve' });
-    }
-
-    return { id: node.id, label: node.label, bg: null, music: null, events };
-  });
-
-  const layout: Record<string, [number, number]> = {};
-  for (const node of rpy.nodes) {
-    layout[node.id] = [node.x || 0, node.y || 0];
-  }
-
-  const folderName =
-    rpy.root_path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'Legacy Project';
-
-  return {
-    id: uid(),
-    title: folderName,
-    author: 'Legacy',
-    created: now,
-    updated: now,
-    cover: null,
-    resolution: [1920, 1080],
-    characters: [],
-    scenes,
-    folders: [],
-    start: scenes[0]?.id ?? null,
-    text_tpls: [defaultTextTpl()],
-    trans_tpls: [defaultTransTpl()],
-    layout,
-    _rootPath: rpy.root_path,
-  };
 }

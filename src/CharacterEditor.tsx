@@ -4,14 +4,15 @@
  * Features: character list, name/color editor, pose/sprite slots,
  *           inline sprite picker, pose rename/delete, dialogue preview.
  */
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { VNProject, VNCharacter } from "./types";
-import { newCharacter, VN_POSES, VN_PALETTE } from "./types";
+import { newCharacter } from "./types";
 import { listAssetFiles } from "./tauriApi";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { ColorPicker } from "./ColorPicker";
 import type { PaletteColor } from "./colorPalettes";
 import { LayeredImageComposer } from "./LayeredImageComposer";
+import { exportedNames } from "./compiler";
 import { useTranslation } from "./translationContext";
 
 interface Props {
@@ -27,7 +28,6 @@ export function CharacterEditor({ project, onProjectChange }: Props) {
   );
   const [pickingPose, setPickingPose] = useState<string | null>(null);
   const [imageFiles, setImageFiles] = useState<string[]>([]);
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [imgSearch, setImgSearch] = useState("");
   const [previewPose, setPreviewPose] = useState<string>("neutral");
   const [previewWidth, setPreviewWidth] = useState(300);
@@ -139,22 +139,6 @@ export function CharacterEditor({ project, onProjectChange }: Props) {
     [imageFiles, imgSearch]
   );
 
-  // ── Stats ────────────────────────────────────────────────────────────────────
-
-  const charStats = useMemo(() => {
-    if (!char) return { lines: 0, scenes: 0 };
-    let lines = 0, sceneSet = new Set<string>();
-    for (const sc of project.scenes) {
-      for (const ev of sc.events) {
-        if (ev.type === "dialogue" && ev.char_id === char.id) {
-          lines++;
-          sceneSet.add(sc.id);
-        }
-      }
-    }
-    return { lines, scenes: sceneSet.size };
-  }, [char, project.scenes]);
-
   // ── Preview sprite URL ────────────────────────────────────────────────────────
 
   const previewSpriteUrl = useMemo(() => {
@@ -264,7 +248,7 @@ export function CharacterEditor({ project, onProjectChange }: Props) {
                     </div>
                     <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ fontSize: 11, color: "var(--dim)" }}>
-                        Ren'Py variable: <code style={{ fontFamily: "var(--mono)", color: "var(--teal)", background: "rgba(0,212,200,0.1)", padding: "2px 6px", borderRadius: 4 }}>vnc_{char.name}</code>
+                        Ren'Py variable: <code style={{ fontFamily: "var(--mono)", color: "var(--teal)", background: "color-mix(in srgb, var(--teal) 10%, transparent)", padding: "2px 6px", borderRadius: 4 }}>{exportedNames(project).character(char.id)}</code>
                       </div>
                       <button className="btn btn-ghost" style={{ fontSize: 12, color: "var(--err)", padding: "4px 8px" }}
                         onClick={() => deleteChar(char.id)}>
@@ -410,7 +394,6 @@ export function CharacterEditor({ project, onProjectChange }: Props) {
                           onPick={() => { setPickingPose(pose); setImgSearch(""); }}
                           onClear={() => clearSprite(pose)}
                           onRename={(n) => renamePose(pose, n)}
-                          onDelete={() => deletePose(pose)}
                           onSetPreview={() => setPreviewPose(pose)}
                         />
                       );
@@ -604,11 +587,10 @@ interface SpriteSlotProps {
   onPick: () => void;
   onClear: () => void;
   onRename: (n: string) => void;
-  onDelete: () => void;
   onSetPreview: () => void;
 }
 
-function SpriteSlot({ pose, spriteUrl, spritePath, charColor, isPreview, onPick, onClear, onRename, onDelete, onSetPreview }: SpriteSlotProps) {
+function SpriteSlot({ pose, spriteUrl, spritePath, charColor, isPreview, onPick, onClear, onRename, onSetPreview }: SpriteSlotProps) {
   const [imgError, setImgError] = useState(false);
   useEffect(() => setImgError(false), [spriteUrl]);
 

@@ -28,6 +28,21 @@ describe("rpyImporter – character definitions", () => {
     expect(project.characters[0].display).toBe("Eileen");
   });
 
+  it("parses names wrapped for translation, like the_question's Character(_(\"Sylvie\"))", () => {
+    const { project } = imp(`define s = Character(_("Sylvie"), color="#c8ffc8")\ndefine m = Character( _( 'Me' ) )`);
+    expect(project.characters.map(c => [c.name, c.display, c.color])).toEqual([
+      ["s", "Sylvie", "#c8ffc8"],
+      ["m", "Me", "#c8d0ff"],
+    ]);
+  });
+
+  it("attributes dialogue to characters defined with _()", () => {
+    const { project } = imp(`define s = Character(_("Sylvie"))\nlabel start:\n    s "Hi!"`);
+    const ev = project.scenes.flatMap(sc => sc.events).find(e => e.text === "Hi!");
+    expect(ev?.type).toBe("dialogue");
+    expect(ev?.char_id).toBe(project.characters[0].id);
+  });
+
   it("captures the variable name as VNCharacter.name", () => {
     const { project } = imp(`define mc = Character("Hero")`);
     expect(project.characters[0].name).toBe("mc");
@@ -165,6 +180,67 @@ label prologue:
     const sc = project.scenes.find((s) => s.label === "prologue")!;
     const choiceEv = sc.events.find((e) => e.type === "choice")!;
     expect(choiceEv.prompt).toBe("What will you do?");
+  });
+});
+
+describe("rpyImporter – string literals", () => {
+  it("reads escaped quotes in dialogue, narration and choices", () => {
+    const script = String.raw`
+define s = Character("Sylvie")
+label start:
+    s "So where does the \"visual\" part come in?"
+    "She said \"hi\"."
+    menu:
+        "Say \"yes\"":
+            pass
+`.trim();
+    const [start] = imp(script).project.scenes;
+    expect(start.events[0].text).toBe('So where does the "visual" part come in?');
+    expect(start.events[1].text).toBe('She said "hi".');
+    expect(start.events.find((e) => e.type === "choice")!.opts![0].text).toBe('Say "yes"');
+  });
+
+  it("keeps who says a menu's prompt", () => {
+    const script = String.raw`
+define s = Character("Sylvie")
+label start:
+    menu:
+        s "Sure, but what's a \"visual novel?\""
+        "It's a videogame.":
+            pass
+`.trim();
+    const { project } = imp(script);
+    const choice = project.scenes[0].events.find((e) => e.type === "choice")!;
+    expect(choice.prompt).toBe('Sure, but what\'s a "visual novel?"');
+    expect(choice.char_id).toBe(project.characters[0].id);
+  });
+
+  it("imports a choice's condition", () => {
+    const script = `
+label start:
+    menu:
+        "Use the map" if has_map:  # only with the map
+            pass
+        "Walk on":
+            pass
+`.trim();
+    const choice = imp(script).project.scenes[0].events.find((e) => e.type === "choice")!;
+    expect(choice.opts!.map((o) => [o.text, o.condition])).toEqual([["Use the map", "has_map"], ["Walk on", undefined]]);
+  });
+});
+
+describe("rpyImporter – Ren'Py names", () => {
+  it("remembers the game's own labels and character variables", () => {
+    const script = `
+define s = Character("Sylvie")
+label start:
+    s "Hi."
+label vns_scene_ab12:
+    "An earlier VNVMaker export."
+`.trim();
+    const { project } = imp(script);
+    expect(project.characters[0].renpy_name).toBe("s");
+    expect(project.scenes.map((s) => s.renpy_label)).toEqual(["start", undefined]);
   });
 });
 

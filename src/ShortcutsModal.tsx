@@ -2,7 +2,6 @@
  * ShortcutsModal.tsx — Keyboard shortcuts reference overlay.
  * Triggered by the ? button in VNEditor's top bar (or Ctrl+/).
  */
-import React from "react";
 import { useTranslation } from "./translationContext";
 
 interface ShortcutEntry { keys: string[]; labelKey: string; contextKey: string; }

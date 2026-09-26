@@ -1,100 +1,39 @@
 /**
  * StoryCanvas.tsx — Visual node graph viewer + folder support.
- * Renders both VNProject (new) and RpyProject (legacy).
+ * Renders a VNProject's scenes, folders and sticky notes.
  */
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { RpyProject, VNProject, NodeKind, LinkType, VNStickyNote } from './types';
+import type { VNProject, VNStickyNote } from './types';
 import { newScene } from './types';
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { GraphInspector } from "./GraphInspector";
 import { Minimap } from "./Minimap";
-import { CanvasNavControls } from "./CanvasNavControls";
 import { StickyNote } from "./StickyNote";
-import { useThumbnail } from "./useThumbnail";
-import { computeSceneBgs } from "./sceneGraphUtils";
-import { MainMenuThumbnail } from "./MainMenuEditor";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { NodeLayer } from "./NodeLayer";
-import { ConnectionLayer, CanvasLink, VNLinkKind } from "./ConnectionLayer";
+import { ConnectionLayer } from "./ConnectionLayer";
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { useCanvasStore, useShallow } from "./store/canvasStore";
 import { useTranslation } from './translationContext';
-import { useCanvasData } from "./hooks/useCanvasData";
+import { useCanvasData, MAIN_MENU_ID } from "./hooks/useCanvasData";
 import { useAutoLayout } from "./hooks/useAutoLayout";
+import { ConnectionMenu, ChoiceBuilderMenu, EdgeLegend, HideUiButton, RecentScenesHud, type ChoiceBuilderState, type LegendItem } from "./CanvasOverlays";
 
-export const MAIN_MENU_ID = "main_menu";
-
-
-// ── Fuzzy BG thumbnail resolver ───────────────────────────────────────────────
-const EXTS = [".png", ".jpg", ".jpeg", ".webp"];
-function bgCandidates(rootPath: string, name: string): string[] {
-  if (!name || !rootPath) return [];
-  const norm = name.replace(/\s+/g, "_");
-  const urls: string[] = [];
-  for (const base of [name, norm]) {
-    if (/\.[a-zA-Z]{2,5}$/.test(base)) {
-      // Already has extension — try direct, game/images/, and images/ prefixes
-      urls.push(convertFileSrc(`${rootPath}/${base}`));
-      if (!base.startsWith('game/')) urls.push(convertFileSrc(`${rootPath}/game/images/${base}`));
-      if (!base.startsWith('images/')) urls.push(convertFileSrc(`${rootPath}/images/${base}`));
-    } else {
-      // No extension — try all combos of prefix + extension
-      for (const ext of EXTS) {
-        urls.push(convertFileSrc(`${rootPath}/game/images/${base}${ext}`));
-        urls.push(convertFileSrc(`${rootPath}/images/${base}${ext}`));
-        urls.push(convertFileSrc(`${rootPath}/${base}${ext}`));
-      }
-    }
-  }
-  return [...new Set(urls)];
-}
-
-function NodeBgThumb({ bgName, rootPath }: { bgName: string; rootPath: string }) {
-  const list = React.useMemo(() => bgCandidates(rootPath, bgName), [rootPath, bgName]);
-  const [idx, setIdx] = React.useState(0);
-  const [dead, setDead] = React.useState(false);
-  React.useEffect(() => { setIdx(0); setDead(false); }, [list.join("|")]); // eslint-disable-line
-  if (dead || list.length === 0) return null;
-  return (
-    <img
-      src={list[idx]}
-      alt=""
-      onError={() => { if (idx + 1 < list.length) setIdx(i => i + 1); else setDead(true); }}
-      style={{
-        position: 'absolute', inset: 0, width: '100%', height: '100%',
-        objectFit: 'cover', opacity: 0.55, borderRadius: 8,
-        pointerEvents: 'none',
-      }}
-    />
-  );
-}
 
 
 // ─── Colors & Constants ───────────────────────────────────────────────────────
 
-const NODE_COLORS: Record<NodeKind, string> = {
-  label: '#4b6cf7', menu: '#f472b6',
-  init: '#facc15', screen: '#4b6cf7', unknown: '#9ca3af'
-};
-
 const ZOOM_MIN = 0.1, ZOOM_MAX = 5.0, LOD_THRESHOLD = 0.3;
 const TILE_SIZE = 100;
-const FOLDER_COLOR = '#d4961e'; // Amber for folders
-
-// Ending type cycle order — used by the badge popover
-const ENDING_CYCLE: Array<'good' | 'bad' | 'odd' | 'stuck'> = ['good', 'bad', 'odd', 'stuck'];
 
 
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 interface Props {
-  project: RpyProject | VNProject;
-  /** Only available for VNProject */
+  project: VNProject;
   onProjectChange?: (p: VNProject) => void;
   rootPath?: string;
   onNodePositionsChange: (positions: Record<string, [number, number]>) => void;
-  initialPositions?: Record<string, [number, number]>;
   onEditScene?: (id: string) => void;
   onGoScene?: (id: string) => void;
   /** Set by QuickOpen to fly the canvas to a specific scene */
@@ -105,33 +44,18 @@ interface Props {
   onPlayScene?: (id: string) => void;
 }
 
-// ─── Unified Node/Link Types ─────────────────────────────────────────────────
-
-interface CanvasNode {
-  id: string; label: string; kind: NodeKind | 'folder' | 'vn_scene';
-  x: number; y: number; w: number; h: number;
-  contentLines: string[]; bgImage?: string; isStart?: boolean; isEnd?: boolean;
-  /** Structural role badges from in/out degree analysis */
-  inDegree?: number; outDegree?: number; isUnreachable?: boolean;
-  /** Cannot be deleted or renamed — reserved system nodes like main_menu */
-  isLocked?: boolean;
-  /** Ending classification for terminal scenes */
-  endingType?: 'good' | 'bad' | 'odd' | 'stuck';
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function StoryCanvas({ project, onProjectChange, rootPath, onNodePositionsChange, initialPositions = {}, onEditScene, onGoScene, flyToSceneId, onFlyToComplete, onEnterMainMenu }: Props) {
+export function StoryCanvas({ project, onProjectChange, rootPath, onNodePositionsChange, onEditScene, onGoScene, flyToSceneId, onFlyToComplete, onEnterMainMenu }: Props) {
   // State from global store
   const {
-    charFilter, pan, setPan, zoom, setZoom,
+    pan, setPan, zoom, setZoom,
     positions, setPositions,
     selection, setSelection,
     folderStack, setFolderStack,
-    search, setSearch,
     renamingId, setRenamingId,
     renameVal, setRenameVal,
-    tool, setTool,
+    tool,
     recentSceneIds, setRecentSceneIds,
     showRecent, setShowRecent,
     ctxMenu, setCtxMenu,
@@ -139,23 +63,20 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     inspectorSide, setInspectorSide,
     displayedSide, setDisplayedSide,
     panelExiting, setPanelExiting,
-    isConnectionMode, setIsConnectionMode,
+    setIsConnectionMode,
     armedConnectionNode, setArmedConnectionNode,
     connMenu, setConnMenu,
-    hoverTargetId, setHoverTargetId,
-    compositorKick, setCompositorKick,
-    endingMenuNodeId, setEndingMenuNodeId,
+    setHoverTargetId,
     uiVisible, setUiVisible,
     triggerFitAll,
   } = useCanvasStore(useShallow((s) => ({
-    charFilter: s.charFilter, pan: s.pan, setPan: s.setPan, zoom: s.zoom, setZoom: s.setZoom,
+    pan: s.pan, setPan: s.setPan, zoom: s.zoom, setZoom: s.setZoom,
     positions: s.positions, setPositions: s.setPositions,
     selection: s.selection, setSelection: s.setSelection,
     folderStack: s.folderStack, setFolderStack: s.setFolderStack,
-    search: s.search, setSearch: s.setSearch,
     renamingId: s.renamingId, setRenamingId: s.setRenamingId,
     renameVal: s.renameVal, setRenameVal: s.setRenameVal,
-    tool: s.tool, setTool: s.setTool,
+    tool: s.tool,
     recentSceneIds: s.recentSceneIds, setRecentSceneIds: s.setRecentSceneIds,
     showRecent: s.showRecent, setShowRecent: s.setShowRecent,
     ctxMenu: s.ctxMenu, setCtxMenu: s.setCtxMenu,
@@ -163,12 +84,10 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     inspectorSide: s.inspectorSide, setInspectorSide: s.setInspectorSide,
     displayedSide: s.displayedSide, setDisplayedSide: s.setDisplayedSide,
     panelExiting: s.panelExiting, setPanelExiting: s.setPanelExiting,
-    isConnectionMode: s.isConnectionMode, setIsConnectionMode: s.setIsConnectionMode,
+    setIsConnectionMode: s.setIsConnectionMode,
     armedConnectionNode: s.armedConnectionNode, setArmedConnectionNode: s.setArmedConnectionNode,
     connMenu: s.connMenu, setConnMenu: s.setConnMenu,
-    hoverTargetId: s.hoverTargetId, setHoverTargetId: s.setHoverTargetId,
-    compositorKick: s.compositorKick, setCompositorKick: s.setCompositorKick,
-    endingMenuNodeId: s.endingMenuNodeId, setEndingMenuNodeId: s.setEndingMenuNodeId,
+    setHoverTargetId: s.setHoverTargetId,
     uiVisible: s.uiVisible, setUiVisible: s.setUiVisible,
     triggerFitAll: s.triggerFitAll,
   })));
@@ -197,7 +116,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
   const activeSelection = selection.size > 0 ? selection : prevSelectionRef.current;
 
-  // Removed redundant initialPositions effect — displayNodes correctly falls back to p.layout
   const inspectorDragRef = useRef<{ startX: number; startY: number; startPX: number; startPY: number } | null>(null);
   const panelTransitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -256,8 +174,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   useEffect(() => { projectRef.current = project; }, [project]);
   const onProjectChangeRef = useRef(onProjectChange);
   useEffect(() => { onProjectChangeRef.current = onProjectChange; }, [onProjectChange]);
-  const isVNRef = useRef('scenes' in project);
-  useEffect(() => { isVNRef.current = 'scenes' in project; }, [project]);
   const setIsConnectionModeRef = useRef(setIsConnectionMode);
   useEffect(() => { setIsConnectionModeRef.current = setIsConnectionMode; }, [setIsConnectionMode]);
 
@@ -315,15 +231,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   
   const [suppressAnim, setSuppressAnim] = useState(true);
   
-  const [choiceBuilder, setChoiceBuilder] = useState<{
-    sourceNodeId: string;
-    screenX: number;
-    screenY: number;
-    canvasX: number;
-    canvasY: number;
-    prompt: string;
-    options: { id: string; text: string; sceneId: string | null }[];
-  } | null>(null);
+  const [choiceBuilder, setChoiceBuilder] = useState<ChoiceBuilderState | null>(null);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -338,7 +246,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       if (e.shiftKey && e.key.toLowerCase() === 'x') {
         e.preventDefault();
         setIsConnectionMode(prev => !prev);
-        setCompositorKick(prev => prev + 1);
       }
 
       if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'h') {
@@ -348,11 +255,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [setIsConnectionMode, setCompositorKick, setUiVisible, uiVisible]);
+  }, [setIsConnectionMode, setUiVisible, uiVisible]);
 
 
   // ─── Unified Data Model (via hook) ──────────────────────────────────────────
-  const { nodes, links, displayNodes: rawDisplayNodes, isVN } = useCanvasData({ project, rootPath });
+  const { links, displayNodes: rawDisplayNodes } = useCanvasData({ project, rootPath });
 
   // Merge external position overrides into nodes
   const displayNodes = useMemo(() => {
@@ -502,7 +409,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         }
       }
 
-      if (!onProjectChangeRef.current || !isVNRef.current) return;
+      if (!onProjectChangeRef.current) return;
 
       const menuX = me.clientX - rect.left;
       const menuY = me.clientY - rect.top;
@@ -638,7 +545,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       if (isDraggingSticky.current !== note.id) return;
       const dx = (me.clientX - stickyDragStart.current.px) / zoomRef.current;
       const dy = (me.clientY - stickyDragStart.current.py) / zoomRef.current;
-      if (!onProjectChangeRef.current || !isVNRef.current) return;
+      if (!onProjectChangeRef.current) return;
       const p = projectRef.current as any;
       onProjectChangeRef.current({
         ...p,
@@ -689,7 +596,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         const cx = (e.clientX - rect.left - pan.x) / zoom;
         const cy = (e.clientY - rect.top - pan.y) / zoom;
         
-        const p = project as VNProject;
+        const p = project;
         let sc;
         if (placingNodeType === 'scene') {
           sc = newScene(`Scene ${p.scenes.length + 1}`);
@@ -904,15 +811,15 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     if (kind === 'folder') {
       setFolderStack([...folderStack, id]);
       setSelection(new Set());
-    } else if (isVN) {
+    } else {
       setRenamingId(id);
       setRenameVal(label);
     }
   };
 
   const finishRename = () => {
-    if (!renamingId || !onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!renamingId || !onProjectChange) return;
+    const p = project;
     const updated = {
       ...p,
       scenes: p.scenes.map(s => s.id === renamingId ? { ...s, label: renameVal || s.label } : s),
@@ -928,8 +835,8 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   const handleAddScreen = () => setPlacingNodeType('screen');
 
   const handleAddFolder = () => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     const cx = Math.max(0, -pan.x / zoom) + 100;
     const cy = Math.max(0, -pan.y / zoom) + 100;
     const fldId = Math.random().toString(36).slice(2, 10);
@@ -941,11 +848,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   };
 
   const handleDeleteSelected = () => {
-    if (!onProjectChange || !isVN || selection.size === 0) return;
+    if (!onProjectChange || selection.size === 0) return;
     // Main menu node is locked — exclude it from deletion silently
     const deletable = new Set([...selection].filter(id => id !== MAIN_MENU_ID));
     if (deletable.size === 0) return;
-    const p = project as VNProject;
+    const p = project;
     const updatedScenes = p.scenes.filter(s => !deletable.has(s.id));
     const updatedFolders = p.folders.filter(f => !deletable.has(f.id)).map(f => ({
       ...f,
@@ -957,16 +864,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     onProjectChange({ ...p, scenes: updatedScenes, folders: updatedFolders, layout: newLayout });
     setSelection(new Set());
     setPositions(newLayout);
-  };
-
-  const handleSetStart = () => {
-    if (!onProjectChange || !isVN || selection.size !== 1) return;
-    const p = project as VNProject;
-    const id = Array.from(selection)[0];
-    const node = displayNodes.find(n => n.id === id);
-    if (node?.kind === 'vn_scene') {
-      onProjectChange({ ...p, start: id });
-    }
   };
 
   // ─── Fit to Screen ────────────────────────────────────────────────────────────
@@ -997,12 +894,12 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
   // Reset fit flag when project changes — in useEffect, never during render
   useEffect(() => {
-    const pid = isVN ? (project as VNProject).id : '';
+    const pid = project.id;
     if (pid && pid !== lastProjectIdRef.current) {
       lastProjectIdRef.current = pid;
       hasInitializedFit.current = false;
     }
-  }, [project, isVN]);
+  }, [project]);
 
   // Stable ref so the auto-fit effect never re-arms from handleFitToScreen identity changes
   const handleFitToScreenRef = useRef(handleFitToScreen);
@@ -1017,9 +914,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       setUiVisible(false);
 
       // Select main menu by default instead of being empty
-      if (isVNRef.current) {
-        setSelection(new Set([MAIN_MENU_ID]));
-      }
+      setSelection(new Set([MAIN_MENU_ID]));
 
       // Clear suppression after a tiny delay so the initial hidden state applies instantly
       setTimeout(() => setSuppressAnim(false), 50);
@@ -1033,10 +928,9 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   }, [uiVisible]);
 
   // ── Sync Layout and Global Fit All Trigger ─────────────
-  const prevLayoutRef = useRef(isVN ? (project as VNProject).layout : {});
+  const prevLayoutRef = useRef(project.layout);
   useEffect(() => {
-    if (!isVN) return;
-    const currLayout = (project as VNProject).layout;
+    const currLayout = project.layout;
     const prevLayout = prevLayoutRef.current;
     if (currLayout === prevLayout) return;
 
@@ -1045,7 +939,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     setPositions({});
     
     prevLayoutRef.current = currLayout;
-  }, [project, isVN, setPositions]);
+  }, [project, setPositions]);
 
   // Execute Fit All when requested globally (e.g. from Undo/Redo)
   const prevTriggerFitAllRef = useRef(triggerFitAll);
@@ -1059,16 +953,6 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       return () => clearTimeout(timer);
     }
   }, [triggerFitAll, displayNodes, handleFitToScreen]);
-
-  const handleGoToStart = useCallback(() => {
-    if (!isVN || !canvasSize.width || !canvasSize.height) return;
-    const startNode = displayNodes.find((n) => n.isStart);
-    if (!startNode) return;
-    setPan({
-      x: canvasSize.width  / 2 - (startNode.x + startNode.w / 2) * zoom,
-      y: canvasSize.height / 2 - (startNode.y + startNode.h / 2) * zoom,
-    });
-  }, [displayNodes, canvasSize, isVN, zoom]);
 
   // ── Fly-to-scene (triggered by QuickOpen Ctrl+P) ──────────────────────────
   // Animates pan+zoom so the target node is centred and at a comfortable zoom.
@@ -1114,11 +998,11 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   }, [flyToSceneId]);
 
   // ─── Sticky Note Handlers ────────────────────────────────────────────────────
-  const stickyNotes: VNStickyNote[] = isVN ? ((project as VNProject).sticky_notes ?? []) : [];
+  const stickyNotes: VNStickyNote[] = project.sticky_notes ?? [];
 
   const addStickyNote = () => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     const id = Math.random().toString(36).slice(2, 10);
     const note: VNStickyNote = {
       id, text: '', color: 'yellow',
@@ -1130,299 +1014,18 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   };
 
   const updateStickyNote = (id: string, data: Partial<VNStickyNote>) => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     onProjectChange({ ...p, sticky_notes: stickyNotes.map((n) => n.id === id ? { ...n, ...data } : n) });
   };
 
   const deleteStickyNote = (id: string) => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
+    if (!onProjectChange) return;
+    const p = project;
     onProjectChange({ ...p, sticky_notes: stickyNotes.filter((n) => n.id !== id) });
   };
 
-  const guessBestLayout = (p: VNProject): 'vn' | 'sugiyama' | 'rpg' => {
-    if (!p.scenes || p.scenes.length === 0) return 'sugiyama';
-    let totalChoices = 0;
-    let maxOutDegree = 0;
-    const inDeg: Record<string, number> = {};
-    p.scenes.forEach(s => inDeg[s.id] = 0);
-    
-    p.scenes.forEach(s => {
-      let outCount = 0;
-      s.events.forEach(ev => {
-        if (ev.type === 'jump' && ev.scene_id) {
-          outCount++;
-          inDeg[ev.scene_id] = (inDeg[ev.scene_id] || 0) + 1;
-        } else if (ev.type === 'choice') {
-          ev.opts?.forEach(opt => {
-            if (opt.scene) {
-              totalChoices++;
-              outCount++;
-              inDeg[opt.scene] = (inDeg[opt.scene] || 0) + 1;
-            }
-          });
-        }
-      });
-      if (outCount > maxOutDegree) maxOutDegree = outCount;
-    });
-
-    const branchingRatio = totalChoices / Math.max(1, p.scenes.length);
-    const convergenceCount = Object.values(inDeg).filter(d => d > 1).length;
-
-    if (maxOutDegree >= 4 && branchingRatio > 1.0) return 'rpg';
-    
-    // Default to Sugiyama as the standard layout
-    return 'sugiyama';
-  };
-
-  const handleAutoLayout = (mode: 'vn' | 'sugiyama' | 'rpg' | 'auto' = 'auto') => {
-    if (!onProjectChange || !isVN) return;
-    const p = project as VNProject;
-    const actualMode = mode === 'auto' ? guessBestLayout(p) : mode;
-    const newLayout = { ...p.layout };
-    
-    const adj: Record<string, string[]> = {};
-    const inDegrees: Record<string, number> = {};
-    const childOrder: Record<string, number> = {};
-    const childScore: Record<string, number> = {};
-
-    p.scenes.forEach(s => { adj[s.id] = []; inDegrees[s.id] = 0; });
-    
-    p.scenes.forEach(s => {
-      let orderCounter = 0;
-      const addTarget = (targetId: string, score: number) => {
-        if (!targetId) return;
-        adj[s.id].push(targetId);
-        inDegrees[targetId] = (inDegrees[targetId] || 0) + 1;
-        if (childOrder[targetId] === undefined) childOrder[targetId] = orderCounter++;
-        if (childScore[targetId] === undefined || score < childScore[targetId]) {
-          childScore[targetId] = score;
-        }
-      };
-
-      s.events.forEach(ev => {
-        if (ev.type === 'jump' && ev.scene_id) {
-          addTarget(ev.scene_id, 2);
-        } else if (ev.type === 'choice') {
-          ev.opts?.forEach(opt => {
-            const score = opt.is_correct ? 1 : (opt.is_incorrect ? 3 : 2);
-            if (opt.scene) addTarget(opt.scene, score);
-          });
-        } else if (ev.type === 'if') {
-          if (ev.scene_true) addTarget(ev.scene_true, 1);
-          if (ev.scene_false) addTarget(ev.scene_false, 3);
-        }
-      });
-    });
-
-    p.scenes.forEach(s => {
-      const et = s.ending_type;
-      if (et === 'good' || et === 'true') childScore[s.id] = 1;
-      else if (et === 'bad' || et === 'stuck') childScore[s.id] = 3;
-    });
-    
-    const roots = p.scenes.filter(s => inDegrees[s.id] === 0);
-    if (roots.length === 0 && p.scenes.length > 0) roots.push(p.scenes[0]);
-
-    const sceneIndex = Object.fromEntries(p.scenes.map(s => [s.id, s]));
-
-    if (actualMode === 'vn') {
-      const spacingX = 350;
-      const spacingY = 180;
-      const visited = new Set<string>();
-      
-      const layoutNode = (scId: string, level: number, yOffset: number): number => {
-        if (visited.has(scId)) return yOffset;
-        visited.add(scId);
-        newLayout[scId] = [100 + level * spacingX, yOffset];
-        const sc = sceneIndex[scId];
-        if (!sc) return yOffset;
-        
-        let nextY = yOffset;
-        sc.events.forEach(ev => {
-          if (ev.type === 'jump' && ev.scene_id) {
-            nextY = layoutNode(ev.scene_id, level + 1, nextY);
-          } else if (ev.type === 'choice') {
-            ev.opts?.forEach(opt => {
-              if (opt.scene) nextY = layoutNode(opt.scene, level + 1, nextY);
-            });
-          }
-        });
-        return Math.max(yOffset + spacingY, nextY);
-      };
-      
-      let rootY = 100;
-      roots.forEach(r => { rootY = layoutNode(r.id, 0, rootY); });
-      p.scenes.forEach(s => { if (!visited.has(s.id)) rootY = layoutNode(s.id, 0, rootY); });
-
-    } else if (actualMode === 'sugiyama') {
-      const maxDepth: Record<string, number> = {};
-      const isBackEdge = new Set<string>();
-      const state: Record<string, 'visiting' | 'visited'> = {};
-      
-      // DFS cycle detection to prevent infinite depth loops
-      const detectCycleDfs = (u: string) => {
-        state[u] = 'visiting';
-        (adj[u] || []).forEach(v => {
-          if (state[v] === 'visiting') {
-            isBackEdge.add(`${u}->${v}`);
-          } else if (state[v] !== 'visited') {
-            detectCycleDfs(v);
-          }
-        });
-        state[u] = 'visited';
-      };
-      
-      p.scenes.forEach(s => {
-        if (state[s.id] !== 'visited') detectCycleDfs(s.id);
-      });
-      
-      // Calculate in-degrees ignoring back-edges to form a clean DAG
-      const dagInDegree: Record<string, number> = {};
-      p.scenes.forEach(s => dagInDegree[s.id] = 0);
-      p.scenes.forEach(u => {
-        (adj[u.id] || []).forEach(v => {
-          if (!isBackEdge.has(`${u.id}->${v}`)) {
-            dagInDegree[v]++;
-          }
-        });
-      });
-      
-      p.scenes.forEach(s => maxDepth[s.id] = 0);
-      const longestPathParent: Record<string, string> = {};
-      const q: string[] = [];
-      p.scenes.forEach(s => {
-        if (dagInDegree[s.id] === 0) q.push(s.id);
-      });
-      
-      // Calculate max depth for layered layout safely
-      while (q.length > 0) {
-        const u = q.shift()!;
-        (adj[u] || []).forEach(v => {
-          if (isBackEdge.has(`${u}->${v}`)) return;
-          
-          const depthIncrement = 1;
-          
-          if (maxDepth[u] + depthIncrement > maxDepth[v]) {
-            maxDepth[v] = maxDepth[u] + depthIncrement;
-            longestPathParent[v] = u;
-          }
-          dagInDegree[v]--;
-          if (dagInDegree[v] === 0) {
-            q.push(v);
-          }
-        });
-      }
-      
-      const layers: string[][] = [];
-      Object.entries(maxDepth).forEach(([id, depth]) => {
-        if (!layers[depth]) layers[depth] = [];
-        layers[depth].push(id);
-      });
-      p.scenes.forEach(s => {
-        if (maxDepth[s.id] === undefined) {
-          if (!layers[0]) layers[0] = [];
-          layers[0].push(s.id);
-        }
-      });
-      
-      // Identify the Main Trunk
-      let deepestNode = p.scenes[0]?.id;
-      let maxD = -1;
-      Object.entries(maxDepth).forEach(([id, d]) => {
-        if (d > maxD) {
-          maxD = d;
-          deepestNode = id;
-        }
-      });
-      const isTrunk = new Set<string>();
-      let curr: string | undefined = deepestNode;
-      while (curr) {
-        isTrunk.add(curr);
-        curr = longestPathParent[curr];
-      }
-      
-      const spacingX = 400;
-      const spacingY = 250;
-      
-      layers.forEach((layerNodes, depth) => {
-        // Perfectly center all layers vertically around Y=1000
-        const totalHeight = layerNodes.length * spacingY;
-        const startY = 1000 - (totalHeight / 2) + (spacingY / 2);
-        layerNodes.forEach((id, i) => {
-          newLayout[id] = [100 + depth * spacingX, startY + i * spacingY];
-        });
-      });
-
-    } else if (actualMode === 'rpg') {
-      const spacingX = 350;
-      const spacingY = 250;
-      const visited = new Set<string>();
-      
-      const layoutNode = (scId: string, xOffset: number, level: number): number => {
-        if (visited.has(scId)) return xOffset;
-        visited.add(scId);
-        newLayout[scId] = [xOffset, 100 + level * spacingY];
-        
-        let nextX = xOffset;
-        const children = adj[scId] || [];
-        children.forEach((childId, idx) => {
-          nextX = layoutNode(childId, nextX + (idx > 0 ? spacingX : 0), level + 1);
-        });
-        return Math.max(xOffset, nextX);
-      };
-      
-      let rootX = 100;
-      roots.forEach(r => { rootX = layoutNode(r.id, rootX, 0) + spacingX; });
-      p.scenes.forEach(s => { if (!visited.has(s.id)) rootX = layoutNode(s.id, rootX, 0) + spacingX; });
-    }
-
-    let maxLayoutY = 100;
-    Object.values(newLayout).forEach(pos => { if (pos[1] > maxLayoutY) maxLayoutY = pos[1]; });
-
-    let folderX = 100;
-    let folderY = maxLayoutY + 300;
-    p.folders.forEach(f => {
-      newLayout[f.id] = [folderX, folderY];
-      folderX += 400;
-    });
-    
-    if (p.start && newLayout[p.start]) {
-      if (actualMode === 'rpg') {
-        newLayout[MAIN_MENU_ID] = [newLayout[p.start][0], newLayout[p.start][1] - 250];
-      } else {
-        const spacingX = actualMode === 'sugiyama' ? 400 : 350;
-        newLayout[MAIN_MENU_ID] = [newLayout[p.start][0] - spacingX, newLayout[p.start][1]];
-      }
-    }
-    
-    onProjectChange({ ...p, layout: newLayout });
-    
-    // Fit to screen synchronously using newLayout to prevent stale closure bugs
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    displayNodes.forEach((n) => {
-      const nx = newLayout[n.id]?.[0] ?? n.x;
-      const ny = newLayout[n.id]?.[1] ?? n.y;
-      minX = Math.min(minX, nx); minY = Math.min(minY, ny);
-      maxX = Math.max(maxX, nx + n.w); maxY = Math.max(maxY, ny + n.h);
-    });
-    if (minX !== Infinity && canvasSize.width && canvasSize.height) {
-      const cw = maxX - minX || 1;
-      const ch = maxY - minY || 1;
-      const pad = 80;
-      const newZoom = Math.min(
-        Math.min(3, (canvasSize.width - pad * 2) / cw),
-        Math.min(3, (canvasSize.height - pad * 2) / ch)
-      );
-      setPan({
-        x: (canvasSize.width  - cw * newZoom) / 2 - minX * newZoom,
-        y: (canvasSize.height - ch * newZoom) / 2 - minY * newZoom,
-      });
-      setZoom(newZoom);
-    }
-    return actualMode;
-  };
+  const { handleAutoLayout } = useAutoLayout({ project, onProjectChange, displayNodes, canvasSize });
 
   // ─── Rendering Helpers ──────────────────────────────────────────────────────
 
@@ -1449,7 +1052,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
   // Legend items — used in the minimap container below
   const presentTypes = new Set(links.map(l => l.vnType));
-  const ALL_LEGEND_ITEMS: { type: string; label: string; stroke: string; dash?: string }[] = [
+  const ALL_LEGEND_ITEMS: LegendItem[] = [
     { type: 'jump',      label: t('canvas.edges.jump'), stroke: '#00d4c8' },
     { type: 'choice',    label: t('canvas.edges.choice'),    stroke: '#f472b6' },
     { type: 'good_path', label: t('canvas.edges.good_path'),        stroke: '#4ade80' },
@@ -1472,7 +1075,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   const inspPosX = inspectorPos.x < 0 ? inspDefaultX : inspectorPos.x;
   const inspPosY = inspectorPos.y < 0 ? inspDefaultY : inspectorPos.y;
 
-  const floatingInspector = isVN && activeSelection.size > 0 ? (
+  const floatingInspector = activeSelection.size > 0 ? (
     <div
       key="floating-inspector"
       onPointerDown={e => e.stopPropagation()}
@@ -1522,7 +1125,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       {/* Content */}
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <GraphInspector
-          project={project as VNProject}
+          project={project}
           rootPath={rootPath || ""}
           selection={activeSelection}
           onEditScene={onEditScene}
@@ -1530,7 +1133,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           onDeleteSelected={handleDeleteSelected}
           onRenameNode={(id, label) => {
             if (!onProjectChange) return;
-            const p = project as VNProject;
+            const p = project;
             onProjectChange({
               ...p,
               scenes: p.scenes.map(s => s.id === id ? { ...s, label } : s),
@@ -1539,7 +1142,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           }}
           onSetStart={(id) => {
             if (!onProjectChange) return;
-            const p = project as VNProject;
+            const p = project;
             onProjectChange({ ...p, start: id });
           }}
           onEnterMainMenu={onEnterMainMenu}
@@ -1559,13 +1162,10 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
       <CanvasToolbar 
-        canvasRef={canvasRef} displayNodes={displayNodes} isVN={isVN} project={project}
+        canvasRef={canvasRef} displayNodes={displayNodes} project={project}
         handleFitToScreen={handleFitToScreen} handleAddScene={handleAddScene}
         handleAddScreen={handleAddScreen} handleAddFolder={handleAddFolder}
         addStickyNote={addStickyNote} handleAutoLayout={handleAutoLayout}
-        onEditScene={onEditScene} pushRecentScene={pushRecentScene}
-        handleNodeDoubleClick={handleNodeDoubleClick} handleDeleteSelected={handleDeleteSelected}
-        handleSetStart={handleSetStart} onGoScene={onGoScene}
       />
       {/* ── Canvas Area ── */}
       <div ref={canvasRef}
@@ -1591,7 +1191,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           ))}
 
           <NodeLayer 
-            displayNodes={displayNodes} isVN={isVN} compactCards={compactCards}
+            displayNodes={displayNodes} compactCards={compactCards}
             visibleRect={visibleRect} zoom={zoom}
             handleNodePointerDown={handleNodePointerDown} handleNodePointerMove={handleNodePointerMove}
             handleNodePointerUp={handleNodePointerUp} handleNodeDoubleClick={handleNodeDoubleClick}
@@ -1653,136 +1253,62 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
 
         {/* Floating Connection Menu — rendered in screen coordinate space */}
         {connMenu && (
-          <div 
-            onPointerDown={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', left: connMenu.x + 20, top: connMenu.y,
-              background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
-              padding: 8, width: 160, display: 'flex', flexDirection: 'column', gap: 4, zIndex: 1000,
-              animation: 'popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards'
-            }}>
-            <div style={{ padding: '0 4px 4px 4px', fontSize: 11, fontWeight: 600, color: 'var(--dim)', marginBottom: 2 }}>
-              {connMenu.targetNodeId ? 'Connect to Scene' : 'Create New Scene'}
-            </div>
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28 }} onClick={() => applyConnection('jump')}>
-              Jump to Scene
-            </button>
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28 }} onClick={() => applyConnection('choice')}>
-              Choice Option
-            </button>
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28 }} onClick={() => applyConnection('call')}>
-              Screen Call
-            </button>
-            <div style={{ height: 1, background: 'var(--bdr)', margin: '4px 0' }} />
-            <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12, padding: '4px 8px', minHeight: 28, color: '#ef4444' }} onClick={() => { 
-              if (dragLineRef.current) dragLineRef.current.style.display = 'none';
-              if (dragGhostRef.current) dragGhostRef.current.style.display = 'none';
-              setConnMenu(null); 
-              setIsConnectionMode(false); 
-            }}>
-              Cancel
-            </button>
-          </div>
+          <ConnectionMenu connMenu={connMenu} applyConnection={applyConnection} onCancel={() => {
+            if (dragLineRef.current) dragLineRef.current.style.display = 'none';
+            if (dragGhostRef.current) dragGhostRef.current.style.display = 'none';
+            setConnMenu(null);
+            setIsConnectionMode(false);
+          }} />
         )}
 
         {/* Choice Builder Menu */}
         {choiceBuilder && (
-          <div 
-            onPointerDown={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', left: choiceBuilder.screenX + 20, top: choiceBuilder.screenY, zIndex: 1000,
-              background: 'var(--bg1)', border: '1px solid var(--bdr)', borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.8)', padding: 12, width: 340,
-              display: 'flex', flexDirection: 'column', gap: 8,
-              animation: 'popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards'
-            }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--dim)', marginBottom: 4 }}>Create Choice Block</div>
-            
-            <label style={{ fontSize: 10, color: 'var(--faint)' }}>Question / Prompt</label>
-            <input autoFocus className="input" style={{ width: '100%', fontSize: 12, padding: '6px 8px', background: 'var(--bg0)' }} value={choiceBuilder.prompt} onChange={e => setChoiceBuilder({...choiceBuilder, prompt: e.target.value})} />
-            
-            <div style={{ fontSize: 10, color: 'var(--faint)', marginTop: 8 }}>Answers / Routes</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-              {choiceBuilder.options.map((opt, i) => (
-                <div key={opt.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input className="input" style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '4px 6px', background: 'var(--bg0)' }} value={opt.text} placeholder="Answer text..." onChange={e => {
-                     const newOpts = [...choiceBuilder.options];
-                     newOpts[i].text = e.target.value;
-                     setChoiceBuilder({...choiceBuilder, options: newOpts});
-                  }} />
-                  <span style={{ color: 'var(--faint)', fontSize: 10 }}>→</span>
-                  <select className="input" style={{ width: 120, fontSize: 10, padding: '4px 6px', background: 'var(--bg0)' }} value={opt.sceneId || ''} onChange={e => {
-                     const newOpts = [...choiceBuilder.options];
-                     newOpts[i].sceneId = e.target.value;
-                     setChoiceBuilder({...choiceBuilder, options: newOpts});
-                  }}>
-                     <option value="__NEW__">✨ New Scene</option>
-                     <option value="">(Unlinked)</option>
-                     {displayNodes.filter(s => s.kind === 'vn_scene' && s.id !== choiceBuilder.sourceNodeId).map(s => (
-                       <option key={s.id} value={s.id}>{s.label}</option>
-                     ))}
-                  </select>
-                  <button className="btn btn-ghost" style={{ padding: '2px 6px', color: 'var(--err)', minHeight: 0, height: 24 }} onClick={() => {
-                     const newOpts = choiceBuilder.options.filter((_, idx) => idx !== i);
-                     setChoiceBuilder({...choiceBuilder, options: newOpts});
-                  }}>×</button>
-                </div>
-              ))}
-            </div>
-            
-            <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px', alignSelf: 'flex-start', color: 'var(--acc2)' }} onClick={() => {
-               setChoiceBuilder({...choiceBuilder, options: [...choiceBuilder.options, { id: crypto.randomUUID().slice(0, 8), text: `Option ${choiceBuilder.options.length + 1}`, sceneId: '__NEW__' }]});
-            }}>+ Add Answer</button>
+          <ChoiceBuilderMenu
+            choiceBuilder={choiceBuilder} setChoiceBuilder={setChoiceBuilder} displayNodes={displayNodes}
+            onCreate={() => {
+              const p = project;
+              const newLayout = { ...p.layout };
+              const newScenes = [...p.scenes];
 
-            <div style={{ height: 1, background: 'var(--bdr)', margin: '4px 0' }} />
+              let newSceneCount = 0;
 
-            <div style={{ display: 'flex', gap: 8 }}>
-               <button className="btn" style={{ flex: 1, background: 'var(--acc)', color: '#fff', fontSize: 12, padding: '6px' }} onClick={() => {
-                  const p = project as VNProject;
-                  const newLayout = { ...p.layout };
-                  const newScenes = [...p.scenes];
-                  
-                  let newSceneCount = 0;
-                  
-                  const finalOpts = choiceBuilder.options.map((opt, i) => {
-                     let finalTarget = opt.sceneId;
-                     if (opt.sceneId === '__NEW__') {
-                        const baseSceneCount = p.scenes.length + newSceneCount;
-                        const sc = newScene(`Scene ${baseSceneCount + 1}`);
-                        newScenes.push(sc);
-                        newLayout[sc.id] = [choiceBuilder.canvasX + (i * 20), choiceBuilder.canvasY - 55 + (newSceneCount * 140)] as [number, number];
-                        finalTarget = sc.id;
-                        newSceneCount++;
-                     }
-                     return { id: opt.id, text: opt.text, scene: finalTarget ?? null };
-                  });
+              const finalOpts = choiceBuilder.options.map((opt, i) => {
+                 let finalTarget = opt.sceneId;
+                 if (opt.sceneId === '__NEW__') {
+                    const baseSceneCount = p.scenes.length + newSceneCount;
+                    const sc = newScene(`Scene ${baseSceneCount + 1}`);
+                    newScenes.push(sc);
+                    newLayout[sc.id] = [choiceBuilder.canvasX + (i * 20), choiceBuilder.canvasY - 55 + (newSceneCount * 140)] as [number, number];
+                    finalTarget = sc.id;
+                    newSceneCount++;
+                 }
+                 return { id: opt.id, text: opt.text, scene: finalTarget ?? null };
+              });
 
-                  const eventToAdd = {
-                    id: crypto.randomUUID().slice(0, 8),
-                    type: 'choice' as const,
-                    prompt: choiceBuilder.prompt,
-                    opts: finalOpts
-                  };
+              const eventToAdd = {
+                id: crypto.randomUUID().slice(0, 8),
+                type: 'choice' as const,
+                prompt: choiceBuilder.prompt,
+                opts: finalOpts
+              };
 
-                  const updatedScenes = newScenes.map(s => {
-                     if (s.id === choiceBuilder.sourceNodeId) {
-                        return { ...s, events: [...s.events, eventToAdd] };
-                     }
-                     return s;
-                  });
+              const updatedScenes = newScenes.map(s => {
+                 if (s.id === choiceBuilder.sourceNodeId) {
+                    return { ...s, events: [...s.events, eventToAdd] };
+                 }
+                 return s;
+              });
 
-                  if (onProjectChange) onProjectChange({ ...p, scenes: updatedScenes, layout: newLayout });
-                  setPositions(newLayout);
-                  setChoiceBuilder(null);
-                  setIsConnectionMode(false);
-               }}>Create Choice</button>
-               <button className="btn btn-ghost" style={{ flex: 1, fontSize: 12, padding: '6px' }} onClick={() => {
-                  setChoiceBuilder(null);
-                  setIsConnectionMode(false);
-               }}>Cancel</button>
-            </div>
-          </div>
+              if (onProjectChange) onProjectChange({ ...p, scenes: updatedScenes, layout: newLayout });
+              setPositions(newLayout);
+              setChoiceBuilder(null);
+              setIsConnectionMode(false);
+            }}
+            onCancel={() => {
+              setChoiceBuilder(null);
+              setIsConnectionMode(false);
+            }}
+          />
         )}
 
         {/* Slide animation keyframes */}
@@ -1810,29 +1336,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           }}
         >
           {/* Legend — sits above the minimap, same animation container */}
-          {hasTypedLinks && (
-            <div style={{
-              background: 'rgba(8,13,26,0.88)', backdropFilter: 'blur(8px)',
-              border: '1px solid #1e2d42', borderRadius: 8,
-              padding: '10px 14px', pointerEvents: 'none',
-              display: 'flex', flexDirection: 'column', gap: 6,
-            }}>
-              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', color: '#4a5568', textTransform: 'uppercase', marginBottom: 2 }}>{t('canvas.edge_types')}</span>
-              {legendItems.map(item => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width={42} height={10} style={{ flexShrink: 0, overflow: 'visible' }}>
-                      <path d="M 4 2 A 3 3 0 0 1 4 8" fill="none" stroke={item.stroke} strokeWidth={2} strokeLinecap="round" />
-                      <line x1={7} y1={5} x2={34} y2={5}
-                        stroke={item.stroke} strokeWidth={2}
-                        strokeDasharray={item.dash}
-                        strokeLinecap="round" />
-                      <path d="M 30 2 L 38 5 L 30 8 Z" fill={item.stroke} />
-                    </svg>
-                  <span style={{ fontSize: 10, color: '#8892a4', whiteSpace: 'nowrap' }}>{item.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {hasTypedLinks && <EdgeLegend legendItems={legendItems} />}
 
           <Minimap
             items={displayNodes.map((n) => ({ id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, kind: n.isStart ? 'start' : n.isEnd ? 'end' : n.kind }))}
@@ -1848,92 +1352,12 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
         {floatingInspector}
 
         {/* Hide UI Button — outside minimap, moves based on visibility */}
-        {isVN && (() => {
-          const btnWidth = 100;
-          const gap = 12;
-          const mmWidth = 220;
-
-          return (
-            <div
-              key="hide-ui-btn-wrapper"
-              style={{
-                position: 'absolute', bottom: 16, zIndex: 40,
-                left: displayedSide === 'right' ? 16 : 'auto',
-                right: displayedSide === 'left' ? 16 : 'auto',
-                pointerEvents: 'none',
-                animation: suppressAnim ? 'none' : (
-                  panelExiting
-                    ? (displayedSide === 'left' ? 'vnv-slide-out-right 0.44s forwards cubic-bezier(0.4,0,0.2,1)' : 'vnv-slide-out-left 0.44s forwards cubic-bezier(0.4,0,0.2,1)')
-                    : (displayedSide === 'left' ? 'vnv-slide-in-right 0.44s forwards cubic-bezier(0.4,0,0.2,1)' : 'vnv-slide-in-left 0.44s forwards cubic-bezier(0.4,0,0.2,1)')
-                ),
-              }}
-            >
-              <button
-                onPointerDown={e => e.stopPropagation()}
-                onClick={() => setUiVisible(!uiVisible)}
-                style={{
-                  width: btnWidth,
-                  transform: uiVisible ? (displayedSide === 'left' ? `translateX(-${mmWidth + gap}px)` : `translateX(${mmWidth + gap}px)`) : 'translateX(0)',
-                  transition: suppressAnim ? 'none' : 'transform 0.44s cubic-bezier(0.4,0,0.2,1)',
-                  background: 'rgba(13,18,32,0.85)', border: '1px solid var(--bdr)',
-                  borderRadius: 8, color: 'var(--dim)', fontSize: 13, fontWeight: 700,
-                  padding: '12px 0', cursor: 'pointer', backdropFilter: 'blur(4px)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, pointerEvents: 'auto',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                }}
-              >
-                {uiVisible ? `🙈 ${t('canvas.hide_ui') || 'Hide UI'}` : `👀 ${t('canvas.show_ui') || 'Show UI'}`}
-              </button>
-            </div>
-          );
-        })()}
+        <HideUiButton displayedSide={displayedSide} suppressAnim={suppressAnim} panelExiting={panelExiting} uiVisible={uiVisible} setUiVisible={setUiVisible} />
       </div>
 
       {/* Recent Scenes HUD — top-right */}
-        {isVN && recentSceneIds.length > 0 && (
-          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 30, pointerEvents: 'auto' }}>
-            <button
-              onPointerDown={e => e.stopPropagation()}
-              onClick={() => setShowRecent(v => !v)}
-              style={{
-                background: 'rgba(13,18,32,0.85)', border: '1px solid var(--bdr)',
-                borderRadius: 6, color: 'var(--dim)', fontSize: 11, fontWeight: 600,
-                padding: '4px 10px', cursor: 'pointer', backdropFilter: 'blur(4px)',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              🕐 Recent {showRecent ? '▲' : '▼'}
-            </button>
-            {showRecent && (
-              <div style={{
-                marginTop: 4, background: 'rgba(13,18,32,0.92)',
-                border: '1px solid var(--bdr)', borderRadius: 8,
-                overflow: 'hidden', backdropFilter: 'blur(6px)',
-                minWidth: 180,
-              }}>
-                {recentSceneIds.map(id => {
-                  const sc = (project as VNProject).scenes.find(s => s.id === id);
-                  if (!sc) return null;
-                  return (
-                    <button key={id}
-                      onClick={() => { setShowRecent(false); onEditScene?.(id); }}
-                      style={{
-                        display: 'block', width: '100%', textAlign: 'left',
-                        padding: '7px 12px', background: 'transparent',
-                        border: 'none', borderBottom: '1px solid var(--bdr)',
-                        color: 'var(--text)', fontSize: 11, cursor: 'pointer',
-                        transition: 'background .1s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(75,108,247,0.12)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      🎬 {sc.label || id}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+        {recentSceneIds.length > 0 && (
+          <RecentScenesHud recentSceneIds={recentSceneIds} showRecent={showRecent} setShowRecent={setShowRecent} project={project} onEditScene={onEditScene} />
         )}
 
     </div>

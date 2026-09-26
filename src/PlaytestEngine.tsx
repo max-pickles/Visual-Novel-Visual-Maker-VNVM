@@ -3,7 +3,9 @@
  * Allows playing through the visual novel graph directly in the IDE.
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import type { VNEvent, VNProject, VNScene } from "./types";
+import { renderRenpyText } from "./renpyText";
+import { evalPy, pyTruthy } from "./pyExpr";
+import type { VNEvent, VNProject } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "./translationContext";
 import { useMusicPlayer } from "./musicPlayerContext";
@@ -52,48 +54,18 @@ function useResolvedImage(rootPath: string, name: string | null) {
 
 const RENPY_COLORS = new Set(["black", "white", "transparent"]);
 
-function parseRenpyRichText(text: string) {
-  if (!text) return "";
-  let html = text
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'")
-    .replace(/\\n/g, "<br/>")
-    .replace(/\{b\}/g, "<b>")
-    .replace(/\{\/b\}/g, "</b>")
-    .replace(/\{i\}/g, "<i>")
-    .replace(/\{\/i\}/g, "</i>")
-    .replace(/\{s\}/g, "<s>")
-    .replace(/\{\/s\}/g, "</s>")
-    .replace(/\{color=([^}]+)\}/g, "<span style='color:$1'>")
-    .replace(/\{\/color\}/g, "</span>")
-    .replace(/\{size=([^}]+)\}/g, "<span style='font-size:$1px'>")
-    .replace(/\{\/size\}/g, "</span>")
-    .replace(/\{cps=[^}]+\}/g, "")
-    .replace(/\{\/cps\}/g, "");
-  return html;
-}
-
+/** Evaluate an `if` condition. Unknown names or unsupported syntax count as false. */
 function evaluateCondition(cond: string, vars: Record<string, any>): boolean {
   if (!cond) return true;
   try {
-    let jsCond = cond
-      .replace(/\band\b/g, '&&')
-      .replace(/\bor\b/g, '||')
-      .replace(/\bnot\b/g, '!')
-      .replace(/\bTrue\b/g, 'true')
-      .replace(/\bFalse\b/g, 'false');
-    const keys = Object.keys(vars);
-    const values = Object.values(vars);
-    const func = new Function(...keys, `return !!(${jsCond});`);
-    return func(...values);
+    return pyTruthy(evalPy(cond, vars));
   } catch (e) {
     console.warn("Playtest: Failed to evaluate condition:", cond, e);
     return false;
   }
 }
 
+/** Apply `name = value` (or `+=`, `-=`); a value that can't be evaluated is kept as text. */
 function evaluateAssignment(expr: string, vars: Record<string, any>): Record<string, any> {
   const match = expr.match(/^\s*([a-zA-Z_]\w*)\s*(={1,2}|\+=|-=)\s*(.+)$/);
   if (!match) return vars;
@@ -101,17 +73,9 @@ function evaluateAssignment(expr: string, vars: Record<string, any>): Record<str
   const [_, name, op, valExpr] = match;
   let val: any;
   try {
-    let jsExpr = valExpr.replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
-    const keys = Object.keys(vars);
-    const values = Object.values(vars);
-    const func = new Function(...keys, `return (${jsExpr});`);
-    val = func(...values);
-  } catch (e) {
-    try {
-      val = JSON.parse(valExpr.replace(/'/g, '"'));
-    } catch {
-      val = valExpr;
-    }
+    val = evalPy(valExpr, vars);
+  } catch {
+    val = valExpr.trim();
   }
 
   const newVars = { ...vars };
@@ -122,7 +86,7 @@ function evaluateAssignment(expr: string, vars: Record<string, any>): Record<str
   return newVars;
 }
 
-function SpriteRenderer({ spEv, rootPath, logW, logH, fitScale }: any) {
+function SpriteRenderer({ spEv, rootPath }: any) {
   const spriteImg = useResolvedImage(rootPath, spEv.image);
   if (!spriteImg.url) return null;
 
@@ -323,7 +287,9 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
         }
       }
       else if (ev.type === "setvar") {
-        if (ev.condition) setVariables(v => evaluateAssignment(ev.condition!, v));
+        const name = ev.var_name?.trim();
+        if (name) setVariables(v => evaluateAssignment(`${name} = ${ev.var_val ?? "False"}`, v));
+        else if (ev.condition) setVariables(v => evaluateAssignment(ev.condition!, v));
       }
 
       else if (ev.type === "achievement") {
@@ -340,26 +306,14 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
         setEventIdx(i => i + 1);
       }
 
-      // Handle conditional block skipping
+      // Conditional jump, same as the compiled game: go to scene_true or
+      // scene_false, or carry on with the next event.
       if (ev.type === "if") {
-        const isTrue = evaluateCondition(ev.condition || "", variables);
-        if (isTrue) {
-          setEventIdx(i => i + 1); // Enter the block
+        const target = evaluateCondition(ev.condition || "", variables) ? ev.scene_true : ev.scene_false;
+        if (target && project.scenes.some(sc => sc.id === target)) {
+          setSceneId(target);
+          setEventIdx(0);
         } else {
-          // Find the end of this block
-          let depth = 1;
-          let i = eventIdx + 1;
-          while (i < events.length && depth > 0) {
-            if (events[i].type === "if") depth++;
-            // Basic approximation: we assume block ends when indentation drops.
-            // But we don't have block boundaries in VNEvent array easily right now.
-            // For now, if we can't reliably skip, we just advance one by one and skip content?
-            // Actually, VNProject doesn't explicitly store 'end if'.
-            // To be safe for V1, we'll just not evaluate 'if' block depths perfectly 
-            // unless we add a specific skip logic. We'll just advance 1.
-            i++;
-            break; // Temporary fallback: 'if' just acts as a pass-through in V1 playtest
-          }
           setEventIdx(i => i + 1);
         }
       }
@@ -674,9 +628,6 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                 key={sp.id}
                 spEv={sp}
                 rootPath={rootPath}
-                logW={logW}
-                logH={logH}
-                fitScale={fitScale}
               />
             ))}
 
@@ -737,13 +688,14 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                   )}
 
                   <p
-                    dangerouslySetInnerHTML={{ __html: parseRenpyRichText(displayedText) }}
                     style={{
                       fontSize: textboxImg.url ? (logH * 0.035) : 22,
                       lineHeight: 1.5, color: "#fff", fontFamily: "inherit", margin: 0,
                       textShadow: "none",
                     }}
-                  />
+                  >
+                    {renderRenpyText(displayedText)}
+                  </p>
                 </div>
               </div>
             )}
@@ -820,7 +772,7 @@ export function PlaytestEngine({ project, rootPath, startSceneId, onClose }: Pro
                           <button key={sc.id}
                             onClick={() => { setSceneId(sc.id); setEventIdx(0); }}
                             style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 13, transition: "border-color 0.15s, background 0.15s" }}
-                            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.background = "rgba(0,212,200,0.1)"; }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--teal)"; e.currentTarget.style.background = "color-mix(in srgb, var(--teal) 10%, transparent)"; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
                           >
                             → {sc.label}

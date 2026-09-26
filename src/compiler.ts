@@ -9,6 +9,8 @@
  * 2. Auto-discover story variables via {@link extractVars} and emit `default` lines.
  * 3. Emit one `define vnc_<id> = Character(...)` per character.
  * 4. Compile each scene as a `label vns_scene_<id>:` block via {@link compileScene}.
+ *    Exports keep an imported game's own labels and character variables
+ *    instead (see `exportNames`), so its translations still match.
  * 5. Emit an entry-point label that `jump`s to the start scene.
  *
  * ## Known limitations / design choices
@@ -22,7 +24,7 @@
  * No Rust/Tauri required — pure string generation from VNProject JSON.
  */
 
-import type { VNProject, VNEvent, VNScene } from "./types";
+import type { VNProject, VNEvent, VNScene, VNCharacter } from "./types";
 import { extractVars, findChar, findScene } from "./types";
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -39,6 +41,47 @@ function esc(s: string): string {
 }
 
 /**
+ * Python single-quoted string literal for `s` (used for Character() arguments).
+ */
+function pyStr(s: string): string {
+  return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\n/g, "\\n")}'`;
+}
+
+/** Colors Ren'Py accepts: #rgb, #rgba, #rrggbb or #rrggbbaa. */
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/** Words the Ren'Py parser won't accept as part of an image name. */
+const IMAGE_NAME_KEYWORDS = new Set([
+  "as", "at", "behind", "call", "expression", "hide", "if", "in", "image", "init",
+  "jump", "menu", "onlayer", "python", "return", "scene", "show", "with", "while",
+  "zorder", "transform",
+]);
+
+/**
+ * Turn free text (a character or pose name) into one Ren'Py image-name
+ * component: letters, digits and underscores, never a statement keyword.
+ * `"Dr. O'Brien"` → `"Dr_O_Brien"`. Returns `""` if nothing usable is left.
+ */
+export function imageNameComponent(text: string): string {
+  const cleaned = text
+    .trim()
+    .replace(/[^0-9A-Za-z_\u00c0-\ud7ff\ue000-\uffef]/gu, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return IMAGE_NAME_KEYWORDS.has(cleaned) ? `${cleaned}_` : cleaned;
+}
+
+/** Image tag for a character's sprites and side images (`show <tag> <pose>`). */
+export function charImageTag(char: VNCharacter): string {
+  return imageNameComponent(char.name ?? "") || `char_${imageNameComponent(char.id) || "unnamed"}`;
+}
+
+/** A position for `at`: the given transform name, or `center` if it isn't a valid name. */
+function atPosition(side: string | undefined): string {
+  return side && /^[A-Za-z_][A-Za-z0-9_]*$/.test(side) ? side : "center";
+}
+
+/**
  * Normalizes built-in transitions to lowercase so they don't crash Ren'Py.
  * e.g., "Fade" becomes "fade", preventing "with Fade" from emitting the class.
  */
@@ -46,6 +89,74 @@ function safeTrans(t: string): string {
   const lower = t.toLowerCase();
   if (lower === "fade" || lower === "dissolve" || lower === "flash" || lower === "pixellate") return lower;
   return t;
+}
+
+/** What generated code calls each scene (its label) and character (its variable). */
+export interface Names {
+  label(sceneId: string): string;
+  character(charId: string): string;
+}
+
+/** The generated names, `vns_scene_<id>` and `vnc_<id>`, which can't clash with a game's own. */
+const GENERATED_NAMES: Names = {
+  label: id => `vns_scene_${id}`,
+  character: id => `vnc_${id}`,
+};
+
+const PY_KEYWORDS = new Set([
+  "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
+  "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+  "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise",
+  "return", "try", "while", "with", "yield",
+]);
+
+/** The label and variable names an export gives scenes and characters, for showing in the editor. */
+export function exportedNames(proj: VNProject): Names {
+  return exportNames(proj, {});
+}
+
+/**
+ * Whether a name from an imported game can be reused: a plain identifier that
+ * isn't a Python keyword, isn't reserved by Ren'Py (a leading underscore) and
+ * can't clash with generated names (`vns_…`, `vnc_…`, `vnv_…`).
+ */
+function isReusableName(name: string | undefined): name is string {
+  return !!name && /^[A-Za-z][A-Za-z0-9_]*$/.test(name) && !PY_KEYWORDS.has(name) && !/^vn[a-z]_/.test(name);
+}
+
+/**
+ * Names for scripts that replace an imported game's story (exports). Scenes and
+ * characters keep the label and variable they had in that game, because Ren'Py
+ * finds a line's translation by its label and speaker. Names already taken, by
+ * another scene or character or by the scripts the export keeps, fall back to
+ * generated ones, and only the start scene may be called `start`.
+ */
+function exportNames(proj: VNProject, opts: ExportOptions): Names {
+  const startId = proj.start ?? proj.scenes[0]?.id;
+  const labels = new Map<string, string>();
+  const takenLabels = new Set(opts.labelsElsewhere);
+  // The start scene goes first, so it can claim its name.
+  const scenes = [...proj.scenes].sort((a, b) => Number(b.id === startId) - Number(a.id === startId));
+  for (const sc of scenes) {
+    const name = sc.renpy_label;
+    if (isReusableName(name) && !takenLabels.has(name) && (name !== "start" || sc.id === startId)) {
+      labels.set(sc.id, name);
+      takenLabels.add(name);
+    }
+  }
+  const chars = new Map<string, string>();
+  const takenVars = new Set([...(opts.declaredElsewhere ?? []), ...extractVars(proj).map(v => v.name)]);
+  for (const ch of proj.characters) {
+    const name = ch.renpy_name;
+    if (isReusableName(name) && !takenVars.has(name)) {
+      chars.set(ch.id, name);
+      takenVars.add(name);
+    }
+  }
+  return {
+    label: id => labels.get(id) ?? GENERATED_NAMES.label(id),
+    character: id => chars.get(id) ?? GENERATED_NAMES.character(id),
+  };
 }
 
 /**
@@ -80,12 +191,14 @@ function compileAtl(atl: string, lines: string[], prefix: string): void {
  * @param proj   - The parent project (used to resolve character/scene lookups).
  * @param lines  - Output line buffer.
  * @param prefix - Indentation string prepended to every emitted line.
+ * @param names  - Labels and character variables to use.
  */
 function compileEvent(
   ev: VNEvent,
   proj: VNProject,
   lines: string[],
   prefix: string,
+  names: Names,
 ): void {
   const t = ev.type;
   if (!t) return;
@@ -113,7 +226,7 @@ function compileEvent(
     const side = ev.side ?? "center";
     const at = ["left", "center", "right"].includes(side) ? ` at ${side}` : "";
     if (ev.atl_code) {
-      lines.push(`${prefix}show expression "${img}" at ${side}:`);
+      lines.push(`${prefix}show expression "${img}" at ${atPosition(side)}:`);
       compileAtl(ev.atl_code, lines, prefix + "    ");
     } else {
       lines.push(`${prefix}show expression "${img}"${at}`);
@@ -218,7 +331,7 @@ function compileEvent(
   // ── Dialogue ────────────────────────────────────────────────────────────────
   else if (t === "dialogue") {
     const char = findChar(proj, ev.char_id);
-    const cRef = char ? `vnc_${char.id}` : "narrator";
+    const cRef = char ? names.character(char.id) : "narrator";
 
     // Show character sprite if available
     if (ev.char_id && char) {
@@ -241,9 +354,9 @@ function compileEvent(
         }
       }
 
-      if (hasSprite) {
-        const side = ev.side ?? "center";
-        lines.push(`${prefix}show ${char.name} ${pose} at ${side}`);
+      const poseAttr = imageNameComponent(pose);
+      if (hasSprite && poseAttr) {
+        lines.push(`${prefix}show ${charImageTag(char)} ${poseAttr} at ${atPosition(ev.side)}`);
       }
     }
 
@@ -266,12 +379,13 @@ function compileEvent(
   else if (t === "choice") {
     const opts = ev.opts ?? [];
     const prompt = esc(ev.prompt ?? "");
+    const speaker = ev.char_id && findChar(proj, ev.char_id) ? `${names.character(ev.char_id)} ` : "";
     if (!opts.length) {
-      if (prompt) lines.push(`${prefix}"${prompt}"`);
+      if (prompt) lines.push(`${prefix}${speaker}"${prompt}"`);
       return;
     }
     lines.push(`${prefix}menu:`);
-    if (prompt) lines.push(`${prefix}    "${prompt}"`);
+    if (prompt) lines.push(`${prefix}    ${speaker}"${prompt}"`);
     for (const opt of opts) {
       // Optional per-option condition  →  "Label" if condition:
       const cond = opt.condition?.trim();
@@ -279,7 +393,7 @@ function compileEvent(
       lines.push(`${prefix}    "${esc(opt.text)}"${condStr}:`);
       const targetScene = findScene(proj, opt.scene);
       if (targetScene) {
-        lines.push(`${prefix}        jump vns_scene_${opt.scene}`);
+        lines.push(`${prefix}        jump ${names.label(targetScene.id)}`);
       } else {
         lines.push(`${prefix}        pass`);
       }
@@ -292,7 +406,7 @@ function compileEvent(
     const trans = ev.transition ? safeTrans(ev.transition) : "dissolve";
     if (target) {
       if (trans && trans !== "none") lines.push(`${prefix}with ${trans}`);
-      lines.push(`${prefix}jump vns_scene_${target}`);
+      lines.push(`${prefix}jump ${names.label(target)}`);
     }
   }
 
@@ -331,13 +445,13 @@ function compileEvent(
     const cond = ev.condition?.trim() || "True";
     lines.push(`${prefix}if ${cond}:`);
     if (ev.scene_true) {
-      lines.push(`${prefix}    jump vns_scene_${ev.scene_true}`);
+      lines.push(`${prefix}    jump ${names.label(ev.scene_true)}`);
     } else {
       lines.push(`${prefix}    pass`);
     }
     if (ev.scene_false) {
       lines.push(`${prefix}else:`);
-      lines.push(`${prefix}    jump vns_scene_${ev.scene_false}`);
+      lines.push(`${prefix}    jump ${names.label(ev.scene_false)}`);
     }
   }
 
@@ -358,19 +472,16 @@ function compileEvent(
     const roll = ev.camera_roll ?? 0;
     const dur = ev.camera_dur ?? 1.0;
 
-    const props = [];
-    if (x) props.push(`xpos ${x}`);
-    if (y) props.push(`ypos ${y}`);
-    if (z) props.push(`zpos ${z}`);
-    if (zoom !== 1.0) props.push(`zoom ${zoom}`);
-    if (pitch) props.push(`matrixcolor InvertMatrix(${pitch})`); // Approximated for 3D stage if enabled
-    if (yaw) props.push(`matrixcolor InvertMatrix(${yaw})`);
-    if (roll) props.push(`matrixcolor InvertMatrix(${roll})`); // Actually camera 3D uses camera properties, but we'll emit camera transforms
+    // Pitch/yaw/roll rotate the camera around the x/y/z axes (Ren'Py 8 3D stage).
+    const rotation = [
+      pitch ? ` xrotate ${pitch}` : "",
+      yaw ? ` yrotate ${yaw}` : "",
+      roll ? ` zrotate ${roll}` : "",
+    ].join("");
 
-    // Ren'Py 7.4+ camera syntax
     lines.push(`${prefix}camera:`);
     lines.push(`${prefix}    perspective True`);
-    lines.push(`${prefix}    ease ${dur} xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}`);
+    lines.push(`${prefix}    ease ${dur} xpos ${x} ypos ${y} zpos ${z} zoom ${zoom}${rotation}`);
   }
 
   // ── Achievement grant ─────────────────────────────────────────────────────
@@ -394,11 +505,11 @@ function compileEvent(
       if (isWeighted) {
         // Expand into a weighted pool: each label repeated `weight` times
         const poolItems = pairs.flatMap(({ sc, w }) =>
-          Array(w).fill(`"vns_scene_${sc!.id}"`)
+          Array(w).fill(`"${names.label(sc!.id)}"`)
         ).join(", ");
         lines.push(`${prefix}$ _rnd = renpy.random.choice([${poolItems}])`);
       } else {
-        const labelList = pairs.map(({ sc }) => `"vns_scene_${sc!.id}"`).join(", ");
+        const labelList = pairs.map(({ sc }) => `"${names.label(sc!.id)}"`).join(", ");
         lines.push(`${prefix}$ _rnd = renpy.random.choice([${labelList}])`);
       }
       lines.push(`${prefix}jump expression _rnd`);
@@ -424,10 +535,65 @@ function compileEvent(
   }
 }
 
+// ─── Character definitions ────────────────────────────────────────────────────
+
+/**
+ * Append a `define <variable> = Character(...)` line for every character, plus the
+ * side images and the pose images that dialogue events `show`.
+ *
+ * Strings go through {@link pyStr} (so names like O'Brien stay valid Python) and
+ * image names through {@link charImageTag} / {@link imageNameComponent}.
+ */
+function compileCharacters(proj: VNProject, lines: string[], names: Names): void {
+  if (!proj.characters.length) return;
+  lines.push(`## Characters`);
+  for (const char of proj.characters) {
+    const tag = charImageTag(char);
+    const sideImages = Object.entries(char.side_images ?? {}).filter(([, img]) => img);
+
+    const args: string[] = [pyStr(char.display ?? "")];
+    if (char.color && HEX_COLOR.test(char.color)) args.push(`color=${pyStr(char.color)}`);
+    if (char.name_prefix)     args.push(`who_prefix=${pyStr(char.name_prefix)}`);
+    if (char.name_suffix)     args.push(`who_suffix=${pyStr(char.name_suffix)}`);
+    if (char.dialogue_prefix) args.push(`what_prefix=${pyStr(char.dialogue_prefix)}`);
+    if (char.dialogue_suffix) args.push(`what_suffix=${pyStr(char.dialogue_suffix)}`);
+    if (sideImages.length > 0) args.push(`image=${pyStr(tag)}`);
+    lines.push(`define ${names.character(char.id)} = Character(${args.join(', ')})`);
+
+    for (const [pose, imgPath] of sideImages) {
+      const attr = imageNameComponent(pose);
+      const poseSuffix = pose === 'neutral' || !attr ? '' : ` ${attr}`;
+      lines.push(`image side ${tag}${poseSuffix} = "${esc(imgPath)}"`);
+    }
+
+    for (const pose of char.poses ?? []) {
+      const attr = imageNameComponent(pose);
+      if (!attr) continue;
+      if (char.is_layered && char.layered_sprites && char.layer_order) {
+        const poseLayers = char.layered_sprites[pose] || {};
+        const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
+        if (activeLayers.length === 1) {
+          lines.push(`image ${tag} ${attr} = "${esc(activeLayers[0])}"`);
+        } else if (activeLayers.length > 1) {
+          lines.push(`image ${tag} ${attr} = Fixed(`);
+          for (const file of activeLayers) {
+            lines.push(`    "${esc(file)}",`);
+          }
+          lines.push(`    fit_first=True`);
+          lines.push(`)`);
+        }
+      } else if (char.sprites?.[pose]) {
+        lines.push(`image ${tag} ${attr} = "${esc(char.sprites[pose])}"`);
+      }
+    }
+  }
+  lines.push(``);
+}
+
 // ─── Scene compiler ───────────────────────────────────────────────────────────
 
 /**
- * Compile one {@link VNScene} into a Ren'Py `label vns_scene_<id>:` block.
+ * Compile one {@link VNScene} into a Ren'Py `label` block, named by `names`.
  *
  * - If the scene has a `bg`, emits a `scene expression Transform(...)` at the
  *   top of the label body.
@@ -438,9 +604,10 @@ function compileEvent(
  * @param sc    - Scene to compile.
  * @param proj  - Parent project.
  * @param lines - Output line buffer.
+ * @param names - Labels and character variables to use.
  */
-function compileScene(sc: VNScene, proj: VNProject, lines: string[]): void {
-  lines.push(`label vns_scene_${sc.id}:`);
+function compileScene(sc: VNScene, proj: VNProject, lines: string[], names: Names): void {
+  lines.push(`label ${names.label(sc.id)}:`);
 
   // Scene-level background
   if (sc.bg) {
@@ -457,7 +624,7 @@ function compileScene(sc: VNScene, proj: VNProject, lines: string[]): void {
   } else {
     for (const ev of sc.events) {
       if (!ev.type) continue; // skip empty slots
-      compileEvent(ev, proj, lines, "    ");
+      compileEvent(ev, proj, lines, "    ", names);
     }
   }
 
@@ -465,10 +632,40 @@ function compileScene(sc: VNScene, proj: VNProject, lines: string[]): void {
   lines.push(``);
 }
 
+// ─── Story variables ──────────────────────────────────────────────────────────
+
+/** Options for scripts that will sit next to other `.rpy` files in a game folder. */
+export interface DefaultsOptions {
+  /**
+   * Variables the game's other scripts already declare with `default` or
+   * `define` (see `declaredVarNames`). No `default` is emitted for these:
+   * Ren'Py refuses to start if a variable gets a `default` twice.
+   */
+  declaredElsewhere?: ReadonlySet<string>;
+}
+
+/** Append a `default` line for each auto-discovered story variable. */
+function compileDefaults(proj: VNProject, lines: string[], opts: DefaultsOptions = {}): void {
+  const vars = extractVars(proj).filter(v => !opts.declaredElsewhere?.has(v.name));
+  if (!vars.length) return;
+  lines.push(`## Story Variables (auto-discovered)`);
+  for (const v of vars) lines.push(`default ${v.name} = ${v.default_val}`);
+  lines.push(``);
+}
+
 // ─── Main compiler ────────────────────────────────────────────────────────────
 
+/** Options for scripts that replace an imported game's story (exports). */
+export interface ExportOptions extends DefaultsOptions {
+  /**
+   * Labels the game's other scripts define (see `declaredLabelNames`). Scenes
+   * don't reuse them: Ren'Py refuses to start if a label is defined twice.
+   */
+  labelsElsewhere?: ReadonlySet<string>;
+}
+
 /** Options that control how the top-level `compileProject` entry point is emitted. */
-export interface CompileOptions {
+export interface CompileOptions extends ExportOptions {
   /**
    * When `true`, emits `label start:` as the Ren'Py entry point, which is
    * the convention for a standalone game. When `false` (default), a
@@ -514,14 +711,7 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
   lines.push(``);
 
   // ── Auto-discovered story variables ─────────────────────────────────────────
-  const vars = extractVars(proj);
-  if (vars.length) {
-    lines.push(`## Story Variables (auto-discovered)`);
-    for (const v of vars) {
-      lines.push(`default ${v.name} = ${v.default_val}`);
-    }
-    lines.push(``);
-  }
+  compileDefaults(proj, lines, opts);
 
   // ── Achievements ────────────────────────────────────────────────────────────
   if (proj.achievements && proj.achievements.length) {
@@ -533,61 +723,16 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
     lines.push(``);
   }
 
+  // An export replaces the game's story, so it can keep an imported game's names.
+  const names = opts.asExport ? exportNames(proj, opts) : GENERATED_NAMES;
+
   // ── Character definitions ────────────────────────────────────────────────────────
-  if (proj.characters.length) {
-    lines.push(`## Characters`);
-    for (const char of proj.characters) {
-      const args: string[] = [`'${char.display}'`, `color='${char.color}'`];
-      if (char.name_prefix)     args.push(`who_prefix='${char.name_prefix}'`);
-      if (char.name_suffix)     args.push(`who_suffix='${char.name_suffix}'`);
-      if (char.dialogue_prefix) args.push(`what_prefix='${char.dialogue_prefix}'`);
-      if (char.dialogue_suffix) args.push(`what_suffix='${char.dialogue_suffix}'`);
-      if (char.side_images && Object.keys(char.side_images).length > 0) {
-        args.push(`image='${char.name}'`);
-      }
-      lines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
-
-      if (char.side_images) {
-        for (const [pose, imgPath] of Object.entries(char.side_images)) {
-          if (imgPath) {
-            const poseSuffix = pose === 'neutral' ? '' : ` ${pose}`;
-            lines.push(`image side ${char.name}${poseSuffix} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-
-      if (char.is_layered && char.layered_sprites && char.layer_order) {
-        for (const pose of char.poses) {
-          const poseLayers = char.layered_sprites[pose] || {};
-          const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
-          
-          if (activeLayers.length === 1) {
-            lines.push(`image ${char.name} ${pose} = "${esc(activeLayers[0])}"`);
-          } else if (activeLayers.length > 1) {
-            lines.push(`image ${char.name} ${pose} = Fixed(`);
-            for (const file of activeLayers) {
-              lines.push(`    "${esc(file)}",`);
-            }
-            lines.push(`    fit_first=True`);
-            lines.push(`)`);
-          }
-        }
-      } else if (char.sprites) {
-        for (const pose of char.poses) {
-          const imgPath = char.sprites[pose];
-          if (imgPath) {
-            lines.push(`image ${char.name} ${pose} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-    }
-    lines.push(``);
-  }
+  compileCharacters(proj, lines, names);
 
   // ── Scene labels ────────────────────────────────────────────────────────────
   lines.push(`## Scenes`);
   for (const sc of proj.scenes) {
-    compileScene(sc, proj, lines);
+    compileScene(sc, proj, lines, names);
   }
 
   // ── Entry point ─────────────────────────────────────────────────────────────
@@ -595,7 +740,8 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
     ? proj.scenes.find(s => s.id === proj.start)
     : proj.scenes[0];
 
-  if (startScene) {
+  // (An imported start scene can be `label start:` itself.)
+  if (startScene && names.label(startScene.id) !== "start") {
     lines.push(`## Entry Point`);
     if (opts.asExport) {
       lines.push(`label start:`);
@@ -603,7 +749,7 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
       const safeId = proj.id.replace(/[^a-zA-Z0-9_]/g, "_");
       lines.push(`label vns_${safeId}_start:`);
     }
-    lines.push(`    jump vns_scene_${startScene.id}`);
+    lines.push(`    jump ${names.label(startScene.id)}`);
     lines.push(``);
   }
 
@@ -618,10 +764,12 @@ export function compileProject(proj: VNProject, opts: CompileOptions = {}): stri
  * - `scene_<id>.rpy`: A separate file for each scene in the graph.
  *
  * @param proj - The project to compile.
+ * @param opts - Pass `declaredElsewhere` when other scripts stay next to these.
  * @returns Array of file objects with filename and string content.
  */
-export function compileProjectToFiles(proj: VNProject): { filename: string, content: string }[] {
+export function compileProjectToFiles(proj: VNProject, opts: ExportOptions = {}): { filename: string, content: string }[] {
   const files: { filename: string, content: string }[] = [];
+  const names = exportNames(proj, opts);
   const scriptLines: string[] = [
     `## ═══════════════════════════════════════════════`,
     `## AUTO-GENERATED SCRIPT: ${proj.title}`,
@@ -640,14 +788,7 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
   scriptLines.push(``);
 
   // ── Auto-discovered story variables ─────────────────────────────────────────
-  const vars = extractVars(proj);
-  if (vars.length) {
-    scriptLines.push(`## Story Variables (auto-discovered)`);
-    for (const v of vars) {
-      scriptLines.push(`default ${v.name} = ${v.default_val}`);
-    }
-    scriptLines.push(``);
-  }
+  compileDefaults(proj, scriptLines, opts);
 
   // ── Achievements ────────────────────────────────────────────────────────────
   if (proj.achievements && proj.achievements.length) {
@@ -660,66 +801,18 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
   }
 
   // ── Character definitions ────────────────────────────────────────────────────────
-  if (proj.characters.length) {
-    scriptLines.push(`## Characters`);
-    for (const char of proj.characters) {
-      const args: string[] = [`'${char.display}'`, `color='${char.color}'`];
-      if (char.name_prefix)     args.push(`who_prefix='${char.name_prefix}'`);
-      if (char.name_suffix)     args.push(`who_suffix='${char.name_suffix}'`);
-      if (char.dialogue_prefix) args.push(`what_prefix='${char.dialogue_prefix}'`);
-      if (char.dialogue_suffix) args.push(`what_suffix='${char.dialogue_suffix}'`);
-      if (char.side_images && Object.keys(char.side_images).length > 0) {
-        args.push(`image='${char.name}'`);
-      }
-      scriptLines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
-
-      if (char.side_images) {
-        for (const [pose, imgPath] of Object.entries(char.side_images)) {
-          if (imgPath) {
-            const poseSuffix = pose === 'neutral' ? '' : ` ${pose}`;
-            scriptLines.push(`image side ${char.name}${poseSuffix} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-
-      if (char.is_layered && char.layered_sprites && char.layer_order) {
-        for (const pose of char.poses) {
-          const poseLayers = char.layered_sprites[pose] || {};
-          const activeLayers = char.layer_order.map(l => poseLayers[l]).filter(Boolean);
-          
-          if (activeLayers.length === 1) {
-            scriptLines.push(`image ${char.name} ${pose} = "${esc(activeLayers[0])}"`);
-          } else if (activeLayers.length > 1) {
-            scriptLines.push(`image ${char.name} ${pose} = Fixed(`);
-            for (const file of activeLayers) {
-              scriptLines.push(`    "${esc(file)}",`);
-            }
-            scriptLines.push(`    fit_first=True`);
-            scriptLines.push(`)`);
-          }
-        }
-      } else if (char.sprites) {
-        for (const pose of char.poses) {
-          const imgPath = char.sprites[pose];
-          if (imgPath) {
-            scriptLines.push(`image ${char.name} ${pose} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-    }
-    scriptLines.push(``);
-  }
+  compileCharacters(proj, scriptLines, names);
 
   // ── Entry point ─────────────────────────────────────────────────────────────
   const startScene = proj.start
     ? proj.scenes.find(s => s.id === proj.start)
     : proj.scenes[0];
 
-  if (startScene) {
+  // A standalone game starts at `label start:`, which an imported start scene can be itself.
+  if (startScene && names.label(startScene.id) !== "start") {
     scriptLines.push(`## Entry Point`);
-    // For standalone export, we ALWAYS want `label start:`
     scriptLines.push(`label start:`);
-    scriptLines.push(`    jump vns_scene_${startScene.id}`);
+    scriptLines.push(`    jump ${names.label(startScene.id)}`);
     scriptLines.push(``);
   }
 
@@ -733,7 +826,7 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
       `## ═══════════════════════════════════════════════`,
       ``,
     ];
-    compileScene(sc, proj, sceneLines);
+    compileScene(sc, proj, sceneLines, names);
     files.push({ filename: `scene_${sc.id}.rpy`, content: sceneLines.join("\n") });
   }
 
@@ -756,6 +849,8 @@ export function compileProjectToFiles(proj: VNProject): { filename: string, cont
  *
  * @param proj          - The project to compile.
  * @param targetSceneId - Scene id to jump to on `label start:`.
+ * @param opts          - `declaredElsewhere`: variables the game's other scripts
+ *                        already declare (the preview always sits next to them).
  * @returns Multi-line Ren'Py `.rpy` string.
  */
 export function compilePreview(
@@ -764,7 +859,8 @@ export function compilePreview(
   inheritedMusic?: string,
   playMode?: 'windowed' | 'fullscreen',
   inheritedBg?: string,
-  inheritedSprite?: string
+  inheritedSprite?: string,
+  opts: DefaultsOptions = {},
 ): string {
   if (!targetSceneId) {
     targetSceneId = proj.scenes[0]?.id ?? "start";
@@ -779,44 +875,19 @@ export function compilePreview(
     ``,
   ];
 
-  // Character definitions
-  if (proj.characters.length) {
-    lines.push(`## Characters`);
-    for (const char of proj.characters) {
-      const args: string[] = [`'${char.display}'`, `color='${char.color}'`];
-      if (char.name_prefix)     args.push(`who_prefix='${char.name_prefix}'`);
-      if (char.name_suffix)     args.push(`who_suffix='${char.name_suffix}'`);
-      if (char.dialogue_prefix) args.push(`what_prefix='${char.dialogue_prefix}'`);
-      if (char.dialogue_suffix) args.push(`what_suffix='${char.dialogue_suffix}'`);
-      if (char.side_images && Object.keys(char.side_images).length > 0) {
-        args.push(`image='${char.name}'`);
-      }
-      lines.push(`define vnc_${char.id} = Character(${args.join(', ')})`);
+  // The preview sits next to an imported game's own story, so it uses generated names.
+  const names = GENERATED_NAMES;
 
-      if (char.side_images) {
-        for (const [pose, imgPath] of Object.entries(char.side_images)) {
-          if (imgPath) {
-            const poseSuffix = pose === 'neutral' ? '' : ` ${pose}`;
-            lines.push(`image side ${char.name}${poseSuffix} = "${esc(imgPath)}"`);
-          }
-        }
-      }
-    }
-    lines.push(``);
-  }
+  // Character definitions
+  compileCharacters(proj, lines, names);
 
   // Auto-discovered story variables
-  const vars = extractVars(proj);
-  if (vars.length) {
-    lines.push(`## Story Variables (auto-discovered)`);
-    for (const v of vars) lines.push(`default ${v.name} = ${v.default_val}`);
-    lines.push(``);
-  }
+  compileDefaults(proj, lines, opts);
 
   // All scene labels — same format as the full export so cross-scene jumps resolve
   lines.push(`## Scenes`);
   for (const sc of proj.scenes) {
-    compileScene(sc, proj, lines);
+    compileScene(sc, proj, lines, names);
   }
 
   if (playMode) {
@@ -834,7 +905,7 @@ export function compilePreview(
     lines.push(``);
     lines.push(`label vnv_preview_entry:`);
     if (proj.start) {
-      lines.push(`    jump vns_scene_${proj.start}`);
+      lines.push(`    jump ${names.label(proj.start)}`);
     } else {
       lines.push(`    return`);
     }
@@ -861,7 +932,7 @@ export function compilePreview(
     if (inheritedMusic) {
       lines.push(`    play music "${esc(inheritedMusic)}" fadein 0.5`);
     }
-    lines.push(`    jump vns_scene_${targetSceneId}`);
+    lines.push(`    jump ${names.label(targetSceneId)}`);
     lines.push(``);
   }
 
@@ -897,7 +968,7 @@ export function compileSingleAnimationPreview(
     lines.push(`    scene black`);
   }
   
-  compileEvent({ ...ev, type: "animation" }, proj, lines, "    ");
+  compileEvent({ ...ev, type: "animation" }, proj, lines, "    ", GENERATED_NAMES);
   lines.push(`    pause`);
   lines.push(`    return`);
   return lines.join("\n");

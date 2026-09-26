@@ -1,23 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { documentDir, homeDir } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { mkdir } from "@tauri-apps/plugin-fs";
-import type { VNProject, RpyProject, LayoutPositions } from "./types";
+import type { VNProject } from "./types";
 import { migrateProject } from "./types";
+import { declaredVarNames, declaredLabelNames } from "./rpyDeclarations";
 
 // ─── Monitor / Window ─────────────────────────────────────────────────────────
-
-export interface MonitorInfo {
-  width: number;
-  height: number;
-  scale_factor: number;
-  logical_width: number;
-  logical_height: number;
-  name: string;
-}
-
-export async function getMonitorInfo(): Promise<MonitorInfo> {
-  return invoke<MonitorInfo>("get_monitor_info");
-}
 
 export async function setWindowSize(width: number, height: number): Promise<void> {
   return invoke("set_window_size", { width, height });
@@ -25,10 +13,6 @@ export async function setWindowSize(width: number, height: number): Promise<void
 
 export async function updateAppIcon(tealHex: string, accHex: string): Promise<void> {
   return invoke("update_app_icon", { tealHex, accHex });
-}
-
-export async function getAppVersion(): Promise<string> {
-  return invoke<string>("get_app_version");
 }
 
 // ─── Shell / OS ───────────────────────────────────────────────────────────────
@@ -51,29 +35,64 @@ export async function deleteFile(path: string): Promise<void> {
 // ─── Dialogs ──────────────────────────────────────────────────────────────────
 
 
-export async function pickProjectFolder(): Promise<string | null> {
-  const result = await open({ directory: true, multiple: false, title: "Open Ren'Py Project" });
-  return result as string | null;
-}
-
-export async function pickVnvFile(): Promise<string | null> {
-  const result = await open({
-    directory: false, multiple: false,
-    title: "Open VNV Project",
-    filters: [{ name: "VNV Maker Project", extensions: ["vnvmaker"] }],
-  });
-  return result as string | null;
-}
-
 export async function pickNewProjectFolder(): Promise<string | null> {
   const result = await open({ directory: true, multiple: false, title: "Choose Project Folder" });
   return result as string | null;
 }
 
+// ─── Paths ────────────────────────────────────────────────────────────────────
+
+/** Whether a file or folder exists. */
+export async function pathExists(path: string): Promise<boolean> {
+  return invoke<boolean>("path_exists", { path });
+}
+
+/**
+ * Let the editor load a project's images, audio and fonts through the asset
+ * protocol, whose scope starts empty. Call before showing the project.
+ */
+export async function allowProjectAssets(rootPath: string): Promise<void> {
+  return invoke("allow_project_assets", { projectRoot: rootPath });
+}
+
+/** Whether `path` is a folder that already has something in it. */
+export async function dirHasFiles(path: string): Promise<boolean> {
+  return invoke<boolean>("dir_has_files", { path });
+}
+
+/** Paths compared the way Windows treats them: separators and letter case don't matter. */
+function comparablePath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+export function samePath(a: string, b: string): boolean {
+  return comparablePath(a) === comparablePath(b);
+}
+
+/** True if `path` is `folder` itself or somewhere inside it. */
+export function isSameOrInside(path: string, folder: string): boolean {
+  const p = comparablePath(path);
+  const f = comparablePath(folder);
+  return p === f || p.startsWith(`${f}/`);
+}
+
 // ─── Games Directory ──────────────────────────────────────────────────────────
 
-export function getGamesDir(): string {
-  return localStorage.getItem("pref_games_dir") || "C:/Users/maxcm/OneDrive/Desktop/VNVMAKER/games";
+/** Where new projects go when the user hasn't picked a folder: Documents/VNVMaker/games. */
+export async function defaultGamesDir(): Promise<string> {
+  let docs: string;
+  try {
+    docs = await documentDir();
+  } catch {
+    // Linux without XDG user directories has no known Documents folder.
+    docs = `${(await homeDir()).replace(/\\/g, "/").replace(/\/+$/, "")}/Documents`;
+  }
+  return `${docs.replace(/\\/g, "/").replace(/\/+$/, "")}/VNVMaker/games`;
+}
+
+/** The games folder from Preferences, or {@link defaultGamesDir}. */
+export async function getGamesDir(): Promise<string> {
+  return localStorage.getItem("pref_games_dir") || defaultGamesDir();
 }
 
 /** Sanitize a project title into a safe folder name. */
@@ -88,30 +107,12 @@ function safeFolderName(title: string): string {
 }
 
 /**
- * Creates GAMES_DIR/<SafeTitle>/ and all standard Ren'Py subfolders.
- * Returns the new project root path (forward slashes).
- * Throws if the folder already exists.
+ * Path of the folder a new project called `title` gets inside the games folder.
+ * Nothing is created here — `scaffoldNewProject` creates the folder and refuses
+ * to reuse one that already has files in it.
  */
-export async function createProjectInGamesDir(title: string): Promise<string> {
-  const name = safeFolderName(title);
-  const root = `${getGamesDir()}/${name}`;
-
-  // Create all required subdirs
-  const dirs = [
-    root,
-    `${root}/game`,
-    `${root}/game/images`,
-    `${root}/game/audio`,
-    `${root}/game/gui`,
-    `${root}/game/saves`,
-    `${root}/game/cache`,
-    `${root}/game/tl`,
-  ];
-  for (const dir of dirs) {
-    await mkdir(dir, { recursive: true });
-  }
-
-  return root;
+export async function projectRootInGamesDir(title: string): Promise<string> {
+  return `${await getGamesDir()}/${safeFolderName(title)}`;
 }
 
 
@@ -123,22 +124,14 @@ export async function pickSavePath(defaultName: string): Promise<string | null> 
   return result as string | null;
 }
 
-// ─── Legacy .rpy Graph Commands ───────────────────────────────────────────────
-
-export async function openRpyProject(path: string): Promise<RpyProject> {
-  return invoke<RpyProject>("open_project", { path });
-}
-
-export async function saveNodePositions(rootPath: string, positions: LayoutPositions): Promise<void> {
-  return invoke("save_node_positions", { rootPath, positions });
-}
+// ─── .rpy Files ───────────────────────────────────────────────────────────────
 
 export async function readRpyFile(path: string): Promise<string> {
   return invoke<string>("read_rpy_file", { path });
 }
 
 export async function writeRpyFile(path: string, content: string): Promise<void> {
-  return invoke("write_rpy_file", { path, content });
+  return writeTextFile(path, content);
 }
 
 export async function getRpyFiles(rootPath: string): Promise<string[]> {
@@ -179,9 +172,23 @@ export async function saveVnvProject(path: string, project: VNProject): Promise<
   return invoke("save_vnv_project", { path, content: json });
 }
 
+/** Thrown by {@link loadVnvProject} when there is no project file at the path. */
+export class ProjectFileMissingError extends Error {}
+
 export async function loadVnvProject(path: string): Promise<VNProject> {
-  const json = await invoke<string>("load_vnv_project", { path });
-  const raw = JSON.parse(json) as Record<string, unknown>;
+  let json: string;
+  try {
+    json = await invoke<string>("load_vnv_project", { path });
+  } catch (e) {
+    if (!(await pathExists(path))) throw new ProjectFileMissingError(String(e));
+    throw e;
+  }
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(json) as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(`The project file is damaged and couldn't be opened (${String(e)}). It hasn't been changed.`);
+  }
   // migrateProject fills in any missing fields from old/partial saves
   const proj = migrateProject(raw, path);
   const parts = path.replace(/\\/g, "/").split("/");
@@ -219,28 +226,6 @@ export async function copyDirRecursive(src: string, dst: string): Promise<void> 
   return invoke("copy_dir_recursive", { src, dst });
 }
 
-export async function scaffoldRenpyFolders(rootPath: string): Promise<void> {
-  const folders = [
-    "game",
-    "game/audio",
-    "game/cache",
-    "game/gui",
-    "game/images",
-    "game/libs",
-    "game/saves",
-    "game/tl",
-    ".vscode"
-  ];
-  
-  for (const folder of folders) {
-    try {
-      await mkdir(`${rootPath}/${folder}`, { recursive: true });
-    } catch (e) {
-      console.warn(`Failed to create folder ${folder}:`, e);
-    }
-  }
-}
-
 /** Scaffold a blank new project from the Templet into project_root/game/.
  *  Copies gui/, screens.rpy, options.rpy etc. — NO story images or audio. */
 export async function scaffoldNewProject(projectRoot: string, projectTitle: string): Promise<string> {
@@ -257,18 +242,6 @@ export async function applyProjectTheme(
 ): Promise<void> {
   return invoke("apply_project_theme", { projectRoot, width, height, accentHex, bgHex });
 }
-
-// ─── Standalone Export ────────────────────────────────────────────────────────
-
-export async function exportToSdk(
-  compiledRpy: string,
-  projectName: string,
-  projectTitle: string,
-  assetRoot: string,
-): Promise<string> {
-  return invoke<string>("export_to_sdk", { compiledRpy, projectName, projectTitle, assetRoot });
-}
-
 
 // ─── Ren'Py Live Preview ──────────────────────────────────────────────────────
 
@@ -309,33 +282,26 @@ export async function launchRenpyLauncher(
 }
 
 /**
+ * localStorage key for the Ren'Py SDK setting: the SDK folder, or its
+ * renpy.exe / renpy.sh. Preferences, the scene editor, the graph inspector
+ * and the export panel all share it.
+ */
+export const SDK_PATH_KEY = "vnv_renpy_sdk_path";
+
+const IS_WINDOWS = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
+
+/** The SDK ships both renpy.exe and renpy.sh; this is the one that runs here. */
+export const RENPY_LAUNCHER = IS_WINDOWS ? "renpy.exe" : "renpy.sh";
+
+/** Where an SDK might be unpacked on this platform, for placeholders. */
+export const EXAMPLE_SDK_DIR = IS_WINDOWS ? "C:/renpy-8.5-sdk" : "/home/you/renpy-8.5-sdk";
+
+/**
  * Ask the backend to search common locations for the Ren'Py SDK executable.
  * Returns the path string if found, or `null` if not found.
  */
 export async function findRenpySdk(hint?: string | null): Promise<string | null> {
   return invoke<string | null>("find_renpy_sdk", { hint: hint ?? null });
-}
-
-/** Delete `game/vnv_preview.rpy` to clean up after a preview session. */
-export async function deletePreviewRpy(projectRoot: string): Promise<void> {
-  return invoke("delete_preview_rpy", { projectRoot: projectRoot.replace(/\\/g, "/") });
-}
-
-/** Default Ren'Py SDK path — bundled alongside VNVMaker. */
-export const DEFAULT_RENPY_SDK = "C:/Users/maxcm/OneDrive/Desktop/VNVMAKER/renpy-8.5.2/renpy.exe";
-
-/**
- * Compile the project, write vnv_preview.rpy starting from `sceneId`, and
- * spawn the Ren'Py SDK detached. Returns the sdk exe path used.
- */
-export async function playFromScene(
-  projectRoot: string,
-  sceneId: string,
-  previewRpy: string,
-  sdkExePath?: string | null,
-  renpyLanguage?: string | null,
-): Promise<string> {
-  return launchRenpyPreview(projectRoot, previewRpy, sdkExePath || DEFAULT_RENPY_SDK, renpyLanguage);
 }
 
 // ─── Import from .rpy ─────────────────────────────────────────────────────────
@@ -359,6 +325,31 @@ export async function validateRenpyProject(folderPath: string): Promise<string> 
 // Reads all .rpy files from a folder using existing Tauri commands,
 // then passes file contents to the pure-TS importer in rpyImporter.ts.
 
+/**
+ * Variables the scripts in a game folder already declare with `default` or
+ * `define`, so a script generated next to them can leave those out (Ren'Py
+ * won't start if a variable gets a `default` twice). The live-preview script
+ * is skipped, since it's the file being regenerated.
+ */
+export async function declaredVarsInGame(rootPath: string): Promise<Set<string>> {
+  return declaredVarNames(await gameScripts(rootPath));
+}
+
+/**
+ * The variables and labels the scripts in a game folder already declare, for
+ * an export written next to them (see `declaredVarsInGame`).
+ */
+export async function declaredNamesInGame(rootPath: string): Promise<{ vars: Set<string>; labels: Set<string> }> {
+  const scripts = await gameScripts(rootPath);
+  return { vars: declaredVarNames(scripts), labels: declaredLabelNames(scripts) };
+}
+
+/** The scripts in a game folder, without the live-preview script (the file being regenerated). */
+async function gameScripts(rootPath: string): Promise<string[]> {
+  const scripts = await readRpyFolder(rootPath);
+  return scripts.filter(s => !s.name.endsWith("vnv_preview.rpy")).map(s => s.content);
+}
+
 export async function readRpyFolder(
   folderPath: string,
 ): Promise<{ name: string; content: string }[]> {
@@ -381,33 +372,3 @@ export async function readRpyFolder(
 }
 
 // ─── Distribution Builds ─────────────────────────────────────────────────────
-
-/**
- * Run `renpy.exe <projectRoot> distribute --package <package>` to build a
- * platform distributable. Blocking — waits for Ren'Py to finish and returns
- * the combined stdout+stderr log.
- *
- * @param projectRoot  - Absolute path to the Ren'Py project root.
- * @param pkg          - Package target: "pc", "win", "linux", "mac", "android".
- * @param sdkExePath   - Optional override path to the renpy.exe binary.
- * @param outputDir    - Optional destination directory for build output.
- */
-export async function distributeRenpyBuild(
-  projectRoot: string,
-  pkg: string,
-  sdkExePath?: string | null,
-  outputDir?: string | null,
-): Promise<string> {
-  return invoke<string>("distribute_renpy_build", {
-    project_root: projectRoot.replace(/\\/g, "/"),
-    package: pkg,
-    sdkExePath: sdkExePath ?? null,
-    outputDir: outputDir ?? null,
-  });
-}
-
-
-// ─── Backward compat alias ────────────────────────────────────────────────────
-// The old tauriApi used openProject; keep it pointing to the right place.
-export const openProject = openRpyProject;
-

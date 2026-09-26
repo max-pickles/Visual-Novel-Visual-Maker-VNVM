@@ -1,3 +1,5 @@
+import { parsePyString, pyString, readDefine, replaceDefine } from './rpyValue';
+
 export interface OptionsConfig {
   name: string;
   version: string;
@@ -7,37 +9,43 @@ export interface OptionsConfig {
 export function parseOptionsRpy(content: string): OptionsConfig {
   const lines = content.split('\n');
 
-  const getString = (key: string, fallback: string): string => {
-    // Matches: define config.name = _("My Game")
-    // Matches: define config.version = "1.0"
-    const re = new RegExp(`^\\s*define\\s+config\\.${key}\\s*=\\s*(?:_\\()?['"](.+?)['"](?:\\))?`);
-    for (const line of lines) {
-      const m = line.match(re);
-      if (m) return m[1];
-    }
-    return fallback;
+  // define config.name = _("My Game")
+  // define config.version = "1.0"
+  const getString = (key: string): string => {
+    const value = readDefine(lines, `config.${key}`);
+    if (value === null) return '';
+    const translatable = value.match(/^_\(\s*(.*?)\s*\)$/);
+    return parsePyString(translatable ? translatable[1] : value) ?? '';
   };
 
   return {
-    name: getString('name', 'The Question'),
-    version: getString('version', "Ren'Py 7+ Edition"),
+    name: getString('name'),
+    version: getString('version'),
     _raw: lines,
   };
 }
 
+/**
+ * Set `config.<key>` to each string in `patches`, quoting it for Python.
+ * `config.name` is written translatable, as `_("…")`. A define that the file
+ * doesn't have yet is added at the end.
+ */
 export function patchOptionsRpy(rawContent: string, patches: Record<string, string>): string {
   const lines = rawContent.split('\n');
-  const result = lines.map(line => {
-    for (const [key, value] of Object.entries(patches)) {
-      const isTranslatable = key === 'name'; // config.name uses _("...")
-      const re = new RegExp(`^(\\s*define\\s+config\\.${key}\\s*=\\s*)(?:_\\()?['"].+?['"](?:\\))?(.*)$`);
-      const m = line.match(re);
-      if (m) {
-        const newVal = isTranslatable ? `_("${value}")` : `"${value}"`;
-        return `${m[1]}${newVal}${m[2]}`;
+  for (const [key, text] of Object.entries(patches)) {
+    const value = key === 'name' ? `_(${pyString(text)})` : pyString(text);
+    let found = false;
+    for (let i = 0; i < lines.length; i++) {
+      const patched = replaceDefine(lines[i], `config.${key}`, value);
+      if (patched !== null) {
+        lines[i] = patched;
+        found = true;
       }
     }
-    return line;
-  });
-  return result.join('\n');
+    if (!found) {
+      const end = lines.length > 0 && lines[lines.length - 1].trim() === '' ? lines.length - 1 : lines.length;
+      lines.splice(end, 0, `define config.${key} = ${value}`);
+    }
+  }
+  return lines.join('\n');
 }

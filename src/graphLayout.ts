@@ -20,11 +20,6 @@ export interface LayoutEdge {
   targetId: string;
 }
 
-export interface LayoutCluster {
-  id: string;
-  nodeIds: string[];
-}
-
 export interface LayoutConfig {
   paddingX: number;
   paddingY: number;
@@ -287,42 +282,6 @@ export function computeLayeredLayoutGeneric<N extends LayoutNode>(
     ...node,
     position: finalPositions.get(node.id) ?? node.position,
   }));
-}
-
-/** Build clusters from nodes by grouping mode. */
-export function buildClustersGeneric<N extends LayoutNode>(
-  nodes: N[],
-  edges: LayoutEdge[],
-  groupingMode: 'none' | 'connected-component' | 'filename-prefix',
-  prefixExtractor: (node: N) => string | null,
-): LayoutCluster[] {
-  if (groupingMode === 'connected-component') {
-    return getConnectedComponents(nodes, edges).map((nodeIds, index) => ({
-      id: `component-${index}`,
-      nodeIds,
-    }));
-  }
-
-  if (groupingMode === 'filename-prefix') {
-    const clusters = new Map<string, string[]>();
-    const singletons: string[] = [];
-    nodes.forEach(node => {
-      const prefix = prefixExtractor(node);
-      if (!prefix) { singletons.push(node.id); return; }
-      const list = clusters.get(prefix) ?? [];
-      list.push(node.id);
-      clusters.set(prefix, list);
-    });
-    const result: LayoutCluster[] = [];
-    clusters.forEach((nodeIds, id) => {
-      if (nodeIds.length > 1) result.push({ id, nodeIds });
-      else singletons.push(nodeIds[0]);
-    });
-    singletons.forEach((id, index) => result.push({ id: `single-${index}-${id}`, nodeIds: [id] }));
-    return result;
-  }
-
-  return nodes.map(node => ({ id: node.id, nodeIds: [node.id] }));
 }
 
 /**
@@ -647,7 +606,6 @@ export function computeMaxRpgLayout<N extends LayoutNode>(
     }
   });
 
-  const nodeById = new Map<string, N>(nodes.map(n => [n.id, n]));
   const pos      = new Map<string, { x: number; y: number }>();
   const placed   = new Set<string>();
 
@@ -847,8 +805,6 @@ export function computeTutorialLayout<N extends LayoutNode>(
   const NODE_H         = config.defaultHeight || 110;
   const ROW_GAP        = 300;   // vertical gap between rows
   const COL_GAP        = 120;   // horizontal gap between lesson columns within a section
-  const SECTION_GAP    = 260;   // extra horizontal gap between section groups
-  const LESSONS_PER_COL = 7;    // lessons per column before wrapping
   const ORIGIN_X       = config.paddingX || 100;
   const ORIGIN_Y       = config.paddingY || 100;
 
@@ -973,8 +929,6 @@ export function computeTutorialLayout<N extends LayoutNode>(
     if (p.x < minX) minX = p.x;
     if (p.y < minY) minY = p.y;
   });
-
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
   return nodes.map(n => ({
     ...n,

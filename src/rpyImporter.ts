@@ -45,12 +45,13 @@
  */
 
 import type {
-  VNProject, VNScene, VNEvent, VNCharacter, VNChoiceOpt,
+  VNProject, VNScene, VNEvent, VNChoiceOpt,
 } from "./types";
 import {
-  newProject, newCharacter, newEvent,
+  newProject, newCharacter,
 } from "./types";
 import { autoLayoutProject } from "./sceneGraphUtils";
+import { parsePyString } from "./rpyValue";
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -72,13 +73,25 @@ export interface ImportResult {
   warnings: string[];
 }
 
+/** Config, UI, test and utility scripts, which aren't part of the story. */
+const NON_STORY_FILES = new Set([
+  "options.rpy", "gui.rpy", "screens.rpy", "styles.rpy",
+  "testcases.rpy", "guisupport.rpy", "accessibility.rpy",
+]);
+/** Folders that hold no story: translations, GUI files, caches and saves. */
+const NON_STORY_DIRS = new Set(["cache", "tl", "gui", "saves", "vn_maker", ".vscode"]);
+
 /**
- * Parse all .rpy file contents from a game folder.
- * @param files  Array of { name, content } for every .rpy file found.
- * @param folderPath  The root path of the game folder (used for _rootPath).
- * @param title  Project title.
- * @param author  Project author.
+ * Whether the importer reads `path` as part of the story. Everything else it
+ * leaves alone, and a project-folder export keeps it.
+ * @param path - Script path, relative to the game folder or the project folder.
  */
+export function isStoryScript(path: string): boolean {
+  const segments = path.replace(/\\/g, "/").split("/");
+  const name = segments[segments.length - 1];
+  return !NON_STORY_FILES.has(name) && !segments.some(seg => NON_STORY_DIRS.has(seg));
+}
+
 /**
  * Parse all `.rpy` file contents from a Ren'Py `game/` folder into a
  * {@link VNProject}.
@@ -115,34 +128,25 @@ export function importFromRpyFiles(
   // ── 1. Merge all lines ────────────────────────────────────────────────────
   const allLines: string[] = [];
   for (const file of files) {
-    // Skip GUI/screens/options — they are not story content
-    const skip = [
-      "options.rpy", "gui.rpy", "screens.rpy", "styles.rpy",
-      "testcases.rpy", "guisupport.rpy", "accessibility.rpy",
-    ];
-    // Skip files inside non-story directories (handles both "tl/x.rpy" and "/tl/x.rpy")
-    const skipDirs = ["cache", "tl", "gui", "saves", "vn_maker", ".vscode"];
-    const norm = file.name.replace(/\\/g, "/");
-    // Match basename for the skip-filename list
-    const basename = norm.split("/").pop() ?? norm;
-    if (skip.some(s => basename === s)) continue;
-    // Match any path segment for the skip-directory list
-    if (skipDirs.some(d => norm.split("/").some(seg => seg === d))) continue;
+    if (!isStoryScript(file.name)) continue;
     allLines.push(...file.content.split("\n"));
   }
 
   // ── 2. Parse character definitions: define e = Character("Eileen") ────────
+  // The name may be wrapped for translation: Character(_("Eileen"), …).
   const charVarMap: Record<string, string> = {}; // varname → char.id
-  const charDefRe = /^define\s+(\w+)\s*=\s*Character\s*\(\s*["']([^"']+)["']/;
+  const charDefRe = /^\s*define\s+(\w+)\s*=\s*Character\s*\(\s*(?:_\(\s*)?(["'])((?:\\.|(?!\2).)+)\2/;
   const charColorRe = /color\s*=\s*["']([^"']+)["']/;
 
   const fullText = allLines.join("\n");
   for (const line of allLines) {
     const m = line.match(charDefRe);
     if (m) {
-      const [, varname, charname] = m;
+      const [, varname, , quotedName] = m;
+      const charname = quotedName.replace(/\\(.)/g, "$1");
       const ch = newCharacter(charname);
       ch.name = varname; // use the variable name as the script id
+      ch.renpy_name = varname;
       ch.poses = [];     // clear template poses — only discovered images will populate these
       ch.sprites = {};
       // Try to extract color
@@ -198,12 +202,14 @@ export function importFromRpyFiles(
 
   // ── 4. State machine ──────────────────────────────────────────────────────
   const labelRe   = /^label\s+([\w.]+)\s*:/;
-  const sayRe     = /^(\w+)\s+"(.*)"/;
-  const narrRe    = /^"(.*)"/;
+  // A string literal, "…" or '…', with backslash escapes; parsePyString reads it.
+  const str       = String.raw`("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')`;
+  const sayRe     = new RegExp(String.raw`^(\w+)\s+${str}`);
+  const narrRe    = new RegExp(`^${str}`);
   const jumpRe    = /^jump\s+([\w.]+)/;
   const callRe    = /^call\s+([\w.]+)/;
   const menuRe    = /^menu\s*:/;
-  const choiceRe  = /^"([^"]+)"\s*:/;
+  const choiceRe  = new RegExp(String.raw`^${str}(?:\s+if\s+(.+?))?\s*:\s*(?:#.*)?$`);
   const sceneRe   = /^scene\s+([\w/.\ \-]+)/;
   const showRe    = /^show\s+([\w/.\ \-]+?)(?:\s+at\s+(left|center|right))?(?:\s+with\s+\w+)?$/;
   const hideRe    = /^hide\s+/;
@@ -354,6 +360,7 @@ export function importFromRpyFiles(
       }
 
       const sc: VNScene = { id: uid6(), label: sceneLbl, bg: null, music: null, events: [] };
+      if (sceneLbl === lbl) sc.renpy_label = lbl;
       // Register under the full original label so `jump vns_scene_X` targets resolve
       sceneNodes[lbl] = sc;
       // Also register under the stripped label so plain `jump X` targets resolve
@@ -496,7 +503,8 @@ export function importFromRpyFiles(
     if (inMenu && menuEv) {
       m = line.match(choiceRe);
       if (m) {
-        const opt: VNChoiceOpt = { id: uid6(), text: m[1], scene: null };
+        const opt: VNChoiceOpt = { id: uid6(), text: parsePyString(m[1]) ?? "", scene: null };
+        if (m[2]) opt.condition = m[2];
         (menuEv.opts ??= []).push(opt);
         continue;
       }
@@ -533,14 +541,16 @@ export function importFromRpyFiles(
     // ── dialogue (character says) ─────────────────────────────────────────
     m = line.match(sayRe);
     if (m) {
-      const [, varname, text] = m;
-      // Skip if we're inside a menu (it's a prompt)
+      const varname = m[1];
+      const text = parsePyString(m[2]) ?? "";
+      const charId = charVarMap[varname];
+      // Inside a menu it's the prompt, said by that character
       if (inMenu && menuEv) {
-        menuEv.prompt = `${varname}: ${text}`;
+        if (charId) menuEv.char_id = charId;
+        menuEv.prompt = charId ? text : `${varname}: ${text}`;
         continue;
       }
       finishMenu();
-      const charId = charVarMap[varname];
       let ev: VNEvent;
       if (charId) {
         ev = { id: uid6(), type: "dialogue", char_id: charId, pose: "neutral", text, side: "center" };
@@ -555,13 +565,14 @@ export function importFromRpyFiles(
     // ── narration (standalone quoted string) ──────────────────────────────
     m = line.match(narrRe);
     if (m) {
+      const text = parsePyString(m[1]) ?? "";
       // Skip if we're inside a menu (it's a prompt)
       if (inMenu && menuEv) {
-        menuEv.prompt = m[1];
+        menuEv.prompt = text;
         continue;
       }
       finishMenu();
-      const ev: VNEvent = { id: uid6(), type: "narration", text: m[1] };
+      const ev: VNEvent = { id: uid6(), type: "narration", text };
       currentScene.events.push(ev);
       continue;
     }

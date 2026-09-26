@@ -1,234 +1,10 @@
 // VNVMaker — Rust core
-// Lean, fast Ren'Py project parser and save system.
+// Project files, scaffolding from the Ren'Py template, and path checks.
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use uuid::Uuid;
 use walkdir::WalkDir;
 use regex::Regex;
-
-// ─── Legacy Read-Only Types (Ren'Py parser) ───────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SceneNode {
-    pub id: String,
-    pub label: String,
-    pub kind: NodeKind,
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub file_path: String,
-    pub line_number: usize,
-    pub links: Vec<NodeLink>,
-    pub content: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum NodeKind {
-    Label,
-    Menu,
-    Init,
-    Screen,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeLink {
-    pub target_label: String,
-    pub link_type: LinkType,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LinkType {
-    Jump,
-    Call,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpyProject {
-    pub root_path: String,
-    pub nodes: Vec<SceneNode>,
-    pub files: Vec<String>,
-}
-
-// ─── Ren'Py Parser ────────────────────────────────────────────────────────────
-
-pub fn parse_renpy_project(root: &Path) -> Result<RpyProject, String> {
-    let mut nodes: Vec<SceneNode> = Vec::new();
-    let mut rpy_files: Vec<String> = Vec::new();
-
-    // Files we never want to treat as story content
-    let skip_files = [
-        "screens.rpy", "gui.rpy", "options.rpy", "styles.rpy",
-        "testcases.rpy", "guisupport.rpy", "accessibility.rpy",
-    ];
-    // Subdirectories that contain only non-story files
-    let skip_dirs = ["cache", "tl", "gui", "vn_maker", ".vscode"];
-
-    for entry in WalkDir::new(root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "rpy"))
-    {
-        let path = entry.path().to_path_buf();
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        // Skip files by name
-        let fname = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        if skip_files.iter().any(|s| fname == *s) { continue; }
-
-        // Skip files inside blacklisted directories
-        let parts: Vec<&str> = rel.split('/').collect();
-        if parts.iter().any(|p| skip_dirs.contains(p)) { continue; }
-
-        rpy_files.push(rel.clone());
-        let file_nodes = parse_rpy_file(&path, &rel)?;
-
-        // Only keep story nodes: Labels only (no Screen, Init, Unknown)
-        // Also filter out VNVMaker internal labels (vn_, vns_, _vn)
-        for node in file_nodes {
-            if node.kind != NodeKind::Label { continue; }
-            let lbl = &node.label;
-            if lbl.starts_with("vn_") || lbl.starts_with("vns_") || lbl.starts_with("_vn") { continue; }
-            nodes.push(node);
-        }
-    }
-
-    let cols = 4usize;
-    let h_gap = 280.0f64;
-    let v_gap = 180.0f64;
-    for (i, node) in nodes.iter_mut().enumerate() {
-        node.x = (i % cols) as f64 * h_gap + 40.0;
-        node.y = (i / cols) as f64 * v_gap + 40.0;
-    }
-
-    Ok(RpyProject {
-        root_path: root.to_string_lossy().into_owned(),
-        nodes,
-        files: rpy_files,
-    })
-}
-
-
-fn parse_rpy_file(path: &Path, rel_path: &str) -> Result<Vec<SceneNode>, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Could not read {}: {}", rel_path, e))?;
-
-    let label_re = Regex::new(r"^label\s+(\w+)\s*(\(.*\))?\s*:").unwrap();
-    let menu_re  = Regex::new(r"^\s*menu\s*(\w+)?\s*:").unwrap();
-    let init_re  = Regex::new(r"^init\s*(-?\d+)?\s*:").unwrap();
-    let screen_re= Regex::new(r"^screen\s+(\w+)\s*").unwrap();
-    let jump_re  = Regex::new(r"\bjump\s+(\w+)").unwrap();
-    let call_re  = Regex::new(r"\bcall\s+(\w+)").unwrap();
-
-    let lines: Vec<&str> = content.lines().collect();
-    let mut nodes: Vec<SceneNode> = Vec::new();
-    let mut current_node: Option<SceneNode> = None;
-    let mut current_indent: usize = 0;
-
-    let get_indent = |line: &str| line.len() - line.trim_start().len();
-
-    for (line_num, &line) in lines.iter().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            if let Some(ref mut n) = current_node {
-                n.content.push(line.to_string());
-            }
-            continue;
-        }
-
-        let indent = get_indent(line);
-
-        let new_node: Option<(String, NodeKind)> = if let Some(cap) = label_re.captures(trimmed) {
-            Some((cap[1].to_string(), NodeKind::Label))
-        } else if menu_re.is_match(trimmed) && indent == 0 {
-            Some((format!("menu_{}", line_num + 1), NodeKind::Menu))
-        } else if init_re.is_match(trimmed) && indent == 0 {
-            Some((format!("init_{}", line_num + 1), NodeKind::Init))
-        } else if let Some(cap) = screen_re.captures(trimmed) {
-            Some((cap[1].to_string(), NodeKind::Screen))
-        } else {
-            None
-        };
-
-        if let Some((label, kind)) = new_node {
-            if let Some(finished) = current_node.take() {
-                nodes.push(finished);
-            }
-            current_indent = indent;
-            current_node = Some(SceneNode {
-                id: Uuid::new_v4().to_string(),
-                label,
-                kind,
-                x: 0.0,
-                y: 0.0,
-                width: 220.0,
-                height: 120.0,
-                file_path: rel_path.to_string(),
-                line_number: line_num + 1,
-                links: Vec::new(),
-                content: vec![line.to_string()],
-            });
-        } else if let Some(ref mut node) = current_node {
-            if indent > current_indent || trimmed.starts_with('$') || trimmed.starts_with('"') {
-                for cap in jump_re.captures_iter(trimmed) {
-                    node.links.push(NodeLink {
-                        target_label: cap[1].to_string(),
-                        link_type: LinkType::Jump,
-                    });
-                }
-                for cap in call_re.captures_iter(trimmed) {
-                    node.links.push(NodeLink {
-                        target_label: cap[1].to_string(),
-                        link_type: LinkType::Call,
-                    });
-                }
-                node.content.push(line.to_string());
-                node.height = (80.0 + node.content.len() as f64 * 14.0).min(300.0);
-            } else {
-                let finished = current_node.take().unwrap();
-                nodes.push(finished);
-            }
-        }
-    }
-
-    if let Some(n) = current_node {
-        nodes.push(n);
-    }
-
-    Ok(nodes)
-}
-
-// ─── Save / Positions ─────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LayoutData {
-    pub positions: HashMap<String, [f64; 2]>,
-}
-
-pub fn save_layout(root: &Path, layout: &LayoutData) -> Result<(), String> {
-    let path = root.join(".vnvmaker_layout.json");
-    let json = serde_json::to_string_pretty(layout)
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
-}
-
-pub fn load_layout(root: &Path) -> LayoutData {
-    let path = root.join(".vnvmaker_layout.json");
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| LayoutData { positions: HashMap::new() })
-}
 
 // ─── File Helpers ──────────────────────────────────────────────────────────────
 
@@ -247,7 +23,7 @@ pub fn list_rpy_files(root: &Path) -> Vec<String> {
     WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpy"))
+        .filter(|e| e.path().extension().is_some_and(|x| x == "rpy"))
         .map(|e| {
             e.path()
                 .strip_prefix(root)
@@ -285,7 +61,7 @@ pub fn list_assets(root: &Path, asset_type: &str) -> Vec<String> {
             e.path()
                 .extension()
                 .and_then(|x| x.to_str())
-                .map_or(false, |x| exts.contains(&x.to_lowercase().as_str()))
+                .is_some_and(|x| exts.contains(&x.to_lowercase().as_str()))
         })
         .map(|e| {
             e.path()
@@ -297,10 +73,66 @@ pub fn list_assets(root: &Path, asset_type: &str) -> Vec<String> {
         .collect()
 }
 
+// ─── Path checks ──────────────────────────────────────────────────────────────
+// The frontend passes paths to these commands, so each command checks the path
+// is the kind of file or folder it exists for.
+
+/// True for a folder that looks like a VNVMaker project or a Ren'Py game.
+pub fn looks_like_project(path: &Path) -> bool {
+    path.join("project.vnvmaker").is_file() || path.join("game").is_dir()
+}
+
+/// True if `path` has the extension `ext` (case-insensitive).
+pub fn has_extension(path: &Path, ext: &str) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext))
+}
+
+/// True if `path` is a file inside some game/ folder, or a project.vnvmaker
+/// in a project folder: the only files the app ever deletes.
+pub fn is_deletable_project_file(path: &Path) -> bool {
+    let in_game_dir = path
+        .ancestors()
+        .skip(1)
+        .any(|a| a.file_name().is_some_and(|n| n.eq_ignore_ascii_case("game")));
+    let is_project_file = path.file_name().is_some_and(|n| n == "project.vnvmaker")
+        && path.parent().is_some_and(looks_like_project);
+    in_game_dir || is_project_file
+}
+
 // ─── Recursive Directory Copy ─────────────────────────────────────────────────
+
+/// True if `path` doesn't exist, or is a directory with nothing in it.
+pub fn dir_is_empty_or_missing(path: &Path) -> bool {
+    if !path.exists() {
+        return true;
+    }
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => false,
+    }
+}
+
+/// Absolute form of `p`, resolving symlinks for the part of the path that exists.
+fn absolute_path(p: &Path) -> std::path::PathBuf {
+    if let Ok(c) = p.canonicalize() {
+        return c;
+    }
+    match (p.parent(), p.file_name()) {
+        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => absolute_path(parent).join(name),
+        _ => p.to_path_buf(),
+    }
+}
 
 /// Recursively copy src directory into dst (dst is created if needed).
 pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
+    // Copying a folder onto itself truncates its files, and copying it into one
+    // of its own subfolders never finishes.
+    if absolute_path(dst).starts_with(absolute_path(src)) {
+        return Err(format!(
+            "Can't copy {} into itself. Choose a destination outside that folder.",
+            src.to_string_lossy().replace('\\', "/")
+        ));
+    }
     std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
     for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -331,113 +163,22 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-// ─── Standalone Export ────────────────────────────────────────────────────────
-
-pub const SDK_PATH: &str = r"C:\Users\maxcm\OneDrive\Desktop\bob\renpy-8.5.2-sdk - Copy";
-pub const THE_QUESTION_PATH: &str = r"C:\Users\maxcm\OneDrive\Desktop\vnvgames\game";
-pub const TEMPLATE_PATH: &str = r"C:\Users\maxcm\OneDrive\Desktop\VNVMAKER\Templet\game";
-
-/// Export a VNVMaker project as a standalone Ren'Py game inside the SDK.
-/// - compiled_rpy:  the full .rpy script text
-/// - project_name:  safe ASCII name for the output folder inside the SDK
-/// - project_title: display title (for config.name)
-/// - asset_root:    path to the VNVMaker project folder (we look for images/ and audio/ in root AND root/game/)
-pub fn export_standalone(
-    compiled_rpy: &str,
-    project_name: &str,
-    project_title: &str,
-    asset_root: &Path,
-) -> Result<String, String> {
-    let sdk = Path::new(SDK_PATH);
-    // Use the_question as our GUI template — it already has a proper gui/ scaffold
-    let template = Path::new(THE_QUESTION_PATH);
-    let out_dir = sdk.join(project_name);
-
-    if out_dir.exists() {
-        return Err(format!(
-            "Folder '{}' already exists in the SDK. Delete it first or choose a different name.",
-            project_name
-        ));
-    }
-    if !template.exists() {
-        return Err(format!(
-            "Ren'Py SDK template (the_question) not found at {:?}. Check your SDK installation.",
-            template
-        ));
-    }
-
-    // 1. Copy the_question template into new project (gives us gui/, screens.rpy, options.rpy etc.)
-    copy_dir_all(template, &out_dir.join("game"))?;
-    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
-
-    // Copy icon files from the_question parent
-    let q_parent = template.parent().unwrap_or(template);
-    for icon_name in &["icon.ico", "icon.icns", "android-icon_background.png", "android-icon_foreground.png"] {
-        let src = q_parent.join(icon_name);
-        if src.exists() {
-            let _ = std::fs::copy(&src, out_dir.join(icon_name));
-        }
-    }
-
-    // 2. Patch options.rpy
-    let options_path = out_dir.join("game").join("options.rpy");
-    if options_path.exists() {
-        let opts = std::fs::read_to_string(&options_path).map_err(|e| e.to_string())?;
-        let opts = Regex::new(r#"define config\.name = _\(".*?"\)"#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define config.name = _("{}")"#, project_title))
-            .to_string();
-        let opts = Regex::new(r#"define build\.name = ".*?""#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define build.name = "{}""#, project_name))
-            .to_string();
-        let opts = Regex::new(r#"define config\.save_directory = ".*?""#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define config.save_directory = "{}""#, project_name))
-            .to_string();
-        std::fs::write(&options_path, opts).map_err(|e| e.to_string())?;
-    }
-
-    // 3. Write compiled script — overwrites the_question's script.rpy
-    let script_path = out_dir.join("game").join("script.rpy");
-    write_file(&script_path, compiled_rpy)?;
-
-    // Remove compiled .rpyc files so Ren'Py recompiles from our new source
-    for entry in WalkDir::new(&out_dir.join("game"))
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpyc"))
-    {
-        let _ = std::fs::remove_file(entry.path());
-    }
-
-    // 4. Copy user assets from the project folder:
-    //    Try asset_root/game/images (if project uses game/ subdir)
-    //    Fall back to asset_root/images (flat layout)
-    for folder in &["images", "audio"] {
-        let candidates = [
-            asset_root.join("game").join(folder),
-            asset_root.join(folder),
-        ];
-        for src_folder in &candidates {
-            if src_folder.exists() {
-                let dst_folder = out_dir.join("game").join(folder);
-                copy_dir_all(src_folder, &dst_folder)?;
-                break;
-            }
-        }
-    }
-
-    Ok(out_dir.to_string_lossy().into_owned())
-}
-
 /// Scaffold a brand new blank project from the Templet folder.
 /// Copies gui/, options.rpy, screens.rpy, gui.rpy, and a starter script.rpy —
 /// but NO story images or audio. The images/ and audio/ dirs are created empty.
-pub fn scaffold_from_template(project_root: &Path, project_title: &str) -> Result<String, String> {
-    let template = Path::new(TEMPLATE_PATH);
-    if !template.exists() {
-        return Err(format!("Template not found at: {:?}. Create the Templet folder first.", template));
+///
+/// `template` is the Templet `game/` folder bundled with the app. Refuses to
+/// touch a `project_root` that already has files in it, so creating a project
+/// can never overwrite an existing one.
+pub fn scaffold_from_template(template: &Path, project_root: &Path, project_title: &str) -> Result<String, String> {
+    if !template.is_dir() {
+        return Err(format!("Project template not found at {:?}. Reinstall VNVMaker.", template));
+    }
+    if !dir_is_empty_or_missing(project_root) {
+        return Err(format!(
+            "A folder already exists at {}. Choose a different project title.",
+            project_root.to_string_lossy().replace('\\', "/")
+        ));
     }
     let game_dir = project_root.join("game");
     std::fs::create_dir_all(&game_dir).map_err(|e| e.to_string())?;
@@ -449,19 +190,17 @@ pub fn scaffold_from_template(project_root: &Path, project_title: &str) -> Resul
     for entry in WalkDir::new(&game_dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpyc"))
+        .filter(|e| e.path().extension().is_some_and(|x| x == "rpyc"))
     {
         let _ = std::fs::remove_file(entry.path());
     }
 
-    // Patch options.rpy to use the project title
+    // Name the game after the project, as Ren'Py's launcher does
     let opts_path = game_dir.join("options.rpy");
     if opts_path.exists() {
         let opts = std::fs::read_to_string(&opts_path).map_err(|e| e.to_string())?;
-        let opts = Regex::new(r#"define config\.name = _\(".*?"\)"#)
-            .unwrap()
-            .replace(&opts, &format!(r#"define config.name = _("{}")"#, project_title))
-            .to_string();
+        let opts = set_define(&opts, "config.name", &format!("_({})", py_quote(project_title)));
+        let opts = set_define(&opts, "build.name", &py_quote(&simple_name(project_title)));
         std::fs::write(&opts_path, opts).map_err(|e| e.to_string())?;
     }
 
@@ -474,6 +213,37 @@ pub fn scaffold_from_template(project_root: &Path, project_title: &str) -> Resul
 }
 
 
+
+// ─── Ren'Py define helpers ────────────────────────────────────────────────────
+
+/// `s` as a double-quoted Python string literal.
+fn py_quote(s: &str) -> String {
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n");
+    format!("\"{}\"", escaped)
+}
+
+/// The ASCII letters, digits, `-` and `_` of `title`, or "game" if it has
+/// none. Ren'Py's launcher derives build.name and the save directory this way,
+/// since they may not contain spaces, colons or semicolons.
+fn simple_name(title: &str) -> String {
+    let name: String = title
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if name.is_empty() { "game".to_string() } else { name }
+}
+
+/// Set the value of every `define <name> = …` line in `text`. `value` is
+/// inserted verbatim; a trailing comment on the line is dropped.
+fn set_define(text: &str, name: &str, value: &str) -> String {
+    let re = Regex::new(&format!(r"(?m)^([ \t]*define[ \t]+{}[ \t]*=[ \t]*)[^\r\n]*", regex::escape(name))).unwrap();
+    re.replace_all(text, |caps: &regex::Captures| format!("{}{}", &caps[1], value))
+        .into_owned()
+}
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
@@ -504,50 +274,31 @@ pub fn apply_project_settings(
 ) -> Result<(), String> {
     let game_dir = project_root.join("game");
 
-    // Derive muted/hover-muted colors as darkened tints of the accent
-    let (muted_hex, hover_muted_hex) = if let Some((r, g, b)) = hex_to_rgb(accent_hex) {
-        (rgb_to_hex(r * 0.25, g * 0.25, b * 0.25),
-         rgb_to_hex(r * 0.40, g * 0.40, b * 0.40))
-    } else {
-        (bg_hex.to_string(), bg_hex.to_string())
-    };
-
     // --- gui.rpy ---------------------------------------------------------------
     let gui_path = game_dir.join("gui.rpy");
     if gui_path.exists() {
         let text = std::fs::read_to_string(&gui_path).map_err(|e| e.to_string())?;
 
         // Resolution: gui.init(1280, 720) → gui.init(W, H)
-        let text = Regex::new(r"gui\.init\(\d+,\s*\d+\)")
+        let mut text = Regex::new(r"gui\.init\(\d+,\s*\d+\)")
             .unwrap()
-            .replace(&text, &format!("gui.init({}, {})", width, height))
-            .to_string();
+            .replace(&text, format!("gui.init({}, {})", width, height).as_str())
+            .into_owned();
 
-        // Accent color — template uses double-quoted strings
-        let text = Regex::new(r#"define gui\.accent_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!("define gui.accent_color = \"{}\"", accent_hex))
-            .to_string();
-
-        // hover_color — template uses Color(gui.accent_color).tint(.6); keep that form
-        // so Ren'Py auto-derives it from whatever accent_color is set to above.
-        // Only replace if it was accidentally a string literal.
-        let text = Regex::new(r#"define gui\.hover_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, "define gui.hover_color = Color(gui.accent_color).tint(.6)")
-            .to_string();
-
-        // muted_color — double-quoted in template
-        let text = Regex::new(r#"define gui\.muted_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!("define gui.muted_color = \"{}\"", muted_hex))
-            .to_string();
-
-        // hover_muted_color — double-quoted in template
-        let text = Regex::new(r#"define gui\.hover_muted_color\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!("define gui.hover_muted_color = \"{}\"", hover_muted_hex))
-            .to_string();
+        // Accent color, plus the colors derived from it: hover is the accent tinted
+        // toward white (as Ren'Py's launcher does), the muted colors are darkened
+        // shades. Colors that aren't #rrggbb are ignored so gui.rpy stays valid.
+        let quoted = |r: f64, g: f64, b: f64| format!("'{}'", rgb_to_hex(r, g, b));
+        if let Some((r, g, b)) = hex_to_rgb(accent_hex) {
+            let tint = |c: f64| c * 0.6 + 0.4;
+            text = set_define(&text, "gui.accent_color", &quoted(r, g, b));
+            text = set_define(&text, "gui.hover_color", &quoted(tint(r), tint(g), tint(b)));
+            text = set_define(&text, "gui.muted_color", &quoted(r * 0.25, g * 0.25, b * 0.25));
+            text = set_define(&text, "gui.hover_muted_color", &quoted(r * 0.40, g * 0.40, b * 0.40));
+        } else if let Some((r, g, b)) = hex_to_rgb(bg_hex) {
+            text = set_define(&text, "gui.muted_color", &quoted(r, g, b));
+            text = set_define(&text, "gui.hover_muted_color", &quoted(r, g, b));
+        }
 
         std::fs::write(&gui_path, text).map_err(|e| e.to_string())?;
     }
@@ -563,10 +314,8 @@ pub fn apply_project_settings(
         let proj_name = project_root.file_name()
             .unwrap_or_default()
             .to_string_lossy();
-        let text = Regex::new(r#"define config\.save_directory\s*=\s*"[^"]*""#)
-            .unwrap()
-            .replace(&text, &format!(r#"define config.save_directory = "{}-{}""#, proj_name, ts))
-            .to_string();
+        let save_dir = format!("{}-{}", simple_name(&proj_name), ts);
+        let text = set_define(&text, "config.save_directory", &py_quote(&save_dir));
         std::fs::write(&opts_path, text).map_err(|e| e.to_string())?;
     }
 
@@ -615,7 +364,7 @@ pub fn validate_renpy_game(root: &Path) -> Result<std::path::PathBuf, String> {
         .any(|e| {
             e.path()
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("rpy"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("rpy"))
         });
 
     if !has_rpy {
@@ -628,236 +377,317 @@ pub fn validate_renpy_game(root: &Path) -> Result<std::path::PathBuf, String> {
     Ok(game_dir)
 }
 
-// ─── .rpy Importer ────────────────────────────────────────────────────────────
+// ─── Ren'Py strings ──────────────────────────────────────────────────────────
 
-/// Minimal import: reads the folder structure and returns JSON that the
-/// frontend compiler.ts can polish into a full VNProject.
-/// Returns a JSON string representing { scenes, characters, warnings }.
-pub fn import_rpy_folder(folder_path: &Path) -> Result<String, String> {
-    use std::collections::HashMap;
-
-    if !folder_path.exists() {
-        return Err(format!("Folder not found: {:?}", folder_path));
-    }
-
-    let char_re = Regex::new(r#"^define\s+(\w+)\s*=\s*Character\s*\(\s*["']([^"']+)["']"#).unwrap();
-    let label_re = Regex::new(r"^label\s+([\w.]+)\s*:").unwrap();
-    let say_re = Regex::new(r#"^(\w+)\s+"(.*)""#).unwrap();
-    let narr_re = Regex::new(r#"^"(.*)""#).unwrap();
-    let jump_re = Regex::new(r"^jump\s+([\w.]+)").unwrap();
-    let call_re = Regex::new(r"^call\s+([\w.]+)").unwrap();
-    let menu_re = Regex::new(r"^menu\s*:").unwrap();
-    let choice_re = Regex::new(r#"^"([^"]+)"\s*:"#).unwrap();
-    let scene_bg_re = Regex::new(r"^scene\s+([\w/.\ \-]+)").unwrap();
-    let play_re = Regex::new(r#"^play\s+music\s+["']([^"']+)["']"#).unwrap();
-
-    let exclude_files = ["options.rpy", "gui.rpy", "screens.rpy", "guisupport.rpy"];
-    let exclude_dirs = ["vn_maker", "cache", "tl"];
-
-    let mut all_lines: Vec<(usize, String)> = Vec::new();
-    for entry in WalkDir::new(folder_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |x| x == "rpy"))
-    {
-        let fname = entry.file_name().to_string_lossy().to_string();
-        if exclude_files.contains(&fname.as_str()) { continue; }
-        let parts: Vec<_> = entry.path().components().collect();
-        if parts.iter().any(|p| exclude_dirs.contains(&p.as_os_str().to_str().unwrap_or(""))) { continue; }
-        if let Ok(text) = std::fs::read_to_string(entry.path()) {
-            // Strip translate blocks before adding to all_lines.
-            // A translate block starts with `translate <lang> <label>:` (no leading indent)
-            // and ends when a non-empty, non-indented line appears.
-            let translate_block_re = Regex::new(r"^translate\s+\w+\s+").unwrap();
-            let mut in_translate_block = false;
-            let start = all_lines.len();
-            for (i, line) in text.lines().enumerate() {
-                let trimmed = line.trim();
-                // Detect start of a translate block
-                if !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.is_empty() {
-                    if translate_block_re.is_match(trimmed) {
-                        in_translate_block = true;
-                        continue;
-                    } else {
-                        // Back to top-level non-translate content
-                        in_translate_block = false;
-                    }
-                }
-                if in_translate_block { continue; }
-                all_lines.push((start + i, line.to_string()));
-            }
+/// The text of the first double-quoted string on a line of Ren'Py, with its
+/// escapes resolved as Ren'Py reads them (`\"` is `"`, `\n` a line break).
+pub fn extract_rpy_quoted(line: &str) -> Option<String> {
+    let start = line.find('"')?;
+    let mut text = String::new();
+    let mut chars = line[start + 1..].chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next()? {
+                'n' => text.push('\n'),
+                escaped => text.push(escaped),
+            },
+            '"' => return Some(text),
+            _ => text.push(c),
         }
     }
+    None
+}
 
-    // Parse characters
-    let full_text: String = all_lines.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join("\n");
-    let mut char_map: HashMap<String, serde_json::Value> = HashMap::new();
-    for cap in char_re.captures_iter(&full_text) {
-        let varname = cap[1].to_string();
-        let charname = cap[2].to_string();
-        let id = format!("{:08x}", varname.chars().map(|c| c as u32).sum::<u32>());
-        char_map.insert(varname, serde_json::json!({
-            "id": id, "name": charname, "display": charname,
-            "color": "#c8d0ff", "sprites": {}, "poses": ["neutral","happy","sad","angry","surprised"]
-        }));
+// ─── Ren'Py SDK ──────────────────────────────────────────────────────────────
+
+/// The Ren'Py launchers this platform can run, most preferred first. The SDK
+/// ships both renpy.exe and renpy.sh, but each only runs on its own platform.
+/// `renpy` is the command that Linux packages of Ren'Py install.
+#[cfg(windows)]
+const RENPY_LAUNCHERS: &[&str] = &["renpy.exe"];
+#[cfg(not(windows))]
+const RENPY_LAUNCHERS: &[&str] = &["renpy.sh", "renpy"];
+
+/// This platform's Ren'Py launcher in `dir`, if it has one.
+pub fn renpy_launcher_in(dir: &Path) -> Option<PathBuf> {
+    RENPY_LAUNCHERS.iter().map(|name| dir.join(name)).find(|p| p.is_file())
+}
+
+/// The launcher for a user-supplied SDK location: the SDK folder or a launcher
+/// in it. A launcher for another platform leads to this platform's one next to
+/// it, so picking renpy.exe on Linux still finds renpy.sh. Anything else is
+/// ignored, so the setting can't be used to start some other program.
+pub fn renpy_launcher_from_hint(hint: &str) -> Option<PathBuf> {
+    let path = Path::new(hint.trim());
+    if path.is_dir() {
+        return renpy_launcher_in(path);
     }
-
-    // Parse scenes
-    let mut scenes: Vec<serde_json::Value> = Vec::new();
-    let mut current_scene: Option<serde_json::Value> = None;
-    let mut in_menu = false;
-    let mut menu_ev: Option<serde_json::Value> = None;
-    let mut warnings: Vec<String> = Vec::new();
-
-    let finish_menu = |current_scene: &mut Option<serde_json::Value>, in_menu: &mut bool, menu_ev: &mut Option<serde_json::Value>| {
-        if *in_menu {
-            if let (Some(sc), Some(ev)) = (current_scene.as_mut(), menu_ev.take()) {
-                if let Some(evs) = sc["events"].as_array_mut() { evs.push(ev); }
-            }
-        }
-        *in_menu = false;
-        *menu_ev = None;
-    };
-
-    for (_, line) in &all_lines {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
-
-        // Label
-        if let Some(cap) = label_re.captures(trimmed) {
-            finish_menu(&mut current_scene, &mut in_menu, &mut menu_ev);
-            if let Some(sc) = current_scene.take() { scenes.push(sc); }
-            let lbl = cap[1].to_string();
-            let id = Uuid::new_v4().to_string()[..8].to_string();
-            current_scene = Some(serde_json::json!({
-                "id": id, "label": lbl, "bg": null, "music": null, "events": []
-            }));
-            continue;
-        }
-
-        let sc = match current_scene.as_mut() { Some(s) => s, None => continue };
-
-        if let Some(cap) = scene_bg_re.captures(trimmed) {
-            let bg = cap[1].trim().to_string();
-            let ev_id = Uuid::new_v4().to_string()[..8].to_string();
-            sc["events"].as_array_mut().unwrap().push(serde_json::json!({"id":ev_id,"type":"bg","bg":bg}));
-            sc["bg"] = serde_json::json!(bg);
-            continue;
-        }
-        if let Some(cap) = play_re.captures(trimmed) {
-            let music = cap[1].to_string();
-            let ev_id = Uuid::new_v4().to_string()[..8].to_string();
-            sc["events"].as_array_mut().unwrap().push(serde_json::json!({"id":ev_id,"type":"music","music":music}));
-            continue;
-        }
-        if menu_re.is_match(trimmed) {
-            finish_menu(&mut current_scene, &mut in_menu, &mut menu_ev);
-            let _sc = current_scene.as_mut().unwrap();
-            in_menu = true;
-            let ev_id = Uuid::new_v4().to_string()[..8].to_string();
-            menu_ev = Some(serde_json::json!({"id":ev_id,"type":"choice","prompt":"","opts":[]}));
-            continue;
-        }
-        if in_menu {
-            if let Some(cap) = choice_re.captures(trimmed) {
-                let opt_id = Uuid::new_v4().to_string()[..6].to_string();
-                if let Some(ev) = menu_ev.as_mut() {
-                    ev["opts"].as_array_mut().unwrap().push(serde_json::json!({"id":opt_id,"text":cap[1].to_string(),"scene":null}));
-                }
-                continue;
-            }
-            if let Some(cap) = jump_re.captures(trimmed) {
-                let target = cap[1].to_string();
-                if let Some(ev) = menu_ev.as_mut() {
-                    if let Some(opts) = ev["opts"].as_array_mut() {
-                        if let Some(last) = opts.last_mut() {
-                            last["_target_lbl"] = serde_json::json!(target);
-                        }
-                    }
-                }
-                continue;
-            }
-        }
-
-        if let Some(cap) = jump_re.captures(trimmed).or_else(|| call_re.captures(trimmed)) {
-            finish_menu(&mut current_scene, &mut in_menu, &mut menu_ev);
-            let sc = current_scene.as_mut().unwrap();
-            let ev_id = Uuid::new_v4().to_string()[..8].to_string();
-            sc["events"].as_array_mut().unwrap().push(serde_json::json!({
-                "id": ev_id, "type": "jump", "scene_id": null, "_target_lbl": cap[1].to_string(), "transition": "dissolve"
-            }));
-            continue;
-        }
-        if let Some(cap) = say_re.captures(trimmed) {
-            finish_menu(&mut current_scene, &mut in_menu, &mut menu_ev);
-            let sc = current_scene.as_mut().unwrap();
-            let varname = cap[1].to_string();
-            let text = cap[2].to_string();
-            let ev_id = Uuid::new_v4().to_string()[..8].to_string();
-            if let Some(ch) = char_map.get(&varname) {
-                sc["events"].as_array_mut().unwrap().push(serde_json::json!({
-                    "id": ev_id, "type": "dialogue", "char_id": ch["id"], "pose": "neutral", "text": text, "side": "center"
-                }));
-            } else {
-                sc["events"].as_array_mut().unwrap().push(serde_json::json!({
-                    "id": ev_id, "type": "narration", "text": format!("{}: {}", varname, text)
-                }));
-            }
-            continue;
-        }
-        if let Some(cap) = narr_re.captures(trimmed) {
-            finish_menu(&mut current_scene, &mut in_menu, &mut menu_ev);
-            let sc = current_scene.as_mut().unwrap();
-            let ev_id = Uuid::new_v4().to_string()[..8].to_string();
-            sc["events"].as_array_mut().unwrap().push(serde_json::json!({
-                "id": ev_id, "type": "narration", "text": cap[1].to_string()
-            }));
-        }
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    if path.is_file() && ["renpy.exe", "renpy.sh", "renpy"].contains(&name.as_str()) {
+        renpy_launcher_in(path.parent()?)
+    } else {
+        None
     }
-    finish_menu(&mut current_scene, &mut in_menu, &mut menu_ev);
-    if let Some(sc) = current_scene { scenes.push(sc); }
+}
 
-    // Build label→id map and resolve jumps
-    let mut label_to_id: HashMap<String, String> = HashMap::new();
-    for sc in &scenes {
-        label_to_id.insert(sc["label"].as_str().unwrap_or("").to_string(), sc["id"].as_str().unwrap_or("").to_string());
+/// The launcher of a Ren'Py SDK unpacked directly in one of `roots` (in a
+/// folder whose name starts with "renpy"), preferring the newest-looking name.
+pub fn find_renpy_sdk_in(roots: &[PathBuf]) -> Option<PathBuf> {
+    roots.iter().find_map(|root| {
+        let mut sdks: Vec<PathBuf> = std::fs::read_dir(root)
+            .ok()?
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().to_lowercase().starts_with("renpy"))
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        sdks.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+        sdks.iter().find_map(|sdk| renpy_launcher_in(sdk))
+    })
+}
+
+/// Find a Ren'Py launcher: the user's setting first, then the RENPY_SDK
+/// environment variable, a `renpy` command on the PATH (Linux packages), and
+/// finally SDK folders in the usual places for this platform.
+pub fn find_renpy_launcher(hint: Option<&str>) -> Option<PathBuf> {
+    if let Some(launcher) = hint.and_then(renpy_launcher_from_hint) {
+        return Some(launcher);
     }
-    for sc in &mut scenes {
-        if let Some(evs) = sc["events"].as_array_mut() {
-            for ev in evs.iter_mut() {
-                if ev["type"] == "jump" {
-                    if let Some(lbl) = ev.get("_target_lbl").and_then(|v| v.as_str()).map(|s| s.to_string()) {
-                        if let Some(sid) = label_to_id.get(&lbl) {
-                            ev["scene_id"] = serde_json::json!(sid);
-                        } else {
-                            warnings.push(format!("Jump target '{}' not found", lbl));
-                        }
-                        if let Some(obj) = ev.as_object_mut() { obj.remove("_target_lbl"); }
-                    }
-                }
-                if ev["type"] == "choice" {
-                    if let Some(opts) = ev["opts"].as_array_mut() {
-                        for opt in opts.iter_mut() {
-                            if let Some(lbl) = opt.get("_target_lbl").and_then(|v| v.as_str()).map(|s| s.to_string()) {
-                                if let Some(sid) = label_to_id.get(&lbl) {
-                                    opt["scene"] = serde_json::json!(sid);
-                                }
-                                if let Some(obj) = opt.as_object_mut() { obj.remove("_target_lbl"); }
-                            }
-                        }
-                    }
-                }
-            }
+    if let Some(launcher) = std::env::var_os("RENPY_SDK").and_then(|sdk| renpy_launcher_in(Path::new(&sdk))) {
+        return Some(launcher);
+    }
+    if cfg!(not(windows)) {
+        let on_path = std::env::var_os("PATH")
+            .and_then(|paths| std::env::split_paths(&paths).map(|dir| dir.join("renpy")).find(|p| p.is_file()));
+        if on_path.is_some() {
+            return on_path;
         }
     }
 
-    let characters: Vec<serde_json::Value> = char_map.into_values().collect();
-    warnings.insert(0, format!("Imported {} scenes, {} characters.", scenes.len(), characters.len()));
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(home) = &home {
+        roots.push(home.clone());
+        for sub in ["Desktop", "Downloads", "Documents"] {
+            roots.push(home.join(sub));
+        }
+    }
+    if cfg!(windows) {
+        for dir in ["C:/renpy", "C:/Program Files/Ren'Py", "C:/Program Files (x86)/Ren'Py"] {
+            if let Some(launcher) = renpy_launcher_in(Path::new(dir)) {
+                return Some(launcher);
+            }
+        }
+        if let Some(home) = &home {
+            roots.push(home.join("AppData/Local"));
+        }
+        roots.push(PathBuf::from("C:/"));
+    } else {
+        if let Some(home) = &home {
+            roots.push(home.join(".local/share"));
+            roots.push(home.join("Applications"));
+        }
+        roots.extend(["/opt", "/usr/share", "/usr/local/share", "/Applications"].map(PathBuf::from));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd);
+    }
+    find_renpy_sdk_in(&roots)
+}
 
-    let result = serde_json::json!({
-        "scenes": scenes,
-        "characters": characters,
-        "warnings": warnings
-    });
-    serde_json::to_string(&result).map_err(|e| e.to_string())
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// A fresh, empty temporary folder for one test.
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("vnvmaker-test-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// root/game/images/bg.png plus root/project.vnvmaker
+    fn make_project(root: &Path) {
+        fs::create_dir_all(root.join("game/images")).unwrap();
+        fs::write(root.join("game/images/bg.png"), b"png").unwrap();
+        fs::write(root.join("game/script.rpy"), "label start:\n    return\n").unwrap();
+        fs::write(root.join("project.vnvmaker"), "{}").unwrap();
+    }
+
+    #[test]
+    fn reads_ren_py_strings_with_escapes() {
+        assert_eq!(extract_rpy_quoted(r#"    old "Say \"hi\"""#).as_deref(), Some(r#"Say "hi""#));
+        assert_eq!(extract_rpy_quoted(r#"    # s "a\\b\nc""#).as_deref(), Some("a\\b\nc"));
+        assert_eq!(extract_rpy_quoted(r#"    new "unterminated"#), None);
+        assert_eq!(extract_rpy_quoted("    pass"), None);
+    }
+
+    /// An SDK folder with every platform's launcher in it, like the real one.
+    fn make_sdk(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        for name in ["renpy.exe", "renpy.sh", "renpy.py"] {
+            fs::write(dir.join(name), "").unwrap();
+        }
+    }
+
+    #[test]
+    fn picks_the_renpy_launcher_for_this_platform() {
+        let dir = temp_dir("sdk");
+        let sdk = dir.join("renpy-8.5.2-sdk");
+        make_sdk(&sdk);
+        let expected = Some(sdk.join(if cfg!(windows) { "renpy.exe" } else { "renpy.sh" }));
+        assert_eq!(renpy_launcher_from_hint(sdk.to_str().unwrap()), expected);
+        // Picking either launcher leads to the one this platform can run.
+        for name in ["renpy.exe", "renpy.sh"] {
+            assert_eq!(renpy_launcher_from_hint(sdk.join(name).to_str().unwrap()), expected);
+        }
+        // Nothing else is ever started, even from inside the SDK.
+        assert_eq!(renpy_launcher_from_hint(sdk.join("renpy.py").to_str().unwrap()), None);
+        assert_eq!(renpy_launcher_from_hint(dir.join("missing").to_str().unwrap()), None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finds_the_newest_sdk_in_a_folder() {
+        let dir = temp_dir("sdk-search");
+        make_sdk(&dir.join("renpy-8.3.7-sdk"));
+        make_sdk(&dir.join("renpy-8.5.2-sdk"));
+        fs::create_dir_all(dir.join("renpy-notes")).unwrap();
+        fs::create_dir_all(dir.join("other")).unwrap();
+        let launcher = find_renpy_sdk_in(&[dir.join("missing"), dir.clone()]).unwrap();
+        assert_eq!(launcher.parent(), Some(dir.join("renpy-8.5.2-sdk").as_path()));
+        assert_eq!(find_renpy_sdk_in(&[dir.join("other")]), None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn recognises_projects() {
+        let dir = temp_dir("projects");
+        let project = dir.join("Project");
+        make_project(&project);
+        assert!(looks_like_project(&project));
+        assert!(!looks_like_project(&dir));
+        assert!(!looks_like_project(&project.join("game")));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn checks_extensions_case_insensitively() {
+        assert!(has_extension(Path::new("a/b/script.rpy"), "rpy"));
+        assert!(has_extension(Path::new("a/b/SCRIPT.RPY"), "rpy"));
+        assert!(!has_extension(Path::new("a/b/evil.bat"), "rpy"));
+        assert!(!has_extension(Path::new("a/b/rpy"), "rpy"));
+        assert!(has_extension(Path::new("p/project.vnvmaker"), "vnvmaker"));
+    }
+
+    #[test]
+    fn only_deletes_files_the_app_manages() {
+        let dir = temp_dir("delete");
+        let project = dir.join("Project");
+        make_project(&project);
+        assert!(is_deletable_project_file(&project.join("game/images/bg.png")));
+        assert!(is_deletable_project_file(&project.join("game/script.rpy")));
+        assert!(is_deletable_project_file(&project.join("project.vnvmaker")));
+        assert!(!is_deletable_project_file(&dir.join("notes.txt")));
+        assert!(!is_deletable_project_file(&dir.join("project.vnvmaker")));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn empty_or_missing_folders() {
+        let dir = temp_dir("empty");
+        assert!(dir_is_empty_or_missing(&dir));
+        assert!(dir_is_empty_or_missing(&dir.join("missing")));
+        fs::write(dir.join("file.txt"), "x").unwrap();
+        assert!(!dir_is_empty_or_missing(&dir));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn copies_a_project_but_never_into_itself() {
+        let dir = temp_dir("copy");
+        let project = dir.join("Project");
+        make_project(&project);
+        copy_dir_all(&project, &dir.join("Copy")).unwrap();
+        assert!(dir.join("Copy/game/images/bg.png").is_file());
+        assert!(copy_dir_all(&project, &project).is_err());
+        assert!(copy_dir_all(&project, &project.join("game/nested")).is_err());
+        assert_eq!(fs::read(project.join("game/images/bg.png")).unwrap(), b"png");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn scaffold_refuses_existing_folders() {
+        let dir = temp_dir("scaffold");
+        let template = dir.join("template/game");
+        fs::create_dir_all(template.join("gui")).unwrap();
+        fs::write(template.join("options.rpy"), "define config.name = _(\"Old\")\n").unwrap();
+        let fresh = dir.join("Fresh");
+        scaffold_from_template(&template, &fresh, "My Game").unwrap();
+        assert!(fs::read_to_string(fresh.join("game/options.rpy")).unwrap().contains("_(\"My Game\")"));
+        assert!(fresh.join("game/images").is_dir());
+        // A second project with the same folder must not overwrite the first.
+        assert!(scaffold_from_template(&template, &fresh, "Other").is_err());
+        assert!(fs::read_to_string(fresh.join("game/options.rpy")).unwrap().contains("_(\"My Game\")"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn scaffold_writes_titles_ren_py_can_parse() {
+        let dir = temp_dir("title");
+        let template = dir.join("template/game");
+        fs::create_dir_all(&template).unwrap();
+        fs::write(
+            template.join("options.rpy"),
+            "define config.name = _(\"Templet\")\ndefine build.name = \"Templet\"\n",
+        )
+        .unwrap();
+        let project = dir.join("Quoted");
+        scaffold_from_template(&template, &project, r#"Tom's "Big" $1 Game\"#).unwrap();
+        let opts = fs::read_to_string(project.join("game/options.rpy")).unwrap();
+        assert!(opts.contains(r#"define config.name = _("Tom's \"Big\" $1 Game\\")"#), "{}", opts);
+        assert!(opts.contains(r#"define build.name = "TomsBig1Game""#), "{}", opts);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn simple_names_are_safe_for_build_name() {
+        assert_eq!(simple_name("My Game: Part 2"), "MyGamePart2");
+        assert_eq!(simple_name("my-game_2"), "my-game_2");
+        assert_eq!(simple_name("日本語"), "game");
+    }
+
+    #[test]
+    fn applies_the_wizard_theme_to_the_template() {
+        let dir = temp_dir("theme");
+        let game = dir.join("Project/game");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(
+            game.join("gui.rpy"),
+            "init python:\n    gui.init(1920, 1080)\n\
+             define gui.accent_color = '#0099cc'\n\
+             define gui.hover_color = '#66c1e0'\n\
+             define gui.muted_color = '#003d51'\n\
+             define gui.hover_muted_color = '#005b7a'\n",
+        )
+        .unwrap();
+        fs::write(game.join("options.rpy"), "define config.save_directory = \"Templet-1\"\n").unwrap();
+
+        apply_project_settings(&dir.join("Project"), 1280, 720, "#ff0000", "#000000").unwrap();
+        let gui = fs::read_to_string(game.join("gui.rpy")).unwrap();
+        assert!(gui.contains("gui.init(1280, 720)"), "{}", gui);
+        assert!(gui.contains("define gui.accent_color = '#ff0000'"), "{}", gui);
+        assert!(gui.contains("define gui.hover_color = '#ff6666'"), "{}", gui);
+        assert!(gui.contains("define gui.muted_color = '#400000'"), "{}", gui);
+        assert!(gui.contains("define gui.hover_muted_color = '#660000'"), "{}", gui);
+        let opts = fs::read_to_string(game.join("options.rpy")).unwrap();
+        assert!(opts.starts_with("define config.save_directory = \"Project-"), "{}", opts);
+
+        // Anything that isn't a #rrggbb color leaves the colors alone.
+        apply_project_settings(&dir.join("Project"), 1280, 720, "'); import os #", "nope").unwrap();
+        assert_eq!(fs::read_to_string(game.join("gui.rpy")).unwrap(), gui);
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

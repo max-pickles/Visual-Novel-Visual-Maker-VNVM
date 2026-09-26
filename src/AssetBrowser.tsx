@@ -38,12 +38,6 @@ function extOf(f: string): string {
   return f.split(".").pop()?.toLowerCase() ?? "";
 }
 
-function sizeLabel(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
 // Count how many times a file path appears in the project events
 function countUsages(relPath: string, project?: VNProject): number {
   if (!project) return 0;
@@ -224,7 +218,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                 padding: "4px 12px", fontSize: 11, fontWeight: 600, border: "1px solid",
                 borderColor: assetType === t ? "var(--teal)" : "var(--bdr)",
                 borderRadius: 5, cursor: "pointer",
-                background: assetType === t ? "rgba(0,212,200,.12)" : "transparent",
+                background: assetType === t ? "color-mix(in srgb, var(--teal) 12%, transparent)" : "transparent",
                 color: assetType === t ? "var(--teal)" : "var(--dim)",
               }}
               onClick={() => setAssetType(t)}>
@@ -261,7 +255,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                     padding: "4px 8px", fontSize: 12, border: "1px solid",
                     borderColor: viewMode === v ? "var(--teal)" : "var(--bdr)",
                     borderRadius: 4, cursor: "pointer",
-                    background: viewMode === v ? "rgba(0,212,200,.12)" : "transparent",
+                    background: viewMode === v ? "color-mix(in srgb, var(--teal) 12%, transparent)" : "transparent",
                     color: viewMode === v ? "var(--teal)" : "var(--dim)",
                   }}>
                   {v === "grid" ? "⊞" : "☰"}
@@ -420,7 +414,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                           style={{
                             display: "flex", alignItems: "center", gap: 12,
                             padding: "6px 10px", borderRadius: 5, cursor: "pointer",
-                            background: isSel ? "rgba(0,212,200,.08)" : "transparent",
+                            background: isSel ? "color-mix(in srgb, var(--teal) 8%, transparent)" : "transparent",
                             border: `1px solid ${isSel ? "var(--teal)" : "transparent"}`,
                             transition: "background 0.12s, border-color 0.12s",
                           }}>
@@ -460,9 +454,9 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                       <div key={f}
                         style={{
                           display: "flex", alignItems: "center",
-                          background: isSel ? "rgba(0,212,200,.06)" : isPlaying ? "rgba(0,212,200,.03)" : "var(--bg2)",
+                          background: isSel ? "color-mix(in srgb, var(--teal) 6%, transparent)" : isPlaying ? "color-mix(in srgb, var(--teal) 3%, transparent)" : "var(--bg2)",
                           borderRadius: 5, overflow: "hidden", cursor: "pointer",
-                          border: `1px solid ${isSel ? "var(--teal)" : isPlaying ? "rgba(0,212,200,.3)" : "var(--bdr)"}`,
+                          border: `1px solid ${isSel ? "var(--teal)" : isPlaying ? "color-mix(in srgb, var(--teal) 30%, transparent)" : "var(--bdr)"}`,
                           transition: "background 0.12s, border-color 0.12s",
                         }}
                         onClick={() => select(f)}>
@@ -533,7 +527,7 @@ export function AssetBrowser({ rootPath, project, onPick }: Props) {
                 <button onClick={onClick} title={title} style={{
                   padding: '4px 8px', fontSize: 13, borderRadius: 4, border: '1px solid',
                   borderColor: active ? 'var(--teal)' : 'var(--bdr)',
-                  background: active ? 'rgba(0,212,200,.15)' : 'var(--bg2)',
+                  background: active ? 'color-mix(in srgb, var(--teal) 15%, transparent)' : 'var(--bg2)',
                   color: active ? 'var(--teal)' : 'var(--dim)', cursor: 'pointer',
                   transition: 'all .12s', flexShrink: 0,
                 }}>{label}</button>

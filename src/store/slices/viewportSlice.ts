@@ -20,9 +20,6 @@ export type ViewportSlice = {
   maxZoomLimit: number;
   setMaxZoomLimit: (limit: number) => void;
 
-  compositorKick: number;
-  setCompositorKick: (kick: number | ((prev: number) => number)) => void;
-
   triggerFitAll: number;
   setTriggerFitAll: (trigger: number) => void;
 };
@@ -42,9 +39,6 @@ export const createViewportSlice: Slice<ViewportSlice> = (set) => ({
 
   maxZoomLimit: 3.0,
   setMaxZoomLimit: (limit) => set((s) => { s.maxZoomLimit = limit; }),
-
-  compositorKick: 0,
-  setCompositorKick: (update) => set((s) => { s.compositorKick = typeof update === 'function' ? update(s.compositorKick) : update; }),
 
   triggerFitAll: 0,
   setTriggerFitAll: (trigger) => set((s) => { s.triggerFitAll = trigger; }),

@@ -116,7 +116,7 @@ function scriptText(project: VNProject, scenes: VNScene[], charFilter: string): 
 
 // ── Line counter ──────────────────────────────────────────────────────────────
 
-function countLines(scenes: VNScene[], project: VNProject) {
+function countLines(scenes: VNScene[]) {
   let dialogue = 0, narration = 0, choices = 0, words = 0;
   for (const sc of scenes) {
     for (const ev of sc.events) {
@@ -142,7 +142,7 @@ export default function ScriptReader({ project, onEditScene }: ScriptReaderProps
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   const scenes = useMemo(() => walkScenes(project), [project]);
-  const stats = useMemo(() => countLines(scenes, project), [scenes, project]);
+  const stats = useMemo(() => countLines(scenes), [scenes]);
   const wpm = 300;
   const readMins = Math.max(1, Math.round(stats.words / wpm));
 
@@ -305,7 +305,7 @@ export default function ScriptReader({ project, onEditScene }: ScriptReaderProps
                   onClick={() => scrollToScene(sc.id)}
                   style={{
                     textAlign: "left", padding: "8px 12px", border: "none",
-                    background: isActive ? "rgba(0,212,200,0.1)" : "transparent",
+                    background: isActive ? "color-mix(in srgb, var(--teal) 10%, transparent)" : "transparent",
                     borderLeft: isActive ? "2px solid var(--teal)" : "2px solid transparent",
                     cursor: "pointer", transition: "all 0.1s",
                   }}
@@ -460,7 +460,7 @@ export default function ScriptReader({ project, onEditScene }: ScriptReaderProps
                         )}
                         <div style={{
                           fontSize: 14, lineHeight: 1.8, color: "var(--text)",
-                          paddingLeft: 16, borderLeft: `3px solid ${char?.color ?? "rgba(107,138,251,0.4)"}`,
+                          paddingLeft: 16, borderLeft: `3px solid ${char?.color ?? "color-mix(in srgb, var(--acc2) 40%, transparent)"}`,
                         }}>
                           {highlight(ev.text ?? "")}
                           {ev.voice && (

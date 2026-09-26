@@ -12,13 +12,9 @@
  *  ✓ Download link if SDK is not installed
  *  ✓ "Remember this path" persists to localStorage
  */
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { findRenpySdk } from "./tauriApi";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const LS_KEY = "vnv_renpy_sdk_path";
+import { findRenpySdk, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR } from "./tauriApi";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -55,12 +51,12 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
           setStatusMsg("Ren'Py SDK detected automatically!");
         } else {
           setStatus("notfound");
-          setStatusMsg("Could not auto-detect Ren'Py. Please locate renpy.exe manually.");
+          setStatusMsg(`Could not auto-detect Ren'Py. Please locate ${RENPY_LAUNCHER} manually.`);
         }
       })
       .catch(() => {
         setStatus("notfound");
-        setStatusMsg("Auto-detect failed. Please locate renpy.exe manually.");
+        setStatusMsg(`Auto-detect failed. Please locate ${RENPY_LAUNCHER} manually.`);
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -89,7 +85,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
   const handleConfirm = () => {
     const p = sdkPath.trim();
     if (!p) return;
-    localStorage.setItem(LS_KEY, p);
+    localStorage.setItem(SDK_PATH_KEY, p);
     onConfirm(p);
   };
 
@@ -134,8 +130,8 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
         <div style={{ padding: "20px 24px 0", display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{
             width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-            background: "rgba(75,108,247,0.12)",
-            border: "1px solid rgba(75,108,247,0.25)",
+            background: "color-mix(in srgb, var(--acc) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 22,
           }}>
@@ -171,7 +167,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
             display: "flex", alignItems: "center", gap: 8,
             marginBottom: 16, padding: "8px 12px", borderRadius: 8,
             background: "var(--bg2, #1c2133)",
-            border: `1px solid ${statusColor}33`,
+            border: `1px solid color-mix(in srgb, ${statusColor} 20%, transparent)`,
             minHeight: 38,
           }}>
             <span style={{ fontSize: 14 }}>
@@ -202,7 +198,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
               value={sdkPath}
               onChange={e => { setSdkPath(e.target.value); setStatus("idle"); setStatusMsg(""); }}
               onKeyDown={e => { if (e.key === "Enter" && isConfirmable) handleConfirm(); }}
-              placeholder="C:\RenPy\renpy-8.x.x\renpy.exe"
+              placeholder={`${EXAMPLE_SDK_DIR}/${RENPY_LAUNCHER}`}
               style={{
                 flex: 1, background: "var(--bg3, #232840)",
                 border: "1px solid var(--bdr, #2a3050)",
@@ -211,7 +207,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
                 fontFamily: "var(--mono, monospace)",
                 transition: "border-color 0.15s",
               }}
-              onFocus={e => (e.target.style.borderColor = "#4b6cf7")}
+              onFocus={e => (e.target.style.borderColor = "var(--acc)")}
               onBlur={e => (e.target.style.borderColor = "var(--bdr, #2a3050)")}
             />
             <button
@@ -233,13 +229,13 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
 
           {/* Help text */}
           <div style={{ marginTop: 10, fontSize: 11, color: "var(--faint, #374151)", lineHeight: 1.5 }}>
-            Tip: This is the <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>renpy.exe</code> inside
-            your Ren'Py SDK folder (e.g. <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>renpy-8.x.x/renpy.exe</code>).{" "}
+            Tip: This is the <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>{RENPY_LAUNCHER}</code> inside
+            your Ren'Py SDK folder (e.g. <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>renpy-8.x.x/{RENPY_LAUNCHER}</code>).{" "}
             <a
               href="https://www.renpy.org/latest.html"
               target="_blank"
               rel="noreferrer"
-              style={{ color: "#4b6cf7", textDecoration: "none" }}
+              style={{ color: "var(--acc)", textDecoration: "none" }}
               onMouseEnter={e => ((e.target as HTMLElement).style.textDecoration = "underline")}
               onMouseLeave={e => ((e.target as HTMLElement).style.textDecoration = "none")}
             >
@@ -279,7 +275,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
               cursor: isConfirmable ? "pointer" : "not-allowed",
               transition: "opacity 0.15s",
               opacity: isConfirmable ? 1 : 0.5,
-              boxShadow: isConfirmable ? "0 4px 16px rgba(75,108,247,0.35)" : "none",
+              boxShadow: isConfirmable ? "0 4px 16px color-mix(in srgb, var(--acc) 35%, transparent)" : "none",
             }}
           >
             ▶ Save &amp; Launch

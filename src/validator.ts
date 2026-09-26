@@ -25,10 +25,17 @@
  * 12. if events have a non-empty condition string.
  * 13. wait events have a positive duration.
  * 14. Project has a cover image set (info).
+ * ...
+ * 20. Characters have distinct sprite image names and valid colors.
+ *
+ * setvar events must also have a value and must not use a name Python or
+ * Ren'Py needs (see {@link RESERVED_VAR_NAMES}).
  *
  * This module is pure — it has no side effects and can be called at any time.
  */
 import type { VNProject, VNScene } from "./types";
+import { conditionVarNames, RESERVED_VAR_NAMES } from "./types";
+import { charImageTag } from "./compiler";
 
 /** Severity of a single diagnostic message. */
 export type DiagnosticSeverity = "error" | "warning" | "info";
@@ -156,6 +163,8 @@ export function validateProject(project: VNProject): ValidationResult {
         const name = ev.var_name?.trim() ?? "";
         if (!name) errors.push({ severity: "error", message: `${idx}: setvar event has no variable name.`, location: loc });
         else if (!VALID_PYTHON_IDENT.test(name)) errors.push({ severity: "error", message: `${idx}: setvar variable name "${name}" is not a valid Python identifier.`, location: loc });
+        else if (RESERVED_VAR_NAMES.has(name)) errors.push({ severity: "error", message: `${idx}: setvar variable name "${name}" is reserved by Python or Ren'Py. Choose another name.`, location: loc });
+        if (name && !(ev.var_val ?? "").trim()) errors.push({ severity: "error", message: `${idx}: setvar "${name}" has no value.`, location: loc });
       }
       if (ev.type === "wait" && (ev.dur ?? 0) <= 0) {
         warnings.push({ severity: "warning", message: `${idx}: wait event has a non-positive duration (${ev.dur ?? 0}s).`, location: loc });
@@ -245,9 +254,13 @@ export function validateProject(project: VNProject): ValidationResult {
       if (ev.type === "setvar" && ev.var_name?.trim()) {
         assignedVars.add(ev.var_name.trim());
       } else if (ev.type === "if" && ev.condition) {
-        // match word characters, excluding pure numbers
-        const tokens = ev.condition.match(/\b([a-zA-Z_]\w*)\b/g) ?? [];
-        for (const t of tokens) readVars.add(t);
+        for (const name of conditionVarNames(ev.condition, { allReads: true })) readVars.add(name);
+      } else if (ev.type === "choice") {
+        for (const opt of ev.opts ?? []) {
+          if (opt.condition) {
+            for (const name of conditionVarNames(opt.condition, { allReads: true })) readVars.add(name);
+          }
+        }
       }
     }
   }
@@ -258,9 +271,8 @@ export function validateProject(project: VNProject): ValidationResult {
     }
   }
 
-  const pythonKeywords = new Set(['True', 'False', 'None', 'and', 'or', 'not', 'is', 'in']);
   for (const v of readVars) {
-    if (!assignedVars.has(v) && !pythonKeywords.has(v)) {
+    if (!assignedVars.has(v)) {
       warnings.push({ severity: "warning", message: `Variable "${v}" is evaluated in an 'if' condition but never initialized with a 'setvar' event. (Safe to ignore if initialized in an imported script).`, location: "Project" });
     }
   }
@@ -308,6 +320,20 @@ export function validateProject(project: VNProject): ValidationResult {
     }
   }
 
+  // ── 20. Character sprite names and colors ───────────────────────────────────
+  const charsByTag = new Map<string, string[]>();
+  for (const char of project.characters) {
+    const tag = charImageTag(char);
+    charsByTag.set(tag, [...(charsByTag.get(tag) ?? []), char.name]);
+    if (char.color && !/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(char.color)) {
+      warnings.push({ severity: "warning", message: `Character "${char.name}" has an invalid name color "${char.color}". It will be left out.`, location: "Project" });
+    }
+  }
+  for (const [tag, names] of charsByTag) {
+    if (names.length > 1) {
+      warnings.push({ severity: "warning", message: `Characters ${names.map(n => `"${n}"`).join(", ")} share the sprite name "${tag}", so their sprites replace each other on screen. Rename one of them.`, location: "Project" });
+    }
+  }
 
   const count = errors.length + warnings.length + infos.length;
   return { errors, warnings, infos, ok: errors.length === 0, count };

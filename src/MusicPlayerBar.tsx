@@ -3,7 +3,6 @@
  * Follows the user's request for a compact, unobtrusive UI without
  * speed controls, scrubber, skipping, or dragging.
  */
-import React from "react";
 import { useMusicPlayer } from "./musicPlayerContext";
 import { useTranslation } from "./translationContext";
 

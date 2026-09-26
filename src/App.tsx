@@ -1,24 +1,14 @@
-import React, { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect } from "react";
 import { StartScreen } from "./StartScreen";
 import { VNEditor } from "./VNEditor";
-import { setWindowSize, saveVnvProject, updateAppIcon } from "./tauriApi";
-import type { VNProject, RpyProject } from "./types";
-import { rpyToVnProject } from "./types";
+import { setWindowSize, saveVnvProject, updateAppIcon, defaultGamesDir, allowProjectAssets, SDK_PATH_KEY } from "./tauriApi";
+import type { VNProject } from "./types";
 import { ToastProvider, ToastManager } from "./toastContext";
 import { ToastStack } from "./Toast";
 import { MusicPlayerProvider } from "./musicPlayerContext";
 import { TranslationProvider } from "./translationContext";
 
-// We no longer need a hacky repeating progress bar.
-// The root cause of Webview2 dropping input events when idle is focus state.
-// If the document body has focus, Chromium treats the app as "Reading Mode"
-// and throttles the OS message pump. By giving StoryCanvas tabIndex={0} and
-// auto-focusing it, Chromium treats it as "Typing/Input Mode" and never drops keys.
-const WebviewKeepalive = memo(function WebviewKeepalive() {
-  return null;
-});
-
-type Route = "start" | "vnEditor" | "rpyViewer";
+type Route = "start" | "vnEditor";
 type BgLevel = 'darker' | 'default' | 'lighter';
 
 const bgMap: Record<BgLevel, string> = {
@@ -63,8 +53,8 @@ export default function App() {
     return t === 'crimson' ? 'cherry' : t;
   });
   const [language, setLanguage]             = useState(() => localStorage.getItem('pref_language') || 'en');
-  const [gamesDir, setGamesDir]             = useState(() => localStorage.getItem('pref_games_dir') || 'C:/Users/maxcm/OneDrive/Desktop/VNVMAKER/games');
-  const [renpySdkPath, setRenpySdkPath]     = useState(() => localStorage.getItem('vnv_renpy_sdk_path') || '');
+  const [gamesDir, setGamesDir]             = useState(() => localStorage.getItem('pref_games_dir') || '');
+  const [renpySdkPath, setRenpySdkPath]     = useState(() => localStorage.getItem(SDK_PATH_KEY) || '');
 
   useEffect(() => { 
     localStorage.setItem('pref_bg', bgLevel); 
@@ -79,8 +69,11 @@ export default function App() {
   }, [uiScale]);
   useEffect(() => { localStorage.setItem('pref_autosave', String(autoSave)); }, [autoSave]);
   useEffect(() => { localStorage.setItem('pref_language', language); }, [language]);
-  useEffect(() => { localStorage.setItem('pref_games_dir', gamesDir); }, [gamesDir]);
-  useEffect(() => { localStorage.setItem('vnv_renpy_sdk_path', renpySdkPath); }, [renpySdkPath]);
+  useEffect(() => {
+    if (gamesDir) localStorage.setItem('pref_games_dir', gamesDir);
+    else defaultGamesDir().then(setGamesDir).catch(e => console.warn("Could not resolve the default games folder:", e));
+  }, [gamesDir]);
+  useEffect(() => { localStorage.setItem(SDK_PATH_KEY, renpySdkPath); }, [renpySdkPath]);
   useEffect(() => {
     localStorage.setItem('pref_theme', theme);
     document.documentElement.setAttribute('data-theme', theme);
@@ -108,7 +101,13 @@ export default function App() {
       return (
         <StartScreen
           prefs={prefs}
-          onLoadVnv={(p) => {
+          onLoadVnv={async (p) => {
+            // The asset protocol only serves folders of projects that are open.
+            if (p._rootPath) {
+              await allowProjectAssets(p._rootPath).catch((e) =>
+                ToastManager.warning("Images and audio from this project can't be shown", String(e))
+              );
+            }
             // Auto-save immediately on any first load (new / open / import / recent)
             // so the .vnvmaker file always exists on disk before we enter the editor.
             if (p._filePath) {
@@ -119,20 +118,18 @@ export default function App() {
             setVnvProject(p);
             setRoute("vnEditor");
           }}
-          onLoadRpy={(p: RpyProject) => {
-            setVnvProject(rpyToVnProject(p));
-            setRoute("vnEditor");
-          }}
         />
       );
     }
     if (route === "vnEditor" && vnvProject) {
       return (
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,200,0.012) 2px, rgba(0,212,200,0.012) 4px)', pointerEvents: 'none', opacity: 0.4, zIndex: 9999 }} />}
+          {scanlinesEnabled && <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 2px, color-mix(in srgb, var(--teal) 1.2%, transparent) 4px)', pointerEvents: 'none', opacity: 0.4, zIndex: 9999 }} />}
           <VNEditor
             project={vnvProject}
             onClose={() => setRoute("start")}
+            autoSave={autoSave}
+            onAutoSaveChange={setAutoSave}
           />
         </div>
       );
@@ -144,7 +141,6 @@ export default function App() {
     <TranslationProvider language={language}>
       <ToastProvider>
         <MusicPlayerProvider>
-          <WebviewKeepalive />
           <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: bg }}>
             {inner}
           </div>

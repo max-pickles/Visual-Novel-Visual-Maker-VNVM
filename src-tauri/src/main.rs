@@ -1,51 +1,27 @@
 // VNVMaker — Tauri main.rs
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use serde::Serialize;
+use tauri::path::BaseDirectory;
+use tauri::Manager;
 use vnvmaker_lib::{
-    parse_renpy_project, save_layout, load_layout, LayoutData,
     read_file, write_file, list_rpy_files,
-    list_assets, copy_dir_all, export_standalone, import_rpy_folder,
+    list_assets, copy_dir_all, dir_is_empty_or_missing,
+    looks_like_project, has_extension, is_deletable_project_file,
     scaffold_from_template, apply_project_settings,
-    validate_renpy_game,
-    RpyProject,
+    validate_renpy_game, find_renpy_launcher, extract_rpy_quoted,
 };
 
-// ─── Legacy .rpy Graph Commands ───────────────────────────────────────────────
-
-#[tauri::command]
-fn open_project(path: String) -> Result<RpyProject, String> {
-    let root = PathBuf::from(&path);
-    if !root.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-    let mut project = parse_renpy_project(&root)?;
-    let layout = load_layout(&root);
-    for node in &mut project.nodes {
-        if let Some(pos) = layout.positions.get(&node.id) {
-            node.x = pos[0];
-            node.y = pos[1];
-        }
-    }
-    Ok(project)
-}
-
-#[tauri::command]
-fn save_node_positions(root_path: String, positions: std::collections::HashMap<String, [f64; 2]>) -> Result<(), String> {
-    let root = PathBuf::from(&root_path);
-    let layout = LayoutData { positions };
-    save_layout(&root, &layout)
-}
+// ─── .rpy File Commands ───────────────────────────────────────────────────────
 
 #[tauri::command]
 fn read_rpy_file(path: String) -> Result<String, String> {
-    read_file(&PathBuf::from(&path))
-}
-
-#[tauri::command]
-fn write_rpy_file(path: String, content: String) -> Result<(), String> {
-    write_file(&PathBuf::from(&path), &content)
+    let path = PathBuf::from(&path);
+    if !has_extension(&path, "rpy") {
+        return Err("Only .rpy files can be read here.".to_string());
+    }
+    read_file(&path)
 }
 
 #[tauri::command]
@@ -58,19 +34,32 @@ fn get_rpy_files(root_path: String) -> Vec<String> {
 /// Save a .vnvmaker JSON project file
 #[tauri::command]
 fn save_vnv_project(path: String, content: String) -> Result<(), String> {
-    write_file(&PathBuf::from(&path), &content)
+    let path = PathBuf::from(&path);
+    if !has_extension(&path, "vnvmaker") {
+        return Err("Projects can only be saved as .vnvmaker files.".to_string());
+    }
+    write_file(&path, &content)
 }
 
 /// Load a .vnvmaker JSON project file → returns raw JSON string
 #[tauri::command]
 fn load_vnv_project(path: String) -> Result<String, String> {
-    read_file(&PathBuf::from(&path))
+    let path = PathBuf::from(&path);
+    if !has_extension(&path, "vnvmaker") {
+        return Err("Only .vnvmaker project files can be opened.".to_string());
+    }
+    read_file(&path)
 }
 
 /// Write any text file (used by compiler output, options.rpy patching, etc.)
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
-    write_file(&PathBuf::from(&path), &content)
+    let path = PathBuf::from(&path);
+    // Everything the app writes this way is a Ren'Py script.
+    if !has_extension(&path, "rpy") {
+        return Err("Only .rpy files can be written.".to_string());
+    }
+    write_file(&path, &content)
 }
 
 /// Scan a directory for asset files and return relative paths
@@ -83,28 +72,12 @@ fn list_asset_files(root_path: String, asset_type: String) -> Vec<String> {
 /// Recursively copy a directory
 #[tauri::command]
 fn copy_dir_recursive(src: String, dst: String) -> Result<(), String> {
-    copy_dir_all(&PathBuf::from(&src), &PathBuf::from(&dst))
-}
-
-/// Export a fully compiled project as a standalone Ren'Py game in the SDK
-/// compiled_rpy: the compiled .rpy script text
-/// project_name: safe ASCII name (becomes the folder name in the SDK)
-/// project_title: display title
-/// asset_root: path to the project folder with images/ and audio/ inside
-#[tauri::command]
-fn export_to_sdk(
-    compiled_rpy: String,
-    project_name: String,
-    project_title: String,
-    asset_root: String,
-) -> Result<String, String> {
-    export_standalone(&compiled_rpy, &project_name, &project_title, &PathBuf::from(&asset_root))
-}
-
-/// Import an existing Ren'Py game folder into VNVMaker project JSON
-#[tauri::command]
-fn import_from_rpy(folder_path: String) -> Result<String, String> {
-    import_rpy_folder(&PathBuf::from(&folder_path))
+    let src = PathBuf::from(&src);
+    // Imports and exports copy a Ren'Py game or VNVMaker project folder.
+    if !looks_like_project(&src) {
+        return Err(format!("{} isn't a Ren'Py game or VNVMaker project folder.", src.to_string_lossy()));
+    }
+    copy_dir_all(&src, &PathBuf::from(&dst))
 }
 
 /// Validate that a folder is a Ren'Py game (has game/ subdir + .rpy files).
@@ -117,9 +90,14 @@ fn validate_renpy_project(folder_path: String) -> Result<String, String> {
 
 /// Scaffold a new blank project from the Templet — copies gui/, screens.rpy,
 /// options.rpy etc., patches the project title, leaves images/ and audio/ empty.
+/// The Templet ships with the app as a bundled resource (see tauri.conf.json).
 #[tauri::command]
-fn scaffold_new_project(project_root: String, project_title: String) -> Result<String, String> {
-    scaffold_from_template(&PathBuf::from(&project_root), &project_title)
+fn scaffold_new_project(app: tauri::AppHandle, project_root: String, project_title: String) -> Result<String, String> {
+    let template = app
+        .path()
+        .resolve("templet/game", BaseDirectory::Resource)
+        .map_err(|e| format!("Could not locate the project template: {}", e))?;
+    scaffold_from_template(&template, &PathBuf::from(&project_root), &project_title)
 }
 
 /// Patch gui.rpy + options.rpy with the user's chosen resolution and accent color.
@@ -136,19 +114,50 @@ fn apply_project_theme(
 
 // ─── System Info ──────────────────────────────────────────────────────────────
 
-#[tauri::command]
-fn get_app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+/// `path` with the platform's own separators, for handing to other programs.
+fn native_path(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    if cfg!(windows) { path.replace('/', "\\") } else { path.into_owned() }
 }
 
-/// Open Windows Explorer inside the given folder, showing its contents.
+/// Open the given folder in the system file manager.
 #[tauri::command]
 fn show_in_explorer(path: String) -> Result<(), String> {
-    std::process::Command::new("explorer")
-        .arg(path.replace("/", "\\"))
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    // File managers open files with their default program, so only accept folders.
+    let path = Path::new(&path);
+    if !path.is_dir() {
+        return Err(format!("Not a folder: {}", path.display()));
+    }
+    let opener = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    spawn_detached(std::process::Command::new(opener).arg(native_path(path))).map_err(|e| e.to_string())
+}
+
+/// Let the webview load files from a project folder through the asset protocol
+/// (images, audio, fonts). The asset scope starts empty; only folders that look
+/// like a project are added.
+#[tauri::command]
+fn allow_project_assets(app: tauri::AppHandle, project_root: String) -> Result<(), String> {
+    let root = Path::new(&project_root);
+    if !looks_like_project(root) {
+        return Err(format!("{} isn't a Ren'Py game or VNVMaker project folder.", project_root));
+    }
+    // The asset protocol matches canonical paths (\\?\C:\… on Windows).
+    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    app.asset_protocol_scope()
+        .allow_directory(&root, true)
+        .map_err(|e| e.to_string())
+}
+
+/// Whether a file or folder exists at `path`.
+#[tauri::command]
+fn path_exists(path: String) -> bool {
+    Path::new(&path).exists()
+}
+
+/// Whether `path` is a folder that already has something in it.
+#[tauri::command]
+fn dir_has_files(path: String) -> bool {
+    !dir_is_empty_or_missing(Path::new(&path))
 }
 
 /// Permanently delete a project folder and all its contents.
@@ -161,38 +170,15 @@ fn delete_project_folder(folder_path: String) -> Result<(), String> {
     if !path.is_dir() {
         return Err(format!("Path is not a folder: {}", folder_path));
     }
+    // Only delete folders that look like a project, so a wrong path can't wipe
+    // out anything else.
+    if !looks_like_project(path) {
+        return Err(format!(
+            "{} doesn't look like a VNVMaker or Ren'Py project, so it wasn't deleted.",
+            folder_path
+        ));
+    }
     std::fs::remove_dir_all(path).map_err(|e| e.to_string())
-}
-
-#[derive(Serialize)]
-struct MonitorInfo {
-    width: u32,
-    height: u32,
-    scale_factor: f64,
-    logical_width: u32,
-    logical_height: u32,
-    name: String,
-}
-
-#[tauri::command]
-fn get_monitor_info(window: tauri::Window) -> Result<MonitorInfo, String> {
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "No monitor found".to_string())?;
-
-    let size = monitor.size();
-    let scale = monitor.scale_factor();
-    let name = monitor.name().map_or("Unknown Monitor", |v| v).to_string();
-
-    Ok(MonitorInfo {
-        width: size.width,
-        height: size.height,
-        scale_factor: scale,
-        logical_width: (size.width as f64 / scale).round() as u32,
-        logical_height: (size.height as f64 / scale).round() as u32,
-        name,
-    })
 }
 
 #[tauri::command]
@@ -232,14 +218,10 @@ fn list_dir_entries(path: String) -> Result<Vec<DirEntry>, String> {
             // Detect VNVMaker projects and Ren'Py games:
             //  - project.vnvmaker  → VNVMaker project
             //  - project.json      → Ren'Py launcher project file
-            //  - log.txt           → Ren'Py runtime log
-            //  - .gitignore        → common in Ren'Py repos
             //  - game/ subfolder   → core Ren'Py structure
             let is_vnv_project = is_dir && (
                 p.join("project.vnvmaker").exists() ||
                 p.join("project.json").exists()      ||
-                p.join("log.txt").exists()            ||
-                p.join(".gitignore").exists()         ||
                 p.join("game").is_dir()
             );
             Some(DirEntry {
@@ -261,19 +243,6 @@ fn list_dir_entries(path: String) -> Result<Vec<DirEntry>, String> {
         }
     });
     Ok(entries)
-}
-
-/// Return available Windows drive letters (e.g. ["C:/", "D:/"]).
-#[tauri::command]
-fn get_drives() -> Vec<String> {
-    let mut drives = Vec::new();
-    for c in b'A'..=b'Z' {
-        let drive = format!("{}:\\", c as char);
-        if std::path::Path::new(&drive).exists() {
-            drives.push(format!("{}:/", c as char));
-        }
-    }
-    drives
 }
 
 /// Scan the game/tl/ directory and return all Ren'Py translations as
@@ -364,108 +333,17 @@ fn scan_tl_translations(
     Ok(result)
 }
 
-/// Extract the first double-quoted string from a Ren'Py script line,
-/// optionally skipping a leading character name token.
-fn extract_rpy_quoted(s: &str) -> Option<String> {
-    let s = s.trim();
-    let start = s.find('"')?;
-    let inner = &s[start + 1..];
-    
-    let mut end = 0;
-    let mut escaped = false;
-    for (i, c) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            end = i;
-            return Some(inner[..end].to_string());
-        }
-    }
-    None
-}
-
-/// Return common quick-access paths (Desktop, Documents, Downloads, VNV Projects).
-#[tauri::command]
-fn get_quick_access_paths() -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_else(|_| "C:/Users".to_string())
-        .replace('\\', "/");
-    map.insert("Home".into(), home.clone());
-
-    // Prefer OneDrive Desktop if it exists, otherwise fall back to standard Desktop
-    let onedrive_desktop = format!("{}/OneDrive/Desktop", home);
-    let standard_desktop = format!("{}/Desktop", home);
-    if std::path::Path::new(&onedrive_desktop).exists() {
-        map.insert("Desktop".into(), onedrive_desktop.clone());
-        // Also expose the OneDrive root itself as a quick link
-        map.insert("OneDrive".into(), format!("{}/OneDrive", home));
-    } else {
-        map.insert("Desktop".into(), standard_desktop);
-    }
-
-    map.insert("Documents".into(), format!("{}/Documents", home));
-    map.insert("Downloads".into(), format!("{}/Downloads", home));
-
-    // VNVMaker projects folder
-    let vnv_games = format!("{}/OneDrive/Desktop/VNVMAKER/games", home);
-    if std::path::Path::new(&vnv_games).exists() {
-        map.insert("VNV Projects".into(), vnv_games);
-    }
-    map
-}
-
 // ─── Ren'Py SDK Launcher ─────────────────────────────────────────────────────────
 
-/// Search for the Ren'Py SDK launcher binary on this machine.
-/// Priority: caller hint → RENPY_SDK env var → versioned dirs in AppData/Local and C:\
-fn find_renpy_exe(hint: Option<&str>) -> Option<std::path::PathBuf> {
-    // 1. Caller-provided path (stored in IDE settings)
-    if let Some(p) = hint {
-        let pb = std::path::Path::new(p);
-        if pb.exists() { return Some(pb.to_path_buf()); }
-    }
-    // 2. RENPY_SDK environment variable
-    if let Ok(sdk) = std::env::var("RENPY_SDK") {
-        for name in &["renpy.exe", "renpy.sh", "renpy"] {
-            let p = std::path::Path::new(&sdk).join(name);
-            if p.exists() { return Some(p); }
-        }
-    }
-    // 3. Well-known fixed paths (Windows)
-    let home = std::env::var("USERPROFILE").unwrap_or_default().replace('\\', "/");
-    let fixed: &[&str] = &[
-        "C:/renpy/renpy.exe",
-        "C:/Program Files/Ren'Py/renpy.exe",
-        "C:/Program Files (x86)/Ren'Py/renpy.exe",
-    ];
-    for f in fixed {
-        if std::path::Path::new(f).exists() { return Some(std::path::PathBuf::from(f)); }
-    }
-    // 4. Scan AppData/Local and C:\ for versioned renpy-* directories
-    let scan_roots = [
-        format!("{}/AppData/Local", home),
-        "C:/".to_string(),
-        format!("{}/Desktop", home),
-        std::env::current_dir().unwrap_or_default().to_string_lossy().to_string(),
-    ];
-    for root in &scan_roots {
-        if let Ok(entries) = std::fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_lowercase();
-                if name.starts_with("renpy") && entry.path().is_dir() {
-                    for exe_name in &["renpy.exe", "renpy.sh", "renpy"] {
-                        let exe = entry.path().join(exe_name);
-                        if exe.exists() { return Some(exe); }
-                    }
-                }
-            }
-        }
-    }
-    None
+const SDK_NOT_FOUND: &str = "Ren'Py SDK not found.\n\
+    Set the RENPY_SDK environment variable to your SDK root, or enter the path in Settings.";
+
+/// Start a program without waiting for it. A thread waits for it instead, so
+/// on Linux and macOS it doesn't linger as a zombie process after it exits.
+fn spawn_detached(cmd: &mut std::process::Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 /// Write a preview .rpy to game/ and spawn Ren'Py with the project.
@@ -487,23 +365,14 @@ fn launch_renpy_preview(
     std::fs::write(&preview_path, &preview_rpy)
         .map_err(|e| format!("Failed to write vnv_preview.rpy: {}", e))?;
 
-    // Locate Ren'Py
-    let exe = find_renpy_exe(sdk_exe_path.as_deref())
-        .ok_or_else(|| {
-            "Ren'Py SDK not found.\n\
-             Set the RENPY_SDK environment variable to your SDK root, or enter the path in Settings.".to_string()
-        })?;
-
-    // Spawn detached — do not wait for it
+    let exe = find_renpy_launcher(sdk_exe_path.as_deref()).ok_or(SDK_NOT_FOUND)?;
     let mut cmd = std::process::Command::new(&exe);
     if let Some(lang) = renpy_language {
         if !lang.trim().is_empty() {
             cmd.env("RENPY_LANGUAGE", lang.trim());
         }
     }
-    
-    cmd.arg(root_path.to_string_lossy().replace('/', "\\"))
-        .spawn()
+    spawn_detached(cmd.arg(native_path(root_path)))
         .map_err(|e| format!("Failed to launch Ren'Py: {}", e))?;
 
     Ok(exe.to_string_lossy().replace('\\', "/").to_string())
@@ -519,15 +388,8 @@ fn launch_renpy_launcher(
     let root_path = std::path::Path::new(&project_root);
     let projects_dir = root_path.parent().unwrap_or(root_path);
 
-    let exe = find_renpy_exe(sdk_exe_path.as_deref())
-        .ok_or_else(|| {
-            "Ren'Py SDK not found.\n\
-             Set the RENPY_SDK environment variable to your SDK root, or enter the path in Settings.".to_string()
-        })?;
-
-    std::process::Command::new(&exe)
-        .env("RENPY_PROJECTS_DIR", projects_dir.to_string_lossy().replace('/', "\\"))
-        .spawn()
+    let exe = find_renpy_launcher(sdk_exe_path.as_deref()).ok_or(SDK_NOT_FOUND)?;
+    spawn_detached(std::process::Command::new(&exe).env("RENPY_PROJECTS_DIR", native_path(projects_dir)))
         .map_err(|e| format!("Failed to launch Ren'Py SDK: {}", e))?;
 
     Ok(())
@@ -536,19 +398,8 @@ fn launch_renpy_launcher(
 /// Return the Ren'Py SDK executable path if one can be found automatically.
 #[tauri::command]
 fn find_renpy_sdk(hint: Option<String>) -> Option<String> {
-    find_renpy_exe(hint.as_deref())
+    find_renpy_launcher(hint.as_deref())
         .map(|p| p.to_string_lossy().replace('\\', "/").to_string())
-}
-
-/// Delete the temporary vnv_preview.rpy from the project's game/ directory.
-#[tauri::command]
-fn delete_preview_rpy(project_root: String) -> Result<(), String> {
-    let preview = std::path::Path::new(&project_root).join("game").join("vnv_preview.rpy");
-    if preview.exists() {
-        std::fs::remove_file(&preview).map_err(|e| e.to_string())
-    } else {
-        Ok(())
-    }
 }
 
 /// Permanently delete a single file.
@@ -561,77 +412,10 @@ fn delete_file(path: String) -> Result<(), String> {
     if p.is_dir() {
         return Err(format!("Path is a directory, not a file: {}", path));
     }
+    if !is_deletable_project_file(p) {
+        return Err(format!("{} isn't a file in a game folder, so it wasn't deleted.", path));
+    }
     std::fs::remove_file(p).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn distribute_renpy_build(
-    window: tauri::Window,
-    project_root: String,
-    package: String,
-    sdk_exe_path: Option<String>,
-    output_dir: Option<String>,
-) -> Result<String, String> {
-    use std::io::{BufRead, BufReader};
-    use std::process::Stdio;
-    use tauri::Emitter;
-
-    let exe = find_renpy_exe(sdk_exe_path.as_deref()).ok_or_else(|| {
-        "Ren'Py SDK not found. Set the path in IDE Settings.".to_string()
-    })?;
-
-    let root = project_root.replace('/', "\\");
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.arg(&root).arg("distribute").arg("--package").arg(&package);
-
-    if let Some(out) = output_dir {
-        cmd.arg("--destination").arg(out.replace('/', "\\"));
-    }
-
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to launch Ren'Py distribute: {}", e))?;
-
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-
-    let event_name = format!("distribute-log-{}", package);
-    let event_name_clone1 = event_name.clone();
-    
-    let window_clone1 = window.clone();
-    let stdout_thread = std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().flatten() {
-            let _ = window_clone1.emit(&event_name_clone1, format!("{}\n", line));
-        }
-    });
-
-    let event_name_clone2 = event_name.clone();
-    let window_clone2 = window.clone();
-    let stderr_thread = std::thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
-            let _ = window_clone2.emit(&event_name_clone2, format!("{}\n", line));
-        }
-    });
-
-    let status = child.wait().map_err(|e| e.to_string())?;
-    
-    let _ = stdout_thread.join();
-    let _ = stderr_thread.join();
-
-    if status.success() {
-        Ok("Success".to_string())
-    } else {
-        Err(format!("Build failed with exit code: {}", status))
-    }
 }
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
@@ -658,10 +442,10 @@ fn update_app_icon(window: tauri::Window, teal_hex: String, acc_hex: String) -> 
     
     for y in 0..size {
         for x in 0..size {
-            let color = if y >= 9 && y < 23 {
+            let color = if (9..23).contains(&y) {
                 if x < 14 {
                     teal
-                } else if x >= 18 && x < 32 {
+                } else if (18..32).contains(&x) {
                     acc
                 } else {
                     [0, 0, 0, 0]
@@ -684,11 +468,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
-            // Legacy .rpy graph
-            open_project,
-            save_node_positions,
+            // .rpy files
             read_rpy_file,
-            write_rpy_file,
             get_rpy_files,
             // VNV project I/O
             save_vnv_project,
@@ -696,20 +477,17 @@ fn main() {
             write_text_file,
             list_asset_files,
             copy_dir_recursive,
-            export_to_sdk,
-            import_from_rpy,
             validate_renpy_project,
             scaffold_new_project,
             apply_project_theme,
             // System
-            get_app_version,
             show_in_explorer,
             delete_project_folder,
             delete_file,
+            path_exists,
+            dir_has_files,
+            allow_project_assets,
             list_dir_entries,
-            get_drives,
-            get_quick_access_paths,
-            get_monitor_info,
             set_window_size,
             update_app_icon,
             // Translation
@@ -718,8 +496,6 @@ fn main() {
             launch_renpy_preview,
             launch_renpy_launcher,
             find_renpy_sdk,
-            delete_preview_rpy,
-            distribute_renpy_build,
         ])
         .run(tauri::generate_context!())
         .expect("error while running vnvmaker");

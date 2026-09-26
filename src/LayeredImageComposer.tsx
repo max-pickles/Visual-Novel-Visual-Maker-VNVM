@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import type { VNCharacter } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "./translationContext";

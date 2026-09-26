@@ -1,13 +1,16 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import type { VNProject } from "./types";
-import { compileProject, compileProjectToFiles, getProjectStats } from "./compiler";
+import { compileProjectToFiles, getProjectStats } from "./compiler";
 import { 
   pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile,
-  findRenpySdk, launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive
+  launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
+  dirHasFiles, isSameOrInside, declaredNamesInGame, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR,
 } from "./tauriApi";
+import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
 import { validateProject } from "./validator";
 import { ToastManager } from "./toastContext";
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "@tauri-apps/plugin-dialog";
 
 interface Props {
   project: VNProject;
@@ -37,8 +40,9 @@ export function ExportPanel({ project }: Props) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Distribute State
-  const [sdkPath, setSdkPath]       = useState<string>(() => localStorage.getItem("vnv_sdk_path") ?? "");
-  const [autoDetecting, setAutoDetecting] = useState(false);
+  // The same SDK setting Preferences and the scene editor use. Older versions kept a
+  // separate one for this panel, so fall back to it.
+  const [sdkPath, setSdkPath]       = useState<string>(() => localStorage.getItem(SDK_PATH_KEY) || localStorage.getItem("vnv_sdk_path") || "");
   
   const stats = useMemo(() => getProjectStats(project), [project]);
   const validation = useMemo(() => validateProject(project), [project]);
@@ -126,8 +130,9 @@ export function ExportPanel({ project }: Props) {
     try {
       const scriptFile = generatedScripts.find(s => s.filename === saveTarget);
       if (!scriptFile) return;
-      const path = await pickSavePath(scriptFile.filename);
-      if (path) {
+      const picked = await pickSavePath(scriptFile.filename);
+      if (picked) {
+        const path = /\.rpy$/i.test(picked) ? picked : `${picked}.rpy`;
         await writeTextFile(path, scriptFile.content);
         ToastManager.success(`Saved ${scriptFile.filename} successfully`);
       }
@@ -137,10 +142,26 @@ export function ExportPanel({ project }: Props) {
   const handleExportProjectFolder = useCallback(async () => {
     if (!validation.ok) { setErr("Cannot export project with errors."); return; }
     if (!exportParentDir) { ToastManager.error("Please set an export destination folder."); return; }
+    const targetDir = `${exportParentDir.replace(/\\/g, "/").replace(/\/+$/, "")}/${exportName}`;
+
+    // The export clears VNVMaker's files and old scripts out of the copy, so it
+    // must never run on the project itself or on a folder that contains it.
+    if (!rootPath || isSameOrInside(targetDir, rootPath) || isSameOrInside(rootPath, targetDir)) {
+      setErr("Choose an export folder outside the project folder.");
+      return;
+    }
     try {
+      const targetExists = await dirHasFiles(targetDir);
+      if (targetExists) {
+        const overwrite = await ask(
+          `${targetDir} already exists. Replace the exported game in it?`,
+          { title: "Export project", kind: "warning" },
+        );
+        if (!overwrite) return;
+      }
       setRun("Exporting project folder...");
-      const targetDir = `${exportParentDir.replace(/\\/g, "/")}/${exportName}`;
-      
+      const sourceScripts = await getRpyFiles(rootPath);
+
       // 1. Copy the entire project folder
       await copyDirRecursive(rootPath, targetDir);
 
@@ -148,27 +169,33 @@ export function ExportPanel({ project }: Props) {
       try { await deleteFile(`${targetDir}/project.vnvmaker`); } catch (e) { /* ignore */ }
       try { await deleteFile(`${targetDir}/game/vnv_preview.rpy`); } catch (e) { /* ignore */ }
 
-      // 3. Clean up old .rpy scripts in the game/ folder EXCEPT core gui/options
-      try {
-        const copiedRpyFiles = await getRpyFiles(targetDir);
-        for (const file of copiedRpyFiles) {
-          const filename = file.split("/").pop() || file;
-          // Keep the core Ren'Py configuration and UI definitions
-          if (filename !== "gui.rpy" && filename !== "options.rpy" && filename !== "screens.rpy") {
-            await deleteFile(`${targetDir.replace(/\\/g, '/')}/${file}`);
-          }
+      // 3. Remove the scripts the compiled story replaces: generated ones, scripts
+      //    that came with an imported game, and scene files left by an earlier export.
+      const replaced = sourceScripts.filter(f => isReplacedByExport(f, project.imported_scripts));
+      const staleScenes = targetExists
+        ? (await getRpyFiles(targetDir)).filter(f => isGeneratedScript(f) && !replaced.includes(f))
+        : [];
+      for (const file of [...replaced, ...staleScenes]) {
+        try {
+          await deleteFile(`${targetDir}/${file}`);
+        } catch (e) {
+          console.warn(`Failed to remove ${file} from the export`, e);
         }
-      } catch (e) {
-        console.warn("Failed to clean up old .rpy files in export", e);
       }
 
-      // 4. Generate and write out the separate multi-file scripts
-      const newScripts = compileProjectToFiles(project);
+      // 4. Generate and write out the separate multi-file scripts, leaving out
+      //    defaults, and avoiding labels, that the scripts kept in the export
+      //    already declare
+      const declared = await declaredNamesInGame(targetDir);
+      const newScripts = compileProjectToFiles(project, { declaredElsewhere: declared.vars, labelsElsewhere: declared.labels });
       for (const script of newScripts) {
         await writeTextFile(`${targetDir}/game/${script.filename}`, script.content);
       }
 
-      setOk(`Exported to ${targetDir}`);
+      const dropped = replaced.filter(f => !isGeneratedScript(f));
+      setOk(dropped.length
+        ? `Exported to ${targetDir}. Replaced by the compiled story: ${dropped.join(", ")}`
+        : `Exported to ${targetDir}`);
       ToastManager.success(`Project exported to ${exportName}`);
       
       // Give them the option to open the exported folder
@@ -177,19 +204,7 @@ export function ExportPanel({ project }: Props) {
       }, 500);
 
     } catch (e) { setErr(String(e)); }
-  }, [project, validation, exportName, rootPath]);
-
-  const handleAutoDetect = useCallback(async () => {
-    setAutoDetecting(true);
-    try {
-      const found = await findRenpySdk(sdkPath || null);
-      if (found) {
-        setSdkPath(found);
-        localStorage.setItem("vnv_sdk_path", found);
-        ToastManager.success("SDK found: " + (found.split("/").pop() || ""));
-      } else { ToastManager.error("SDK not found"); }
-    } catch (e) { ToastManager.error(String(e)); } finally { setAutoDetecting(false); }
-  }, [sdkPath]);
+  }, [project, validation, exportName, exportParentDir, rootPath]);
 
   const handleLaunchRenpy = useCallback(async () => {
     if (!rootPath) { ToastManager.error("No project loaded"); return; }
@@ -358,27 +373,27 @@ export function ExportPanel({ project }: Props) {
                 <div className="label">REN'PY SDK CONFIG</div>
               </div>
               <div className="col gap4">
-                <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK Executable (renpy.exe / renpy.sh)</div>
+                <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK folder, or renpy.exe / renpy.sh</div>
                 <div className="row gap8">
                   <input className="input mono" style={{ flex: 1, fontSize: 11, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--dim)' }} value={sdkPath} onChange={e => {
                     const p = e.target.value;
                     setSdkPath(p);
-                    localStorage.setItem("vnv_sdk_path", p);
-                  }} placeholder="e.g. C:/renpy-8.5/renpy.exe" />
+                    localStorage.setItem(SDK_PATH_KEY, p);
+                  }} placeholder={`e.g. ${EXAMPLE_SDK_DIR}`} />
                   <button className="btn btn-ghost" onClick={async () => {
                     const { open } = await import('@tauri-apps/plugin-dialog');
                     const file = await open({ filters: [{ name: "Executable", extensions: ["exe", "sh", "py", "app"] }] });
                     if (file && typeof file === 'string') {
                       const p = file.replace(/\\/g, '/');
                       setSdkPath(p);
-                      localStorage.setItem("vnv_sdk_path", p);
+                      localStorage.setItem(SDK_PATH_KEY, p);
                     }
                   }} style={{ fontSize: 12, padding: '0 16px', border: '1px solid var(--bdr)', borderRadius: 6 }}>Find</button>
                 </div>
               </div>
               {!sdkPath && (
                 <div style={{ fontSize: 11, color: "var(--warn)", background: "rgba(245,158,11,0.08)", padding: "8px 10px", borderRadius: 6, lineHeight: 1.5 }}>
-                  ⚠ No SDK path set. Enter the path to <code>renpy.exe</code>.
+                  ⚠ No SDK path set. Enter the SDK folder or the path to <code>{RENPY_LAUNCHER}</code>.
                 </div>
               )}
             </div>

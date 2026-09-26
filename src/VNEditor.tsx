@@ -14,12 +14,14 @@ import { AssetBrowser } from "./AssetBrowser";
 import { ExportPanel } from "./ExportPanel";
 import { SearchPanel } from "./SearchPanel";
 import { QuickOpen } from "./QuickOpen";
-import { saveVnvProject, writeTextFile } from "./tauriApi";
+import { saveVnvProject, writeTextFile, declaredVarsInGame } from "./tauriApi";
 import { compilePreview } from "./compiler";
 import { ToastManager } from "./toastContext";
 import { useTabHistory } from "./useHistory";
 import { useShortcuts } from "./useShortcuts";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { message } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "./translationContext";
 import StatsView from "./StatsView";
 import VariableManager from "./VariableManager";
@@ -31,7 +33,6 @@ import AchievementManager from "./AchievementManager";
 import { ShortcutsModal } from "./ShortcutsModal";
 import BotAnalyzerPanel from "./BotAnalyzerPanel";
 import { autoTagProject } from "./botAnalyzer";
-import { MusicPlayerBar } from "./MusicPlayerBar";
 import { PlaytestEngine } from "./PlaytestEngine";
 import ScriptReader from "./ScriptReader";
 import { useMusicPlayer } from "./musicPlayerContext";
@@ -41,19 +42,12 @@ type NavTab = "graph" | "gui" | "scenes" | "chars" | "assets" | "export" | "stat
 interface Props {
   project: VNProject;
   onClose: () => void;
+  /** The Preferences auto-save setting; the editor's toggle changes it too. */
+  autoSave: boolean;
+  onAutoSaveChange: (enabled: boolean) => void;
 }
 
-// ── Sidebar width presets ─────────────────────────────────────────────────────
-const SIDEBAR_COMPACT  = 64;
-const SIDEBAR_STANDARD = 64;   // default (icon + tiny label)
-const SIDEBAR_WIDE     = 160;  // icon + full label
-
-function loadSidebarWidth(): number {
-  const v = parseInt(localStorage.getItem("vnv_sidebar_width") ?? "", 10);
-  return isNaN(v) ? SIDEBAR_STANDARD : v;
-}
-
-export function VNEditor({ project: initialProject, onClose }: Props) {
+export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveEnabled, onAutoSaveChange: setAutoSaveEnabled }: Props) {
   const [project, setProject] = useState<VNProject>(initialProject);
   const { pushState, popUndo, popRedo, canUndo, canRedo } = useTabHistory<VNProject>();
   
@@ -72,7 +66,10 @@ export function VNEditor({ project: initialProject, onClose }: Props) {
   const [flyToSceneId, setFlyToSceneId] = useState<string | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const didOpenToast = useRef(false);
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
+  const unsavedRef = useRef(unsaved);
+  useEffect(() => { unsavedRef.current = unsaved; }, [unsaved]);
+  const autoSaveRef = useRef(autoSaveEnabled);
+  useEffect(() => { autoSaveRef.current = autoSaveEnabled; }, [autoSaveEnabled]);
 
   const musicPlayer = useMusicPlayer();
   useEffect(() => { musicPlayer.stop(); }, [activeTab]);
@@ -111,34 +108,91 @@ export function VNEditor({ project: initialProject, onClose }: Props) {
     setUnsaved(true);
   }, [pushState]);
 
-  const handleSave = useCallback(async () => {
-    if (!project._filePath || !project._rootPath) return;
+  /**
+   * Save the project and refresh the live-preview script. Returns false if the
+   * save failed. `silent` skips the "Project saved" toast (autosave, closing).
+   */
+  const saveProject = useCallback(async (silent = false): Promise<boolean> => {
+    const current = projectRef.current;
+    if (!current._filePath || !current._rootPath) return false;
     try {
-      await saveVnvProject(project._filePath, project);
-      
-      // Auto-compile preview so that Shift+R hot-reloading works in Ren'Py
+      await saveVnvProject(current._filePath, current);
+
+      // Keep game/vnv_preview.rpy current so Shift+R hot-reloading works in
+      // Ren'Py. Written in main-menu mode, so launching the game folder from the
+      // Ren'Py launcher still shows the main menu and Start begins at the start scene.
       try {
-        const previewRpy = compilePreview(project);
-        await writeTextFile(`${project._rootPath}/game/vnv_preview.rpy`, previewRpy);
+        const declaredElsewhere = await declaredVarsInGame(current._rootPath);
+        const previewRpy = compilePreview(current, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere });
+        await writeTextFile(`${current._rootPath}/game/vnv_preview.rpy`, previewRpy);
       } catch (compileErr) {
         ToastManager.warning(t('toasts.preview_compile_failed'), String(compileErr));
       }
 
-      setUnsaved(false);
-      ToastManager.info(t('toasts.project_saved'));
+      // Edits made while the file was being written still need saving.
+      if (projectRef.current === current) setUnsaved(false);
+      if (!silent) ToastManager.info(t('toasts.project_saved'));
+      return true;
     } catch (e) {
-      ToastManager.error(t('toasts.save_failed').replace('{err}', String(e)));
+      ToastManager.error(t(silent ? 'toasts.auto_save_failed' : 'toasts.save_failed').replace('{err}', String(e)));
+      return false;
     }
-  }, [project]);
+  }, [t]);
+  const saveRef = useRef(saveProject);
+  useEffect(() => { saveRef.current = saveProject; }, [saveProject]);
 
-  // Auto-save interval (1 minute)
+  const handleSave = useCallback(() => { void saveRef.current(); }, []);
+
+  // Auto-save once a minute while there are unsaved changes. Edits don't restart
+  // the timer, so it keeps saving while you work.
   useEffect(() => {
     if (!autoSaveEnabled) return;
     const interval = setInterval(() => {
-      handleSave();
+      if (unsavedRef.current) void saveRef.current(true);
     }, 60000);
     return () => clearInterval(interval);
-  }, [autoSaveEnabled, handleSave]);
+  }, [autoSaveEnabled]);
+
+  /**
+   * Resolve unsaved changes before leaving the editor or closing the window:
+   * save them (automatically when auto-save is on, otherwise if the user picks
+   * Save) or discard them. Returns false if the user cancels or the save fails.
+   */
+  const resolveUnsaved = useCallback(async (): Promise<boolean> => {
+    if (!unsavedRef.current) return true;
+    if (autoSaveRef.current) return saveRef.current(true);
+    const saveLabel = t('editor.nav.save');
+    const discardLabel = t('editor.nav.dont_save');
+    const choice = await message(
+      t('editor.nav.unsaved_prompt').replace('{title}', projectRef.current.title),
+      {
+        title: t('editor.nav.unsaved_title'),
+        kind: 'warning',
+        buttons: { yes: saveLabel, no: discardLabel, cancel: t('editor.nav.cancel') },
+      },
+    );
+    if (choice === saveLabel || choice === 'Yes') return saveRef.current(true);
+    return choice === discardLabel || choice === 'No';
+  }, [t]);
+  const resolveUnsavedRef = useRef(resolveUnsaved);
+  useEffect(() => { resolveUnsavedRef.current = resolveUnsaved; }, [resolveUnsaved]);
+
+  const handleClose = useCallback(async () => {
+    if (await resolveUnsavedRef.current()) onClose();
+  }, [onClose]);
+
+  // Closing the window with unsaved changes goes through the same check.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        if (!(await resolveUnsavedRef.current())) event.preventDefault();
+      })
+      .then(fn => { if (disposed) fn(); else unlisten = fn; })
+      .catch(e => console.warn("Could not watch for window close:", e));
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
 
   // Fly-to: switch to Graph tab then signal canvas to pan to the scene
   const handleFlyToScene = useCallback((id: string) => {
@@ -274,7 +328,7 @@ export function VNEditor({ project: initialProject, onClose }: Props) {
       }}>
 
         {/* Back button */}
-        <button className="btn btn-ghost" onClick={onClose} style={{ gap: 6, fontSize: 12, padding: "0 12px", height: 32, borderRadius: 8, display: "flex", alignItems: "center" }}>
+        <button className="btn btn-ghost" onClick={handleClose} style={{ gap: 6, fontSize: 12, padding: "0 12px", height: 32, borderRadius: 8, display: "flex", alignItems: "center" }}>
           <span style={{ fontSize: 14 }}>←</span> {t('editor.nav.back')}
         </button>
 
@@ -498,7 +552,6 @@ export function VNEditor({ project: initialProject, onClose }: Props) {
               project={project}
               onProjectChange={updateProject}
               rootPath={project._rootPath}
-              initialPositions={project.layout}
               onNodePositionsChange={(layout) => {
                 updateProject({ ...project, layout });
               }}
