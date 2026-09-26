@@ -207,7 +207,7 @@ The Translation Dashboard's **Sync to Ren'Py** writes `game/tl/<language>/vnv_tr
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, and builds and installs the Arch Linux package.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the unused-asset scan, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, and builds and installs the Arch Linux package.
 
 ```bash
 npx vite build

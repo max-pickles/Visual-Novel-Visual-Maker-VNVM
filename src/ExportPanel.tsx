@@ -7,6 +7,7 @@ import {
   dirHasFiles, isSameOrInside, declaredNamesInGame, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR,
 } from "./tauriApi";
 import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
+import { collectAssetRefs, findUnusedAssets } from "./assetRefs";
 import { validateProject } from "./validator";
 import { ToastManager } from "./toastContext";
 import { invoke } from "@tauri-apps/api/core";
@@ -36,7 +37,9 @@ export function ExportPanel({ project }: Props) {
   const [saveTarget, setSaveTarget] = useState("script.rpy");
   const [status, setStatus] = useState<Status>({ type: "idle", msg: "" });
   const [activeTab, setActiveTab] = useState<"options" | "preview">("options");
-  const [unusedAssets, setUnusedAssets] = useState<string[]>([]);
+  /** Unused files from the last scan, relative to the project folder; null before scanning. */
+  const [unusedAssets, setUnusedAssets] = useState<string[] | null>(null);
+  const [assetTask, setAssetTask] = useState<"scan" | "clean" | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Distribute State
@@ -52,48 +55,72 @@ export function ExportPanel({ project }: Props) {
   const setOk = (msg: string) => setStatus({ type: "ok", msg });
   const setErr = (msg: string) => setStatus({ type: "err", msg });
 
-  const handleScanAssets = useCallback(async () => {
-    if (!rootPath) { ToastManager.error("No project folder found to scan."); return; }
-    try {
-      const referenced = new Set<string>();
-      if (project.cover) referenced.add(project.cover);
-      project.characters.forEach(c => { 
-        Object.values(c.sprites).forEach(sprite => referenced.add(sprite));
-      });
-      project.scenes.forEach(s => {
-        if (s.bg) referenced.add(s.bg);
-        s.events?.forEach(e => {
-          if ((e as any).charPose) referenced.add((e as any).charPose);
-          if ((e as any).voice) referenced.add((e as any).voice);
-          if ((e as any).bg) referenced.add((e as any).bg);
-          if ((e as any).audio) referenced.add((e as any).audio);
-        });
-      });
-      const allFiles = await listAssetFiles(rootPath, "images");
-      const allAudio = await listAssetFiles(rootPath, "audio");
-      const unused: string[] = [];
-      for (const f of [...allFiles, ...allAudio]) {
-        if (!referenced.has(f) && !f.includes("gui/")) {
-          unused.push(f);
-        }
-      }
-      setUnusedAssets(unused);
-      if (unused.length === 0) ToastManager.info("Project is perfectly clean! No unused assets found.");
-    } catch (e) { console.error(e); ToastManager.error("Asset scan failed"); }
+  /**
+   * The files in game/images and game/audio that neither the project nor the
+   * game's scripts use, relative to the project folder.
+   */
+  const scanUnusedAssets = useCallback(async (): Promise<string[]> => {
+    const root = rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+    const [images, audio, scriptPaths] = await Promise.all([
+      listAssetFiles(root, "images"),
+      listAssetFiles(root, "audio"),
+      getRpyFiles(root),
+    ]);
+    // A script that can't be read could use any of the files, so it fails the scan.
+    const scripts = await Promise.all(
+      scriptPaths.map(async name => ({ name, content: await readRpyFile(`${root}/${name}`) })),
+    );
+    return findUnusedAssets([...images, ...audio], collectAssetRefs(project, scripts));
   }, [project, rootPath]);
 
-  const handleClean = useCallback(async () => {
-    let deleted = 0;
-    for (const f of unusedAssets) {
-      try {
-        await deleteFile(`${rootPath}/game/${f}`);
-        deleted++;
-      } catch (e) { console.error(`Failed to delete ${f}`); }
+  const handleScanAssets = useCallback(async () => {
+    if (!rootPath) { ToastManager.error("No project folder found to scan."); return; }
+    setAssetTask("scan");
+    try {
+      const unused = await scanUnusedAssets();
+      setUnusedAssets(unused);
+      if (unused.length === 0) ToastManager.info("Project is perfectly clean! No unused assets found.");
+    } catch (e) {
+      console.error(e);
+      setUnusedAssets(null);
+      ToastManager.error("Asset scan failed", String(e));
+    } finally {
+      setAssetTask(null);
     }
-    setUnusedAssets([]);
-    setShowConfirmModal(false);
-    ToastManager.success(`Cleaned ${deleted} unused assets`);
-  }, [unusedAssets, rootPath]);
+  }, [rootPath, scanUnusedAssets]);
+
+  const handleClean = useCallback(async () => {
+    if (!unusedAssets?.length) return;
+    setAssetTask("clean");
+    try {
+      // Check again first: the project or its scripts may have started using
+      // a file since the scan.
+      const stillUnused = new Set(await scanUnusedAssets());
+      const root = rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+      let deleted = 0, nowUsed = 0;
+      const failed: string[] = [];
+      for (const f of unusedAssets) {
+        if (!stillUnused.has(f)) { nowUsed++; continue; }
+        try {
+          await deleteFile(`${root}/${f}`);
+          deleted++;
+        } catch (e) {
+          console.error(`Failed to delete ${f}`, e);
+          failed.push(f);
+        }
+      }
+      setUnusedAssets(failed);
+      if (deleted > 0) ToastManager.success(`Deleted ${deleted} unused asset${deleted === 1 ? "" : "s"}`);
+      if (nowUsed > 0) ToastManager.info(`Kept ${nowUsed} file${nowUsed === 1 ? "" : "s"} the project started using since the scan`);
+      if (failed.length > 0) ToastManager.error(`Couldn't delete ${failed.length} file${failed.length === 1 ? "" : "s"}`, failed.join("\n"));
+    } catch (e) {
+      console.error(e);
+      ToastManager.error("Asset scan failed, so nothing was deleted", String(e));
+    } finally {
+      setAssetTask(null);
+      setShowConfirmModal(false);
+    }
+  }, [unusedAssets, rootPath, scanUnusedAssets]);
 
   const handlePreview = useCallback(async (targetFilename?: string | React.MouseEvent) => {
     try {
@@ -262,12 +289,17 @@ export function ExportPanel({ project }: Props) {
             {/* Asset Optimization */}
             <div className="col gap12">
               <div className="label">ASSET OPTIMIZATION</div>
-              {unusedAssets.length > 0 ? (
-                <div className="card col gap12" style={{ border: "1px solid var(--warn)", background: "rgba(245, 158, 11, 0.05)" }}>
+              {unusedAssets === null ? (
+                <div style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.5 }}>
+                  Find images and audio in game/images and game/audio that nothing in the project or its scripts uses.
+                </div>
+              ) : unusedAssets.length > 0 ? (
+                <div className="card col gap12" style={{ border: "1px solid var(--warn)", background: "color-mix(in srgb, var(--warn) 5%, transparent)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--warn)", fontSize: 13, fontWeight: 700 }}>
                     <span>🗑</span> Found {unusedAssets.length} unused assets
                   </div>
-                  <button className="btn" style={{ background: "color-mix(in srgb, var(--err) 15%, transparent)", color: "var(--err)" }} onClick={() => setShowConfirmModal(true)}>
+                  <button className="btn" style={{ background: "color-mix(in srgb, var(--err) 15%, transparent)", color: "var(--err)" }}
+                    disabled={assetTask !== null} onClick={() => setShowConfirmModal(true)}>
                     Clean {unusedAssets.length} Unused Files
                   </button>
                 </div>
@@ -276,8 +308,8 @@ export function ExportPanel({ project }: Props) {
                   <span style={{ fontSize: 18 }}>✨</span> No unused assets found. Clean!
                 </div>
               )}
-              <button className="btn btn-ghost" style={{ fontSize: 11, alignSelf: "flex-start" }} onClick={handleScanAssets}>
-                Scan for unused assets
+              <button className="btn btn-ghost" style={{ fontSize: 11, alignSelf: "flex-start" }} disabled={assetTask !== null} onClick={handleScanAssets}>
+                {assetTask === "scan" ? "Scanning…" : "Scan for unused assets"}
               </button>
             </div>
 
@@ -311,7 +343,7 @@ export function ExportPanel({ project }: Props) {
                       <option key={f.filename} value={f.filename}>{f.filename}</option>
                     ))}
                   </select>
-                  <button className="btn" style={{ background: "var(--acc)", color: "#000", fontWeight: 700, padding: "6px 12px", flexShrink: 0 }} onClick={handleSaveRpy}>
+                  <button className="btn" style={{ background: "var(--acc)", color: "var(--bg0)", fontWeight: 700, padding: "6px 12px", flexShrink: 0 }} onClick={handleSaveRpy}>
                     💾 Save
                   </button>
                 </div>
@@ -327,7 +359,7 @@ export function ExportPanel({ project }: Props) {
               <div className="col gap8">
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text)" }}>EXPORT DESTINATION</div>
                 <div className="row gap8">
-                  <input className="input" style={{ flex: 1, fontSize: 12, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--dim)' }} readOnly value={exportParentDir} />
+                  <input className="input" style={{ flex: 1, fontSize: 12, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--dim)' }} readOnly value={exportParentDir} />
                   <button className="btn btn-ghost" onClick={async () => {
                     const dir = await pickNewProjectFolder();
                     if (dir && typeof dir === 'string') {
@@ -354,8 +386,8 @@ export function ExportPanel({ project }: Props) {
                 onClick={handleExportProjectFolder}
                 style={{
                   height: 44, fontSize: 13, fontWeight: 700,
-                  background: validation.ok && status.type !== 'running' ? 'var(--acc)' : 'rgba(255,255,255,0.05)',
-                  color: validation.ok && status.type !== 'running' ? '#000' : 'var(--faint)',
+                  background: validation.ok && status.type !== 'running' ? 'var(--acc)' : 'color-mix(in srgb, var(--text) 5%, transparent)',
+                  color: validation.ok && status.type !== 'running' ? 'var(--bg0)' : 'var(--faint)',
                   border: validation.ok && status.type !== 'running' ? 'none' : '1px solid var(--bdr)',
                   boxShadow: validation.ok && status.type !== 'running' ? '0 0 20px color-mix(in srgb, var(--acc) 30%, transparent)' : 'none',
                   animation: validation.ok && status.type !== 'running' ? 'export-glow 2.5s ease-in-out infinite' : 'none',
@@ -375,7 +407,7 @@ export function ExportPanel({ project }: Props) {
               <div className="col gap4">
                 <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK folder, or renpy.exe / renpy.sh</div>
                 <div className="row gap8">
-                  <input className="input mono" style={{ flex: 1, fontSize: 11, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--dim)' }} value={sdkPath} onChange={e => {
+                  <input className="input mono" style={{ flex: 1, fontSize: 11, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--dim)' }} value={sdkPath} onChange={e => {
                     const p = e.target.value;
                     setSdkPath(p);
                     localStorage.setItem(SDK_PATH_KEY, p);
@@ -392,7 +424,7 @@ export function ExportPanel({ project }: Props) {
                 </div>
               </div>
               {!sdkPath && (
-                <div style={{ fontSize: 11, color: "var(--warn)", background: "rgba(245,158,11,0.08)", padding: "8px 10px", borderRadius: 6, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: "var(--warn)", background: "color-mix(in srgb, var(--warn) 8%, transparent)", padding: "8px 10px", borderRadius: 6, lineHeight: 1.5 }}>
                   ⚠ No SDK path set. Enter the SDK folder or the path to <code>{RENPY_LAUNCHER}</code>.
                 </div>
               )}
@@ -408,7 +440,7 @@ export function ExportPanel({ project }: Props) {
                 <button className="btn"
                   style={{
                     height: 38, justifyContent: "center", fontWeight: 700, fontSize: 12,
-                    background: sdkPath ? "color-mix(in srgb, var(--acc2) 20%, transparent)" : "rgba(255,255,255,0.04)",
+                    background: sdkPath ? "color-mix(in srgb, var(--acc2) 20%, transparent)" : "color-mix(in srgb, var(--text) 4%, transparent)",
                     color: sdkPath ? "var(--acc2)" : "var(--dim)",
                     border: `1px solid ${sdkPath ? "color-mix(in srgb, var(--acc2) 40%, transparent)" : "var(--bdr)"}`,
                     cursor: sdkPath ? "pointer" : "not-allowed",
@@ -428,7 +460,7 @@ export function ExportPanel({ project }: Props) {
               <div className="col gap4" style={{ marginTop: -16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "var(--err)" }}>Fix the following errors:</div>
                 {validation.errors.map((e, i) => (
-                  <div key={i} style={{ fontSize: 11, color: "var(--err)", padding: "4px 8px", background: "rgba(239, 68, 68, 0.1)", borderRadius: 4 }}>
+                  <div key={i} style={{ fontSize: 11, color: "var(--err)", padding: "4px 8px", background: "color-mix(in srgb, var(--err) 10%, transparent)", borderRadius: 4 }}>
                     {e.location && <strong>[{e.location}]</strong>} {e.message}
                   </div>
                 ))}
@@ -437,7 +469,7 @@ export function ExportPanel({ project }: Props) {
             {status.msg && (
               <div style={{
                 marginTop: -16, fontSize: 11, fontWeight: 700, padding: "8px 12px", borderRadius: 6,
-                background: status.type === "err" ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
+                background: status.type === "err" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "color-mix(in srgb, var(--ok) 10%, transparent)",
                 color: status.type === "err" ? "var(--err)" : "var(--ok)",
                 border: `1px solid ${status.type === "err" ? "var(--err)" : "var(--ok)"}`
               }}>
@@ -528,9 +560,9 @@ export function ExportPanel({ project }: Props) {
       </div>
 
       {/* Are You Sure Modal for Clean Assets */}
-      {showConfirmModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", animation: 'vnv-fade-slide-in 0.15s ease both' }}>
-          <div className="col" style={{ width: 520, background: "var(--bg1)", borderRadius: 14, border: "1px solid var(--bdr)", overflow: "hidden", boxShadow: "0 24px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)" }}>
+      {showConfirmModal && unusedAssets && (
+        <div style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--bg0) 85%, transparent)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", animation: 'vnv-fade-slide-in 0.15s ease both' }}>
+          <div className="col" style={{ width: 520, background: "var(--bg1)", borderRadius: 14, border: "1px solid var(--bdr)", overflow: "hidden", boxShadow: "0 24px 48px color-mix(in srgb, var(--bg0) 60%, transparent), 0 0 0 1px color-mix(in srgb, var(--text) 4%, transparent)" }}>
             <div style={{ padding: "16px 20px", background: "color-mix(in srgb, var(--err) 15%, var(--bg2))", borderBottom: "1px solid color-mix(in srgb, var(--err) 30%, var(--bdr))", display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--err)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🗑</div>
               <div>
@@ -539,16 +571,17 @@ export function ExportPanel({ project }: Props) {
               </div>
             </div>
             <div style={{ padding: 20, color: "var(--text)", fontSize: 13, lineHeight: 1.6 }}>
-              <p style={{ marginBottom: 12 }}>Permanently delete <strong style={{ color: 'var(--err)' }}>{unusedAssets.length}</strong> files not referenced by any scene, character, or event?</p>
+              <p style={{ marginBottom: 12 }}>Permanently delete <strong style={{ color: 'var(--err)' }}>{unusedAssets.length}</strong> files from game/images and game/audio that no scene, character, event, setting or script refers to?</p>
               <div style={{ background: "var(--bg0)", border: "1px solid var(--bdr)", borderRadius: 8, maxHeight: 220, overflowY: "auto" }}>
                 {unusedAssets.map(f => {
                   const ext = f.split('.').pop()?.toLowerCase() ?? '';
-                  const icon = ['png','jpg','jpeg','webp','gif'].includes(ext) ? '🖼️' : ['mp3','ogg','wav','flac'].includes(ext) ? '🎵' : ['mp4','webm'].includes(ext) ? '🎬' : '📄';
-                  const name = f.split('/').pop() ?? f;
+                  const icon = ['png','jpg','jpeg','webp','gif','bmp'].includes(ext) ? '🖼️' : ['ogg','mp3','wav','opus','flac'].includes(ext) ? '🎵' : '📄';
+                  // Relative to game/, so files with the same name in different folders can be told apart.
+                  const path = f.replace(/^game\//, '');
                   return (
-                    <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: 11, fontFamily: 'var(--mono)' }}>
+                    <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid color-mix(in srgb, var(--bdr) 50%, transparent)', fontSize: 11, fontFamily: 'var(--mono)' }}>
                       <span style={{ fontSize: 14, flexShrink: 0 }}>{icon}</span>
-                      <span style={{ color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                      <span title={path} style={{ color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
                       <span style={{ color: 'var(--faint)', flexShrink: 0, fontSize: 10 }}>{ext.toUpperCase()}</span>
                     </div>
                   );
@@ -556,9 +589,9 @@ export function ExportPanel({ project }: Props) {
               </div>
             </div>
             <div className="row" style={{ padding: "14px 20px", borderTop: "1px solid var(--bdr)", justifyContent: "flex-end", gap: 10, background: "var(--bg2)" }}>
-              <button className="btn btn-ghost" onClick={() => setShowConfirmModal(false)}>Cancel</button>
-              <button className="btn" style={{ background: "var(--err)", color: "#fff", border: "1px solid color-mix(in srgb, var(--err) 70%, transparent)", fontWeight: 700, padding: '0 18px', height: 34, borderRadius: 8 }} onClick={handleClean}>
-                Delete {unusedAssets.length} Files
+              <button className="btn btn-ghost" disabled={assetTask === "clean"} onClick={() => setShowConfirmModal(false)}>Cancel</button>
+              <button className="btn" disabled={assetTask === "clean"} style={{ background: "var(--err)", color: "var(--bg0)", border: "1px solid color-mix(in srgb, var(--err) 70%, transparent)", fontWeight: 700, padding: '0 18px', height: 34, borderRadius: 8 }} onClick={handleClean}>
+                {assetTask === "clean" ? "Deleting…" : `Delete ${unusedAssets.length} Files`}
               </button>
             </div>
           </div>
@@ -574,18 +607,18 @@ function renderSyntaxHighlight(script: string): React.ReactNode {
     const trimmed = line.trimStart();
     if (trimmed.startsWith("##") || trimmed.startsWith("#")) color = "var(--dim)";
     else if (trimmed.startsWith("label ")) color = "var(--teal)";
-    else if (trimmed.startsWith("define ")) color = "#c084fc";
-    else if (trimmed.startsWith("default ")) color = "#fb923c";
-    else if (trimmed.startsWith("init ") || trimmed === "init python:") color = "#fb923c";
-    else if (trimmed.startsWith("$")) color = "#60a5fa";
-    else if (trimmed.startsWith("scene ") || trimmed.startsWith("show ") || trimmed.startsWith("hide ")) color = "#4ade80";
-    else if (trimmed.startsWith("play ") || trimmed.startsWith("stop ")) color = "#facc15";
-    else if (trimmed.startsWith("with ")) color = "#e879f9";
-    else if (trimmed.startsWith("menu:") || trimmed.startsWith("if ") || trimmed.startsWith("else:")) color = "#f472b6";
-    else if (trimmed.startsWith("jump ") || trimmed.startsWith("call ") || trimmed.startsWith("return")) color = "#22d3ee";
+    else if (trimmed.startsWith("define ")) color = "var(--acc2)";
+    else if (trimmed.startsWith("default ")) color = "var(--amber)";
+    else if (trimmed.startsWith("init ") || trimmed === "init python:") color = "var(--amber)";
+    else if (trimmed.startsWith("$")) color = "var(--acc)";
+    else if (trimmed.startsWith("scene ") || trimmed.startsWith("show ") || trimmed.startsWith("hide ")) color = "var(--ok)";
+    else if (trimmed.startsWith("play ") || trimmed.startsWith("stop ")) color = "var(--warn)";
+    else if (trimmed.startsWith("with ")) color = "var(--pink)";
+    else if (trimmed.startsWith("menu:") || trimmed.startsWith("if ") || trimmed.startsWith("else:")) color = "color-mix(in srgb, var(--pink) 60%, var(--acc2))";
+    else if (trimmed.startsWith("jump ") || trimmed.startsWith("call ") || trimmed.startsWith("return")) color = "var(--teal)";
     else if (trimmed.startsWith("pause ")) color = "var(--dim)";
-    else if (trimmed.startsWith('"')) color = "#fbbf24";
-    else if (/^\s+[a-z_]+ "/.test(line)) color = "#93c5fd";
+    else if (trimmed.startsWith('"')) color = "color-mix(in srgb, var(--warn) 60%, var(--text))";
+    else if (/^\s+[a-z_]+ "/.test(line)) color = "color-mix(in srgb, var(--acc2) 60%, var(--text))";
     return <span key={i} style={{ display: "block", color, minHeight: "1.2em" }}>{line || " "}</span>;
   });
 }
