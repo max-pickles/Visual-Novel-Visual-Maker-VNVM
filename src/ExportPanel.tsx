@@ -4,7 +4,7 @@ import { compileProjectToFiles, getProjectStats } from "./compiler";
 import { 
   pickSavePath, writeTextFile, listAssetFiles, deleteFile, getRpyFiles, readRpyFile,
   launchRenpyLauncher, pickNewProjectFolder, copyDirRecursive,
-  dirHasFiles, isSameOrInside, declaredVarsInGame, SDK_PATH_KEY,
+  dirHasFiles, isSameOrInside, declaredVarsInGame, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR,
 } from "./tauriApi";
 import { isGeneratedScript, isReplacedByExport } from "./exportScripts";
 import { validateProject } from "./validator";
@@ -378,7 +378,7 @@ export function ExportPanel({ project }: Props) {
                     const p = e.target.value;
                     setSdkPath(p);
                     localStorage.setItem(SDK_PATH_KEY, p);
-                  }} placeholder="e.g. C:/renpy-8.5-sdk" />
+                  }} placeholder={`e.g. ${EXAMPLE_SDK_DIR}`} />
                   <button className="btn btn-ghost" onClick={async () => {
                     const { open } = await import('@tauri-apps/plugin-dialog');
                     const file = await open({ filters: [{ name: "Executable", extensions: ["exe", "sh", "py", "app"] }] });
@@ -392,7 +392,7 @@ export function ExportPanel({ project }: Props) {
               </div>
               {!sdkPath && (
                 <div style={{ fontSize: 11, color: "var(--warn)", background: "rgba(245,158,11,0.08)", padding: "8px 10px", borderRadius: 6, lineHeight: 1.5 }}>
-                  ⚠ No SDK path set. Enter the SDK folder or the path to <code>renpy.exe</code>.
+                  ⚠ No SDK path set. Enter the SDK folder or the path to <code>{RENPY_LAUNCHER}</code>.
                 </div>
               )}
             </div>

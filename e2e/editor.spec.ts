@@ -39,7 +39,7 @@ test("the Export tab uses the Ren'Py SDK path from Preferences", async ({ page }
   await createProject(page, "Sdk Test");
   await editorTab(page, "Export").click();
 
-  const sdk = page.getByPlaceholder("e.g. C:/renpy-8.5-sdk");
+  const sdk = page.getByPlaceholder(/^e\.g\. .*renpy-8\.5-sdk$/);
   await expect(sdk).toHaveValue("C:/renpy-8.5-sdk");
   await sdk.fill("D:/other-sdk");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("vnv_renpy_sdk_path"))).toBe("D:/other-sdk");

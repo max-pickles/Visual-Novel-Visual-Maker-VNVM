@@ -14,7 +14,7 @@
  */
 import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { findRenpySdk, SDK_PATH_KEY } from "./tauriApi";
+import { findRenpySdk, SDK_PATH_KEY, RENPY_LAUNCHER, EXAMPLE_SDK_DIR } from "./tauriApi";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -51,12 +51,12 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
           setStatusMsg("Ren'Py SDK detected automatically!");
         } else {
           setStatus("notfound");
-          setStatusMsg("Could not auto-detect Ren'Py. Please locate renpy.exe manually.");
+          setStatusMsg(`Could not auto-detect Ren'Py. Please locate ${RENPY_LAUNCHER} manually.`);
         }
       })
       .catch(() => {
         setStatus("notfound");
-        setStatusMsg("Auto-detect failed. Please locate renpy.exe manually.");
+        setStatusMsg(`Auto-detect failed. Please locate ${RENPY_LAUNCHER} manually.`);
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -198,7 +198,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
               value={sdkPath}
               onChange={e => { setSdkPath(e.target.value); setStatus("idle"); setStatusMsg(""); }}
               onKeyDown={e => { if (e.key === "Enter" && isConfirmable) handleConfirm(); }}
-              placeholder="C:\RenPy\renpy-8.x.x\renpy.exe"
+              placeholder={`${EXAMPLE_SDK_DIR}/${RENPY_LAUNCHER}`}
               style={{
                 flex: 1, background: "var(--bg3, #232840)",
                 border: "1px solid var(--bdr, #2a3050)",
@@ -229,8 +229,8 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
 
           {/* Help text */}
           <div style={{ marginTop: 10, fontSize: 11, color: "var(--faint, #374151)", lineHeight: 1.5 }}>
-            Tip: This is the <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>renpy.exe</code> inside
-            your Ren'Py SDK folder (e.g. <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>renpy-8.x.x/renpy.exe</code>).{" "}
+            Tip: This is the <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>{RENPY_LAUNCHER}</code> inside
+            your Ren'Py SDK folder (e.g. <code style={{ background: "var(--bg3)", padding: "0 4px", borderRadius: 3 }}>renpy-8.x.x/{RENPY_LAUNCHER}</code>).{" "}
             <a
               href="https://www.renpy.org/latest.html"
               target="_blank"

@@ -288,6 +288,14 @@ export async function launchRenpyLauncher(
  */
 export const SDK_PATH_KEY = "vnv_renpy_sdk_path";
 
+const IS_WINDOWS = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
+
+/** The SDK ships both renpy.exe and renpy.sh; this is the one that runs here. */
+export const RENPY_LAUNCHER = IS_WINDOWS ? "renpy.exe" : "renpy.sh";
+
+/** Where an SDK might be unpacked on this platform, for placeholders. */
+export const EXAMPLE_SDK_DIR = IS_WINDOWS ? "C:/renpy-8.5-sdk" : "/home/you/renpy-8.5-sdk";
+
 /**
  * Ask the backend to search common locations for the Ren'Py SDK executable.
  * Returns the path string if found, or `null` if not found.

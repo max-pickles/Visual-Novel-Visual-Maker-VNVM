@@ -1,7 +1,7 @@
 // VNVMaker — Rust core
 // Project files, scaffolding from the Ren'Py template, and path checks.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 use regex::Regex;
@@ -377,11 +377,107 @@ pub fn validate_renpy_game(root: &Path) -> Result<std::path::PathBuf, String> {
     Ok(game_dir)
 }
 
+// ─── Ren'Py SDK ──────────────────────────────────────────────────────────────
+
+/// The Ren'Py launchers this platform can run, most preferred first. The SDK
+/// ships both renpy.exe and renpy.sh, but each only runs on its own platform.
+/// `renpy` is the command that Linux packages of Ren'Py install.
+#[cfg(windows)]
+const RENPY_LAUNCHERS: &[&str] = &["renpy.exe"];
+#[cfg(not(windows))]
+const RENPY_LAUNCHERS: &[&str] = &["renpy.sh", "renpy"];
+
+/// This platform's Ren'Py launcher in `dir`, if it has one.
+pub fn renpy_launcher_in(dir: &Path) -> Option<PathBuf> {
+    RENPY_LAUNCHERS.iter().map(|name| dir.join(name)).find(|p| p.is_file())
+}
+
+/// The launcher for a user-supplied SDK location: the SDK folder or a launcher
+/// in it. A launcher for another platform leads to this platform's one next to
+/// it, so picking renpy.exe on Linux still finds renpy.sh. Anything else is
+/// ignored, so the setting can't be used to start some other program.
+pub fn renpy_launcher_from_hint(hint: &str) -> Option<PathBuf> {
+    let path = Path::new(hint.trim());
+    if path.is_dir() {
+        return renpy_launcher_in(path);
+    }
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    if path.is_file() && ["renpy.exe", "renpy.sh", "renpy"].contains(&name.as_str()) {
+        renpy_launcher_in(path.parent()?)
+    } else {
+        None
+    }
+}
+
+/// The launcher of a Ren'Py SDK unpacked directly in one of `roots` (in a
+/// folder whose name starts with "renpy"), preferring the newest-looking name.
+pub fn find_renpy_sdk_in(roots: &[PathBuf]) -> Option<PathBuf> {
+    roots.iter().find_map(|root| {
+        let mut sdks: Vec<PathBuf> = std::fs::read_dir(root)
+            .ok()?
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().to_lowercase().starts_with("renpy"))
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        sdks.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+        sdks.iter().find_map(|sdk| renpy_launcher_in(sdk))
+    })
+}
+
+/// Find a Ren'Py launcher: the user's setting first, then the RENPY_SDK
+/// environment variable, a `renpy` command on the PATH (Linux packages), and
+/// finally SDK folders in the usual places for this platform.
+pub fn find_renpy_launcher(hint: Option<&str>) -> Option<PathBuf> {
+    if let Some(launcher) = hint.and_then(renpy_launcher_from_hint) {
+        return Some(launcher);
+    }
+    if let Some(launcher) = std::env::var_os("RENPY_SDK").and_then(|sdk| renpy_launcher_in(Path::new(&sdk))) {
+        return Some(launcher);
+    }
+    if cfg!(not(windows)) {
+        let on_path = std::env::var_os("PATH")
+            .and_then(|paths| std::env::split_paths(&paths).map(|dir| dir.join("renpy")).find(|p| p.is_file()));
+        if on_path.is_some() {
+            return on_path;
+        }
+    }
+
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(home) = &home {
+        roots.push(home.clone());
+        for sub in ["Desktop", "Downloads", "Documents"] {
+            roots.push(home.join(sub));
+        }
+    }
+    if cfg!(windows) {
+        for dir in ["C:/renpy", "C:/Program Files/Ren'Py", "C:/Program Files (x86)/Ren'Py"] {
+            if let Some(launcher) = renpy_launcher_in(Path::new(dir)) {
+                return Some(launcher);
+            }
+        }
+        if let Some(home) = &home {
+            roots.push(home.join("AppData/Local"));
+        }
+        roots.push(PathBuf::from("C:/"));
+    } else {
+        if let Some(home) = &home {
+            roots.push(home.join(".local/share"));
+            roots.push(home.join("Applications"));
+        }
+        roots.extend(["/opt", "/usr/share", "/usr/local/share", "/Applications"].map(PathBuf::from));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd);
+    }
+    find_renpy_sdk_in(&roots)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::PathBuf;
 
     /// A fresh, empty temporary folder for one test.
     fn temp_dir(name: &str) -> PathBuf {
@@ -397,6 +493,44 @@ mod tests {
         fs::write(root.join("game/images/bg.png"), b"png").unwrap();
         fs::write(root.join("game/script.rpy"), "label start:\n    return\n").unwrap();
         fs::write(root.join("project.vnvmaker"), "{}").unwrap();
+    }
+
+    /// An SDK folder with every platform's launcher in it, like the real one.
+    fn make_sdk(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        for name in ["renpy.exe", "renpy.sh", "renpy.py"] {
+            fs::write(dir.join(name), "").unwrap();
+        }
+    }
+
+    #[test]
+    fn picks_the_renpy_launcher_for_this_platform() {
+        let dir = temp_dir("sdk");
+        let sdk = dir.join("renpy-8.5.2-sdk");
+        make_sdk(&sdk);
+        let expected = Some(sdk.join(if cfg!(windows) { "renpy.exe" } else { "renpy.sh" }));
+        assert_eq!(renpy_launcher_from_hint(sdk.to_str().unwrap()), expected);
+        // Picking either launcher leads to the one this platform can run.
+        for name in ["renpy.exe", "renpy.sh"] {
+            assert_eq!(renpy_launcher_from_hint(sdk.join(name).to_str().unwrap()), expected);
+        }
+        // Nothing else is ever started, even from inside the SDK.
+        assert_eq!(renpy_launcher_from_hint(sdk.join("renpy.py").to_str().unwrap()), None);
+        assert_eq!(renpy_launcher_from_hint(dir.join("missing").to_str().unwrap()), None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finds_the_newest_sdk_in_a_folder() {
+        let dir = temp_dir("sdk-search");
+        make_sdk(&dir.join("renpy-8.3.7-sdk"));
+        make_sdk(&dir.join("renpy-8.5.2-sdk"));
+        fs::create_dir_all(dir.join("renpy-notes")).unwrap();
+        fs::create_dir_all(dir.join("other")).unwrap();
+        let launcher = find_renpy_sdk_in(&[dir.join("missing"), dir.clone()]).unwrap();
+        assert_eq!(launcher.parent(), Some(dir.join("renpy-8.5.2-sdk").as_path()));
+        assert_eq!(find_renpy_sdk_in(&[dir.join("other")]), None);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

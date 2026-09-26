@@ -10,7 +10,7 @@ use vnvmaker_lib::{
     list_assets, copy_dir_all, dir_is_empty_or_missing,
     looks_like_project, has_extension, is_deletable_project_file,
     scaffold_from_template, apply_project_settings,
-    validate_renpy_game,
+    validate_renpy_game, find_renpy_launcher,
 };
 
 // ─── .rpy File Commands ───────────────────────────────────────────────────────
@@ -129,11 +129,7 @@ fn show_in_explorer(path: String) -> Result<(), String> {
         return Err(format!("Not a folder: {}", path.display()));
     }
     let opener = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-    std::process::Command::new(opener)
-        .arg(native_path(path))
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    spawn_detached(std::process::Command::new(opener).arg(native_path(path))).map_err(|e| e.to_string())
 }
 
 /// Let the webview load files from a project folder through the asset protocol
@@ -359,70 +355,15 @@ fn extract_rpy_quoted(s: &str) -> Option<String> {
 
 // ─── Ren'Py SDK Launcher ─────────────────────────────────────────────────────────
 
-/// File names of the Ren'Py SDK launcher.
-const RENPY_LAUNCHERS: &[&str] = &["renpy.exe", "renpy.sh", "renpy"];
+const SDK_NOT_FOUND: &str = "Ren'Py SDK not found.\n\
+    Set the RENPY_SDK environment variable to your SDK root, or enter the path in Settings.";
 
-/// Resolve a user-supplied SDK location: either the SDK folder or the launcher
-/// inside it. Anything else is ignored, so the setting can't be used to start
-/// some other program.
-fn renpy_exe_from_hint(hint: &str) -> Option<PathBuf> {
-    let p = Path::new(hint.trim());
-    if p.is_dir() {
-        return RENPY_LAUNCHERS.iter().map(|name| p.join(name)).find(|c| c.is_file());
-    }
-    let name = p.file_name()?.to_string_lossy().to_lowercase();
-    if p.is_file() && RENPY_LAUNCHERS.contains(&name.as_str()) {
-        Some(p.to_path_buf())
-    } else {
-        None
-    }
-}
-
-/// Search for the Ren'Py SDK launcher binary on this machine.
-/// Priority: caller hint → RENPY_SDK env var → versioned dirs in AppData/Local and C:\
-fn find_renpy_exe(hint: Option<&str>) -> Option<std::path::PathBuf> {
-    // 1. Caller-provided path (stored in IDE settings): the SDK folder or its launcher
-    if let Some(exe) = hint.and_then(renpy_exe_from_hint) {
-        return Some(exe);
-    }
-    // 2. RENPY_SDK environment variable
-    if let Ok(sdk) = std::env::var("RENPY_SDK") {
-        for name in &["renpy.exe", "renpy.sh", "renpy"] {
-            let p = std::path::Path::new(&sdk).join(name);
-            if p.exists() { return Some(p); }
-        }
-    }
-    // 3. Well-known fixed paths (Windows)
-    let home = std::env::var("USERPROFILE").unwrap_or_default().replace('\\', "/");
-    let fixed: &[&str] = &[
-        "C:/renpy/renpy.exe",
-        "C:/Program Files/Ren'Py/renpy.exe",
-        "C:/Program Files (x86)/Ren'Py/renpy.exe",
-    ];
-    for f in fixed {
-        if std::path::Path::new(f).exists() { return Some(std::path::PathBuf::from(f)); }
-    }
-    // 4. Scan AppData/Local and C:\ for versioned renpy-* directories
-    let scan_roots = [
-        format!("{}/AppData/Local", home),
-        "C:/".to_string(),
-        format!("{}/Desktop", home),
-        std::env::current_dir().unwrap_or_default().to_string_lossy().to_string(),
-    ];
-    for root in &scan_roots {
-        if let Ok(entries) = std::fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_lowercase();
-                if name.starts_with("renpy") && entry.path().is_dir() {
-                    for exe_name in &["renpy.exe", "renpy.sh", "renpy"] {
-                        let exe = entry.path().join(exe_name);
-                        if exe.exists() { return Some(exe); }
-                    }
-                }
-            }
-        }
-    }
-    None
+/// Start a program without waiting for it. A thread waits for it instead, so
+/// on Linux and macOS it doesn't linger as a zombie process after it exits.
+fn spawn_detached(cmd: &mut std::process::Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 /// Write a preview .rpy to game/ and spawn Ren'Py with the project.
@@ -444,23 +385,14 @@ fn launch_renpy_preview(
     std::fs::write(&preview_path, &preview_rpy)
         .map_err(|e| format!("Failed to write vnv_preview.rpy: {}", e))?;
 
-    // Locate Ren'Py
-    let exe = find_renpy_exe(sdk_exe_path.as_deref())
-        .ok_or_else(|| {
-            "Ren'Py SDK not found.\n\
-             Set the RENPY_SDK environment variable to your SDK root, or enter the path in Settings.".to_string()
-        })?;
-
-    // Spawn detached — do not wait for it
+    let exe = find_renpy_launcher(sdk_exe_path.as_deref()).ok_or(SDK_NOT_FOUND)?;
     let mut cmd = std::process::Command::new(&exe);
     if let Some(lang) = renpy_language {
         if !lang.trim().is_empty() {
             cmd.env("RENPY_LANGUAGE", lang.trim());
         }
     }
-    
-    cmd.arg(native_path(root_path))
-        .spawn()
+    spawn_detached(cmd.arg(native_path(root_path)))
         .map_err(|e| format!("Failed to launch Ren'Py: {}", e))?;
 
     Ok(exe.to_string_lossy().replace('\\', "/").to_string())
@@ -476,15 +408,8 @@ fn launch_renpy_launcher(
     let root_path = std::path::Path::new(&project_root);
     let projects_dir = root_path.parent().unwrap_or(root_path);
 
-    let exe = find_renpy_exe(sdk_exe_path.as_deref())
-        .ok_or_else(|| {
-            "Ren'Py SDK not found.\n\
-             Set the RENPY_SDK environment variable to your SDK root, or enter the path in Settings.".to_string()
-        })?;
-
-    std::process::Command::new(&exe)
-        .env("RENPY_PROJECTS_DIR", native_path(projects_dir))
-        .spawn()
+    let exe = find_renpy_launcher(sdk_exe_path.as_deref()).ok_or(SDK_NOT_FOUND)?;
+    spawn_detached(std::process::Command::new(&exe).env("RENPY_PROJECTS_DIR", native_path(projects_dir)))
         .map_err(|e| format!("Failed to launch Ren'Py SDK: {}", e))?;
 
     Ok(())
@@ -493,7 +418,7 @@ fn launch_renpy_launcher(
 /// Return the Ren'Py SDK executable path if one can be found automatically.
 #[tauri::command]
 fn find_renpy_sdk(hint: Option<String>) -> Option<String> {
-    find_renpy_exe(hint.as_deref())
+    find_renpy_launcher(hint.as_deref())
         .map(|p| p.to_string_lossy().replace('\\', "/").to_string())
 }
 
