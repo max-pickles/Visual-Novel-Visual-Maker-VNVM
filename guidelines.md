@@ -72,6 +72,7 @@ VNV Maker supports extensive theming (Light mode, Dark mode, Solarized, Nord, et
 
 *   **`botAnalyzer.ts`**: The "Reachability Engine". It performs structural graph traversal (BFS/DFS) to determine which scenes lead to specific Endings (Good, Bad, Stuck). It automatically tags edges so the UI can visually indicate golden paths and dead ends.
 *   **`sceneGraphUtils.ts`**: Handles complex layout algorithms (Sugiyama flow, Radial Hub-and-Spoke, Force-Directed) and "State Inheritance" (figuring out what background image and music track should be playing in Scene D based on what happened in Scenes A, B, and C).
+*   **`routeReplay.ts`**: What has run by the time play reaches a scene or a line: it finds the shortest route from the start scene and lists the events along it. "Play from Here" uses it in both play modes, so a start partway through the story has the backgrounds, sprites, music, camera and variables a player would have. `compilePreview` turns the list into Ren'Py statements that run instantly (no dialogue, pauses or transitions); the Playtest folds it through `applyEvent` in `playtestStage.ts`, the same function it applies each event with as you play. Keep those two in step with `compileEvent` when an event type changes what's on screen or in memory.
 
 ---
 

@@ -6,6 +6,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { VNProject } from "./types";
+import { findScene } from "./types";
 import { StoryCanvas } from "./StoryCanvas";
 import { SceneEditor } from "./SceneEditor";
 import { CharacterEditor } from "./CharacterEditor";
@@ -58,7 +59,10 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
   const activeTabRef = useRef(activeTab);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   const [targetSceneId, setTargetSceneId] = useState<string | null>(null);
-  const [playtestSceneId, setPlaytestSceneId] = useState<string | null>(null);
+  // Where the Playtest tab starts: a scene, or one of its lines. Null means the game's start,
+  // which is where the tab itself goes once play from a chosen spot is over.
+  const [playtestStart, setPlaytestStart] = useState<{ sceneId: string; eventId?: string } | null>(null);
+  useEffect(() => { if (activeTab !== "play") setPlaytestStart(null); }, [activeTab]);
   const [unsaved, setUnsaved]           = useState(false);
   const [showSearch, setShowSearch]     = useState(false);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
@@ -123,7 +127,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
       // Ren'Py launcher still shows the main menu and Start begins at the start scene.
       try {
         const declaredElsewhere = await declaredVarsInGame(current._rootPath);
-        const previewRpy = compilePreview(current, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere });
+        const previewRpy = compilePreview(current, "main_menu", { declaredElsewhere });
         await writeTextFile(`${current._rootPath}/game/vnv_preview.rpy`, previewRpy);
       } catch (compileErr) {
         ToastManager.warning(t('toasts.preview_compile_failed'), String(compileErr));
@@ -558,7 +562,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
               onEditScene={(id) => { setTargetSceneId(id); setActiveTab("scenes"); }}
               onGoScene={(id)  => { setTargetSceneId(id); setActiveTab("scenes"); }}
               onEnterMainMenu={() => setActiveTab("gui")}
-              onPlayScene={(id) => { setPlaytestSceneId(id); setActiveTab("play"); }}
+              onPlayScene={(id) => { setPlaytestStart({ sceneId: id }); setActiveTab("play"); }}
               flyToSceneId={flyToSceneId}
               onFlyToComplete={() => setFlyToSceneId(null)}
             />
@@ -572,6 +576,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
               canRedo={canRedo("scenes")}
               onUndo={handleUndo}
               onRedo={handleRedo}
+              onPlaytest={(sceneId, eventId) => { setPlaytestStart({ sceneId, eventId }); setActiveTab("play"); }}
             />
           )}
           {activeTab === "chars" && (
@@ -596,11 +601,13 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
             <GuiEditor project={project} onProjectChange={updateProject} />
           )}
           {activeTab === "play" && (
-            <PlaytestEngine 
-              project={project} 
-              rootPath={project._rootPath ?? ""} 
-              startSceneId={playtestSceneId ?? project.scenes[0]?.id} 
-              onClose={() => setActiveTab("graph")} 
+            <PlaytestEngine
+              key={`${playtestStart?.sceneId}:${playtestStart?.eventId}`}
+              project={project}
+              rootPath={project._rootPath ?? ""}
+              startSceneId={playtestStart?.sceneId ?? findScene(project, project.start)?.id ?? project.scenes[0]?.id}
+              startEventId={playtestStart?.eventId}
+              onClose={() => setActiveTab("graph")}
             />
           )}
 

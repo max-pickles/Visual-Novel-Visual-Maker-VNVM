@@ -7,7 +7,7 @@
 
 import { compileProject, compileProjectToFiles, compilePreview, getProjectStats } from "../compiler";
 import { newProject, newScene, newCharacter, newEvent } from "../types";
-import type { VNProject } from "../types";
+import type { VNEvent, VNProject } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -643,5 +643,159 @@ describe("exports of an imported game", () => {
     expect(text).toContain(`label vns_scene_${proj.scenes[0].id}:`);
     expect(text).toContain(`define vnc_${proj.characters[0].id} = `);
     expect(text).not.toMatch(/^label start:$/m);
+  });
+});
+
+// ─── Preview: starting mid-story ──────────────────────────────────────────────
+
+describe("compilePreview – starting mid-story", () => {
+  const e = (type: VNEvent["type"], fields: Partial<VNEvent> = {}): VNEvent => ({ ...newEvent(type), ...fields });
+  const fill = (bg: string) => `Transform("${bg}", fit="cover", xsize=config.screen_width, ysize=config.screen_height)`;
+
+  /** A start scene that shows a background, a sprite and a speaker, plays music, sets a variable, then jumps on. */
+  function story() {
+    const proj = makeProj();
+    const eileen = newCharacter("Eileen");
+    eileen.sprites.happy = "eileen_happy.png";
+    proj.characters.push(eileen);
+    const start = proj.scenes[0];
+    const later = newScene("Later");
+    proj.scenes.push(later);
+    start.events = [
+      e("bg", { bg: "room.png", transition: "dissolve" }),
+      e("image", { image: "old.png", side: "right" }),
+      e("bg", { bg: "park.png" }),
+      e("image", { image: "cat.png", side: "left" }),
+      e("dialogue", { char_id: eileen.id, pose: "happy", side: "right", text: "Hi!" }),
+      e("music", { music: "audio/theme.ogg" }),
+      e("setvar", { var_name: "met", var_val: "True" }),
+      e("wait", { dur: 2 }),
+      e("jump", { scene_id: later.id }),
+    ];
+    later.events = [e("narration", { text: "Later on." }), e("narration", { text: "Even later." })];
+    return { proj, start, later, eileen };
+  }
+
+  /** The trimmed lines of a label's block in the preview. */
+  function block(text: string, label: string): string[] {
+    return text.split(`label ${label}:\n`)[1].split("\n\n")[0].split("\n").map(l => l.trim()).filter(Boolean);
+  }
+
+  it("sets up what the scenes before it showed, played and set", () => {
+    const { proj, start, later } = story();
+    expect(block(compilePreview(proj, later.id), "vnv_preview_entry")).toEqual([
+      `## Set up as if played through start → Later`,
+      `scene expression ${fill("park.png")}`,
+      `show expression "cat.png" at left`,
+      `show Eileen happy at right`,
+      `play music "audio/theme.ogg"`,
+      `$ met = True`,
+      `jump vns_scene_${later.id}`,
+    ]);
+    // The scenes themselves are unchanged.
+    expect(block(compilePreview(proj, later.id), `vns_scene_${start.id}`)).toContain("pause 2");
+  });
+
+  it("starts at a later line, after the changes the lines before it make", () => {
+    const { proj, start, later, eileen } = story();
+    const text = compilePreview(proj, start.id, { startEventId: start.events[4].id });
+    expect(block(text, "vnv_preview_entry")).toEqual([
+      `## Set up as if played through start`,
+      `scene expression ${fill("park.png")}`,
+      `show expression "cat.png" at left`,
+      `jump vnv_preview_from`,
+    ]);
+    expect(block(text, "vnv_preview_from")).toEqual([
+      `show Eileen happy at right`,
+      `vnc_${eileen.id} "Hi!"`,
+      `play music "audio/theme.ogg"`,
+      `$ met = True`,
+      `pause 2`,
+      `with dissolve`,
+      `jump vns_scene_${later.id}`,
+      `return`,
+    ]);
+  });
+
+  it("sets nothing up for the start scene's first line or the main menu", () => {
+    const { proj, start } = story();
+    expect(block(compilePreview(proj, start.id), "vnv_preview_entry")).toEqual([`jump vns_scene_${start.id}`]);
+    expect(compilePreview(proj, start.id, { startEventId: "no such line" })).not.toContain("vnv_preview_from");
+    expect(compilePreview(proj, "main_menu")).not.toContain("Set up as if");
+  });
+
+  it("keeps only the audio that is still playing", () => {
+    const { proj, start, later } = story();
+    start.events.splice(-1, 0,
+      e("sfx", { sfx: "rain.ogg", loop: true }),
+      e("music", { music: "" }),
+    );
+    const lines = block(compilePreview(proj, later.id), "vnv_preview_entry");
+    expect(lines).toContain(`play sound "rain.ogg" loop`);
+    expect(lines.some(l => l.includes("music"))).toBe(false);
+
+    start.events.splice(-1, 0, e("sfx", { sfx: "ding.ogg" }), e("music", { music: "calm.ogg", loop: false }));
+    const after = block(compilePreview(proj, later.id), "vnv_preview_entry");
+    expect(after.filter(l => l.startsWith("play"))).toEqual([`play music "calm.ogg" noloop`]);
+  });
+
+  it("puts animations where they end and the camera where it is, without moving them", () => {
+    const { proj, start, later } = story();
+    start.events.splice(-1, 0,
+      e("animation", { image: "bird.png", animation_keyframes: [
+        { id: "k1", duration: 0, easing: "linear", props: { xalign: 0.1, alpha: 0 } },
+        { id: "k2", duration: 2, easing: "ease", props: { xalign: 0.9, alpha: 1 } },
+      ] }),
+      e("camera", { camera_x: 5, camera_zoom: 1.5, camera_dur: 3 }),
+    );
+    const lines = block(compilePreview(proj, later.id), "vnv_preview_entry");
+    expect(lines).toContain(`show expression "bird.png":`);
+    expect(lines).toContain(`xalign 0.9 alpha 1`);
+    expect(lines).toContain(`xpos 5 ypos 0 zpos 0 zoom 1.5`);
+    expect(lines.some(l => l.startsWith("ease") || l.startsWith("linear"))).toBe(false);
+  });
+
+  it("replays raw code's images, sounds and assignments, but not its dialogue, pauses or transitions", () => {
+    const { proj, start, later } = story();
+    start.events.splice(-1, 0, e("raw", { raw_code: [
+      "show eileen sad at left with dissolve",
+      'e "Raw dialogue"',
+      "$ affection += 1",
+      "$ renpy.pause(1.0)",
+      'play sound "wind.ogg" loop',
+      "show screen hud",
+      "if affection > 2:",
+      "    $ bonus = True",
+      "window hide",
+    ].join("\n") }));
+    const lines = block(compilePreview(proj, later.id), "vnv_preview_entry");
+    expect(lines.slice(-6)).toEqual([
+      `$ met = True`,
+      `show eileen sad at left`,
+      `$ affection += 1`,
+      `play sound "wind.ogg" loop`,
+      `show screen hud`,
+      `jump vns_scene_${later.id}`,
+    ]);
+
+    // A later background clears the raw sprite, but not the screen.
+    later.events.unshift(e("bg", { bg: "night.png" }));
+    const at = block(compilePreview(proj, later.id, { startEventId: later.events[1].id }), "vnv_preview_entry");
+    expect(at).toContain("show screen hud");
+    expect(at).not.toContain("show eileen sad at left");
+    expect(at).toContain(`scene expression ${fill("night.png")}`);
+  });
+
+  it("includes the default background and music of the scenes it passes through", () => {
+    const { proj, start, later } = story();
+    start.events = [e("jump", { scene_id: later.id })];
+    start.bg = "default.png";
+    start.music = "default.ogg";
+    expect(block(compilePreview(proj, later.id), "vnv_preview_entry")).toEqual([
+      `## Set up as if played through start → Later`,
+      `scene expression ${fill("default.png")}`,
+      `play music "default.ogg"`,
+      `jump vns_scene_${later.id}`,
+    ]);
   });
 });

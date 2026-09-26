@@ -672,6 +672,27 @@ export function findScene(project: VNProject, sceneId: string | null | undefined
 }
 
 /**
+ * The sprite a dialogue line shows its speaker with: the line's pose if the
+ * character has one for it, otherwise "neutral". `files` are the image files,
+ * bottom layer first for a layered character. Null when neither pose has a
+ * sprite, so the line shows none.
+ */
+export function characterSprite(char: VNCharacter, pose: string | undefined): { pose: string; files: string[] } | null {
+  for (const p of [pose ?? "neutral", "neutral"]) {
+    if (char.is_layered) {
+      const layers = char.layered_sprites?.[p] ?? {};
+      if (Object.keys(layers).length > 0) {
+        const ordered = char.layer_order?.map(l => layers[l]) ?? Object.values(layers);
+        return { pose: p, files: ordered.filter(Boolean) };
+      }
+    } else if (char.sprites?.[p]) {
+      return { pose: p, files: [char.sprites[p]] };
+    }
+  }
+  return null;
+}
+
+/**
  * Names that must never get an auto-generated `default`: Python keywords and
  * builtins, and the Ren'Py objects that conditions and generated code rely on.
  * `default renpy = False` or `default len = False` would break the game.

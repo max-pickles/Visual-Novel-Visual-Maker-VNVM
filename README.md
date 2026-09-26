@@ -21,7 +21,7 @@ Managing a Ren'Py project in a plain text editor means juggling dozens of `.rpy`
 |---|---|
 | **Story Canvas** | Zoomable node graph showing scenes, branches, and endings |
 | **Scene Editor** | 3-column event editor — EventList · ScenePreview · Inspector |
-| **Live Preview** | One-click "Play from Here" in Ren'Py with inherited scene state |
+| **Live Preview** | One-click "Play from Here" in Ren'Py or the in-app Playtest, from any scene or line, with the backgrounds, sprites, music and variables of the route there |
 | **Character Editor** | Sprite pose management, layered images, side-image support |
 | **GUI Editor** | Visual drag-and-drop main menu editor with live preview |
 | **Achievement Manager** | Define and wire unlockable achievements to story events |
@@ -45,6 +45,7 @@ VNV Maker
 │   ├── src/rpyImporter.ts       — .rpy files → VNProject
 │   ├── src/types.ts             — all data types (VNProject, VNScene, VNEvent…)
 │   ├── src/graphLayout.ts       — Sugiyama layered layout algorithm
+│   ├── src/routeReplay.ts       — what the route to a scene or line shows and sets (Play from Here)
 │   └── src/botAnalyzer.ts       — automated ending & variable analysis
 │
 ├── Backend   (Rust + Tauri 2)
@@ -207,7 +208,7 @@ The Translation Dashboard's **Sync to Ren'Py** writes `game/tl/<language>/vnv_tr
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, and builds and installs the Arch Linux package.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer, the playtest's expression evaluator and stage, and the route that Play from Here replays. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, and builds and installs the Arch Linux package.
 
 ```bash
 npx vite build
@@ -215,9 +216,9 @@ npx playwright install chromium   # once
 npm run test:smoke
 ```
 
-The browser smoke tests in `e2e/` run the production build in Chromium under the app's Content-Security-Policy, with the Tauri backend replaced by a mock (`e2e/tauri-mock.js`) that records every call. They create and open projects, visit every tab, edit the story canvas, read and write `gui.rpy`, check what happens to unsaved changes when you leave the editor, check that dialogue text tags can't inject HTML, and play a branching story in the playtest. Any page error, console error or CSP violation fails a test.
+The browser smoke tests in `e2e/` run the production build in Chromium under the app's Content-Security-Policy, with the Tauri backend replaced by a mock (`e2e/tauri-mock.js`) that records every call. They create and open projects, visit every tab, edit the story canvas, read and write `gui.rpy`, check what happens to unsaved changes when you leave the editor, check that dialogue text tags can't inject HTML, play a branching story in the playtest, and start the playtest and the Ren'Py preview partway through a story. Any page error, console error or CSP violation fails a test.
 
-`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, each playable one must play through to the end, and the exported sample game's 12 translations must still cover all of its dialogue. CI runs it against Ren'Py 8.5.2 built from source.
+`scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, including Play from Here partway through each story, then checks them with a real Ren'Py build: each must pass `lint`, each playable one must play through to the end, and the exported sample game's 12 translations must still cover all of its dialogue. Two more games start partway through a story and check what the replayed route put on screen, in the music channels and in the variables. CI runs it against Ren'Py 8.5.2 built from source.
 
 ---
 
