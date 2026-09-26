@@ -186,7 +186,7 @@ Drop any existing Ren'Py project's `game/` folder into the import dialog. The im
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the Ren'Py text-tag renderer and the playtest's expression evaluator. CI (`.github/workflows/ci.yml`) also typechecks, builds the frontend and runs `cargo clippy`.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, and runs `cargo clippy` and `cargo test` on Linux and Windows.
 
 `scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, and each playable one must play through to the end. CI runs it against Ren'Py 8.5.2 built from source.
 
