@@ -186,7 +186,15 @@ Drop any existing Ren'Py project's `game/` folder into the import dialog. The im
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, and runs `cargo clippy` and `cargo test` on Linux and Windows.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, and runs `cargo clippy` and `cargo test` on Linux and Windows.
+
+```bash
+npx vite build
+npx playwright install chromium   # once
+npm run test:smoke
+```
+
+The browser smoke tests in `e2e/` run the production build in Chromium under the app's Content-Security-Policy, with the Tauri backend replaced by a mock (`e2e/tauri-mock.js`) that records every call. They create and open projects, visit every tab, edit the story canvas, read and write `gui.rpy`, check what happens to unsaved changes when you leave the editor, check that dialogue text tags can't inject HTML, and play a branching story in the playtest. Any page error, console error or CSP violation fails a test.
 
 `scripts/check-renpy.sh <renpy-checkout>` compiles a set of fixture projects (the demo project, a project full of tricky names and variables, Ren'Py's sample game imported through the importer, and an imported game that declares its own defaults) in every layout the app writes, then checks them with a real Ren'Py build: each must pass `lint`, and each playable one must play through to the end. CI runs it against Ren'Py 8.5.2 built from source.
 
