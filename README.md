@@ -100,9 +100,26 @@ The app opens automatically. Hot-module reload is active for the React frontend.
 npm run tauri build
 ```
 
-The installer is placed in `src-tauri/target/release/bundle/`. The Ren'Py project template in `Templet/game/` is bundled with the app and copied into every new project.
+The installers are placed in `src-tauri/target/release/bundle/`: an `.msi` and a setup `.exe` on Windows, a `.deb`, an `.rpm` and an AppImage on Linux, an `.app` and a `.dmg` on macOS. The Ren'Py project template in `Templet/game/` is bundled with the app and copied into every new project.
 
 New projects are created in `Documents/VNVMaker/games` by default; change the folder under **Preferences**.
+
+### Linux
+
+On Linux the app runs on WebKitGTK; for building, install Tauri's [Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux). On **Arch Linux and Arch-based distributions such as CachyOS**, build and install it as a pacman package instead (the commands work the same in bash, zsh and fish):
+
+```bash
+sudo pacman -S --needed base-devel git
+git clone https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM.git
+cd Visual-Novel-Visual-Maker-VNVM/packaging/arch
+makepkg -si
+```
+
+`makepkg -s` installs what the build needs (Rust, Node.js, WebKitGTK) through pacman. VNVMaker then shows up in the application menu, and `sudo pacman -R vnvmaker` removes it. CI builds the same package on every change: download the `vnvmaker-arch-package` artifact from a CI run and install it with `sudo pacman -U vnvmaker-*.pkg.tar.zst`.
+
+For **Play**, download the Ren'Py SDK (`renpy-8.x.x-sdk.tar.bz2`) from [renpy.org](https://www.renpy.org/latest.html), unpack it, and choose its folder in **Preferences**; VNVMaker runs the `renpy.sh` inside it. An SDK unpacked in your home folder, `~/Downloads`, `~/Desktop` or `/opt`, or a `renpy` command on your `PATH` (such as the AUR package's), is found without setting anything.
+
+If the window stays blank, a WebKitGTK problem with some graphics drivers (mostly NVIDIA on Wayland), start it with `env WEBKIT_DISABLE_DMABUF_RENDERER=1 vnvmaker`.
 
 ---
 
@@ -112,7 +129,7 @@ VNV Maker needs to know where your Ren'Py SDK lives to launch previews.
 
 1. Open any project.
 2. Click the **⚙ gear icon** in the Scene Editor toolbar (or the SDK status badge).
-3. The **SDK Setup Wizard** will scan common paths automatically. If it doesn't find your SDK, click **Browse** and pick `renpy.exe` (Windows) or `renpy.sh` (macOS/Linux). In **Preferences** you can also pick the SDK folder itself.
+3. The **SDK Setup Wizard** will scan common paths automatically. If it doesn't find your SDK, click **Browse** and pick `renpy.exe` (Windows) or `renpy.sh` (macOS/Linux). In **Preferences** you can also pick the SDK folder itself. The SDK contains both launchers; VNVMaker always runs the one for your platform.
 4. Click **Save** — your path is stored in `localStorage` and remembered across sessions.
 
 ---
@@ -186,7 +203,7 @@ Drop any existing Ren'Py project's `game/` folder into the import dialog. The im
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, and runs `cargo clippy` and `cargo test` on Linux and Windows.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer and the playtest's expression evaluator. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, and builds and installs the Arch Linux package.
 
 ```bash
 npx vite build

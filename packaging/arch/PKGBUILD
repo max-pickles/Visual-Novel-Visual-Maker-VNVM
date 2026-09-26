@@ -1,0 +1,35 @@
+# Builds VNVMaker from this checkout as a pacman package, for Arch Linux and
+# Arch-based distributions such as CachyOS:
+#
+#   cd packaging/arch
+#   makepkg -si
+#
+# Tauri's Debian bundle already has the layout a Linux install needs (the
+# binary, the bundled Ren'Py template, a desktop entry and icons), so the
+# package is made from its contents.
+
+pkgname=vnvmaker
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Visual novel editor that writes Ren'Py projects"
+arch=('x86_64' 'aarch64')
+url="https://github.com/max-pickles/Visual-Novel-Visual-Maker-VNVM"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'hicolor-icon-theme')
+makedepends=('cargo' 'nodejs' 'npm')
+optdepends=('xdg-utils: open project folders in the file manager')
+options=('!lto' '!debug')
+
+_repo="$(realpath "$startdir/../..")"
+
+build() {
+  cd "$_repo"
+  npm ci
+  npm run tauri build -- --bundles deb
+}
+
+package() {
+  local deb
+  deb=$(find "$_repo/src-tauri/target/release/bundle/deb" -name "*_${pkgver}_*.deb" | head -n 1)
+  bsdtar -xOf "$deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+}
