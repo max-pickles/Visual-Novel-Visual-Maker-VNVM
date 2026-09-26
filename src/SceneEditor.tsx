@@ -264,6 +264,12 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   // ── Keyboard nav ──────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // The image picker is modal: Escape closes it, and the scene's shortcuts
+      // (Delete, paste, arrows...) must not act on the events behind it.
+      if (pickerModal) {
+        if (e.key === "Escape") setPickerModal(null);
+        return;
+      }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       const ctrl = e.ctrlKey || e.metaKey;
@@ -284,7 +290,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [events.length, selIdx, deleteEvent, duplicateEvent, copyEvent, cutEvent, pasteEvent]);
+  }, [events.length, selIdx, deleteEvent, duplicateEvent, copyEvent, cutEvent, pasteEvent, pickerModal]);
 
   // ── Nav between scenes ────────────────────────────────────────────────────
   const goScene = (delta: number) => {
