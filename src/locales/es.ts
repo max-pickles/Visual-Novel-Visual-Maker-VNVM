@@ -892,6 +892,7 @@ export const es = {
     preview_compile_failed: "Error al compilar la vista previa — La recarga rápida con Shift+R podría no funcionar.",
     sync_no_root: "No se puede sincronizar: No se encontró la ruta raíz",
     sync_success: "Sincronizado en game/tl/{lang}/vnv_translations.rpy",
+    sync_skipped: "Se omitieron {count} textos: los archivos del propio juego en game/tl/{lang} ya los traducen.",
     sync_failed: "Error al sincronizar las traducciones: {err}",
     preview_failed: "Fallo en la vista previa: {err}",
     preview_launching: "Iniciando el motor de vista previa de Ren'Py...",

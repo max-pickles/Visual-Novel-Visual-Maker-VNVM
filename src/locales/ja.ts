@@ -891,6 +891,7 @@ export const ja = {
     preview_compile_failed: "プレビューのコンパイルに失敗しました — Shift+Rでのホットリロードが機能しない可能性があります。",
     sync_no_root: "同期できません: ルートパスが見つかりません",
     sync_success: "game/tl/{lang}/vnv_translations.rpy に同期しました",
+    sync_skipped: "{count} 件の文字列は、ゲーム自身の game/tl/{lang} 内のファイルで翻訳済みのため除外しました。",
     sync_failed: "翻訳の同期に失敗しました: {err}",
     preview_failed: "プレビューに失敗しました: {err}",
     preview_launching: "Ren'Pyプレビューエンジンを起動中...",

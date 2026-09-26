@@ -10,7 +10,7 @@ use vnvmaker_lib::{
     list_assets, copy_dir_all, dir_is_empty_or_missing,
     looks_like_project, has_extension, is_deletable_project_file,
     scaffold_from_template, apply_project_settings,
-    validate_renpy_game, find_renpy_launcher,
+    validate_renpy_game, find_renpy_launcher, extract_rpy_quoted,
 };
 
 // ─── .rpy File Commands ───────────────────────────────────────────────────────
@@ -331,26 +331,6 @@ fn scan_tl_translations(
         if !pairs.is_empty() { result.insert(lang_name, pairs); }
     }
     Ok(result)
-}
-
-/// Extract the first double-quoted string from a Ren'Py script line,
-/// optionally skipping a leading character name token.
-fn extract_rpy_quoted(s: &str) -> Option<String> {
-    let s = s.trim();
-    let start = s.find('"')?;
-    let inner = &s[start + 1..];
-    
-    let mut escaped = false;
-    for (i, c) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            return Some(inner[..i].to_string());
-        }
-    }
-    None
 }
 
 // ─── Ren'Py SDK Launcher ─────────────────────────────────────────────────────────

@@ -893,6 +893,7 @@ export const en = {
     preview_compile_failed: "Preview compile failed — Shift+R hot-reload may be stale.",
     sync_no_root: "Cannot sync: Root path not found",
     sync_success: "Synced to game/tl/{lang}/vnv_translations.rpy",
+    sync_skipped: "{count} strings were left out: the game's own files in game/tl/{lang} already translate them.",
     sync_failed: "Failed to sync translations: {err}",
     preview_failed: "Preview failed: {err}",
     preview_launching: "Launching Ren'Py preview engine...",

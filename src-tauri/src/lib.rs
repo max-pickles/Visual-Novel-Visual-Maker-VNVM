@@ -377,6 +377,27 @@ pub fn validate_renpy_game(root: &Path) -> Result<std::path::PathBuf, String> {
     Ok(game_dir)
 }
 
+// ─── Ren'Py strings ──────────────────────────────────────────────────────────
+
+/// The text of the first double-quoted string on a line of Ren'Py, with its
+/// escapes resolved as Ren'Py reads them (`\"` is `"`, `\n` a line break).
+pub fn extract_rpy_quoted(line: &str) -> Option<String> {
+    let start = line.find('"')?;
+    let mut text = String::new();
+    let mut chars = line[start + 1..].chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next()? {
+                'n' => text.push('\n'),
+                escaped => text.push(escaped),
+            },
+            '"' => return Some(text),
+            _ => text.push(c),
+        }
+    }
+    None
+}
+
 // ─── Ren'Py SDK ──────────────────────────────────────────────────────────────
 
 /// The Ren'Py launchers this platform can run, most preferred first. The SDK
@@ -493,6 +514,14 @@ mod tests {
         fs::write(root.join("game/images/bg.png"), b"png").unwrap();
         fs::write(root.join("game/script.rpy"), "label start:\n    return\n").unwrap();
         fs::write(root.join("project.vnvmaker"), "{}").unwrap();
+    }
+
+    #[test]
+    fn reads_ren_py_strings_with_escapes() {
+        assert_eq!(extract_rpy_quoted(r#"    old "Say \"hi\"""#).as_deref(), Some(r#"Say "hi""#));
+        assert_eq!(extract_rpy_quoted(r#"    # s "a\\b\nc""#).as_deref(), Some("a\\b\nc"));
+        assert_eq!(extract_rpy_quoted(r#"    new "unterminated"#), None);
+        assert_eq!(extract_rpy_quoted("    pass"), None);
     }
 
     /// An SDK folder with every platform's launcher in it, like the real one.

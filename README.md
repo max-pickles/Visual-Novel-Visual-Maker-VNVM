@@ -195,7 +195,9 @@ Scenes and characters remember the label and variable they had in the game (`lab
 
 ## 📦 Exporting
 
-**Export → Project folder** copies the project to a folder outside it and writes the compiled story as `game/script.rpy` plus one `game/scene_<id>.rpy` per scene. In the copy it removes `project.vnvmaker`, the live-preview script and any scripts the compiled story replaces (for imported games, the original story scripts). `gui.rpy`, `options.rpy`, `screens.rpy`, translations (an imported game's own and the Translation Dashboard's), other scripts that aren't story, and scripts you added yourself are kept. The export never runs on the project folder itself, and asks before replacing an existing folder.
+**Export → Project folder** copies the project to a folder outside it and writes the compiled story as `game/script.rpy` plus one `game/scene_<id>.rpy` per scene. In the copy it removes `project.vnvmaker`, the live-preview script and any scripts the compiled story replaces (for imported games, the original story scripts). `gui.rpy`, `options.rpy`, `screens.rpy`, translations (an imported game's own and the Translation Dashboard's), other scripts that aren't story, and scripts you added yourself are kept.
+
+The Translation Dashboard's **Sync to Ren'Py** writes `game/tl/<language>/vnv_translations.rpy`. It leaves out strings that the game's own files in that folder already translate, since Ren'Py stops when a string is translated twice. The export never runs on the project folder itself, and asks before replacing an existing folder.
 
 ---
 
