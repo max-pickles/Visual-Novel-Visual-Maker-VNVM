@@ -197,8 +197,9 @@ export interface VNScene {
   label: string;
   /**
    * Background shown when the scene starts, before its events: the compiler
-   * puts it at the top of the label. Imported scenes leave it unset: the
-   * game's `scene` statements become `bg` events, at the same point.
+   * puts it at the top of the label, and the Playtest shows it on entering the
+   * scene. Imported scenes leave it unset: the game's `scene` statements
+   * become `bg` events, at the same point.
    */
   bg: string | null;
   /** Music started when the scene starts, before its events. Unset on imported scenes, like `bg`. */
@@ -673,6 +674,27 @@ export function findChar(project: VNProject, charId: string | null | undefined):
 export function findScene(project: VNProject, sceneId: string | null | undefined): VNScene | null {
   if (!sceneId) return null;
   return project.scenes.find(s => s.id === sceneId) ?? null;
+}
+
+/**
+ * The sprite a dialogue line shows its speaker with: the line's pose if the
+ * character has one for it, otherwise "neutral". `files` are the image files,
+ * bottom layer first for a layered character. Null when neither pose has a
+ * sprite, so the line shows none.
+ */
+export function characterSprite(char: VNCharacter, pose: string | undefined): { pose: string; files: string[] } | null {
+  for (const p of [pose ?? "neutral", "neutral"]) {
+    if (char.is_layered) {
+      const layers = char.layered_sprites?.[p] ?? {};
+      if (Object.keys(layers).length > 0) {
+        const ordered = char.layer_order?.map(l => layers[l]) ?? Object.values(layers);
+        return { pose: p, files: ordered.filter(Boolean) };
+      }
+    } else if (char.sprites?.[p]) {
+      return { pose: p, files: [char.sprites[p]] };
+    }
+  }
+  return null;
 }
 
 /**

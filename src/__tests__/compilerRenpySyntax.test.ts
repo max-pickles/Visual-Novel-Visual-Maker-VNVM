@@ -311,7 +311,7 @@ describe("declared variables", () => {
     const declaredElsewhere = new Set(["affection"]);
     for (const out of [
       compileProject(proj, { asExport: true, declaredElsewhere }),
-      compilePreview(proj, "main_menu", undefined, undefined, undefined, undefined, { declaredElsewhere }),
+      compilePreview(proj, "main_menu", { declaredElsewhere }),
       compileProjectToFiles(proj, { declaredElsewhere }).map(f => f.content).join("\n"),
     ]) {
       expect(out).not.toContain("default affection");

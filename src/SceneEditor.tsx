@@ -54,16 +54,20 @@ interface Props {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  /** Open the Playtest at this scene, or at one of its lines. */
+  onPlaytest?: (sceneId: string, startEventId?: string) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo, canRedo, onUndo, onRedo }: Props) {
+export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo, canRedo, onUndo, onRedo, onPlaytest }: Props) {
   const { t } = useTranslation();
   const [selSceneId, setSelSceneId] = useState<string | null>(
     initialSceneId || project.scenes[0]?.id || null
   );
   const [selIdx, setSelIdx]     = useState<number | null>(null);
+  // Preview and Playtest start at the selected line instead of the scene's first
+  const [fromLine, setFromLine] = useState(false);
   const [zoom, setZoom]         = useState<number>(1);
   const [armedTool, setArmedTool] = useState<EventType | null>(null);
   // Origin (center of toolbar button) for the SVG wire when tool is armed
@@ -141,6 +145,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
 
   const [showAnimTrack, setShowAnimTrack] = useState(false);
   const selEvent = selIdx !== null ? scene?.events[selIdx] : null;
+  const startEventId = fromLine && selIdx ? selEvent?.id : undefined;
   const isAnimMode = selEvent?.type === "animation" && showAnimTrack;
   const [animSelIdx, setAnimSelIdx] = useState(0);
 
@@ -170,7 +175,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
   }, [initialSceneId]);
 
   // Reset selection when switching scenes
-  useEffect(() => { setSelIdx(null); }, [selSceneId]);
+  useEffect(() => { setSelIdx(null); setFromLine(false); }, [selSceneId]);
 
   // Auto-switch left bar asset browser when selecting an event
   useEffect(() => {
@@ -311,7 +316,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     setPreviewState("launching"); setPreviewMsg("");
     try {
       const declaredElsewhere = await declaredVarsInGame(rootPath);
-      const script = compilePreview(project, scene.id, undefined, undefined, inheritedBg ?? undefined, inheritedSprite ?? undefined, { declaredElsewhere });
+      const script = compilePreview(project, scene.id, { declaredElsewhere, startEventId });
       const RENPY_LANGS: Record<string, string> = {
         es: "spanish", fr: "french", de: "german", ja: "japanese", ko: "korean", ru: "russian", zh: "simplified_chinese", "zh-TW": "traditional_chinese"
       };
@@ -333,7 +338,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
         ToastManager.error(t('toasts.preview_failed').replace('{err}', msg));
       }
     }
-  }, [scene, project, sdkPath]);
+  }, [scene, project, sdkPath, startEventId]);
 
   return (
     <div
@@ -456,6 +461,28 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
         >
           {previewState === "launching" ? "⏳" : previewState === "ok" ? "✔" : previewState === "err" ? "✕" : "▶"} {t('editor.scene.preview')}
         </button>
+        {/* ▶ Playtest in the editor */}
+        {onPlaytest && (
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 11, gap: 4, flexShrink: 0 }}
+            disabled={!scene}
+            title="Play in the editor's Playtest, starting with the backgrounds, sprites, music and variables of the scenes before this one"
+            onClick={() => scene && onPlaytest(scene.id, startEventId)}
+          >
+            ▶️ {t('editor.scene.playtest')}
+          </button>
+        )}
+        {/* Start both at the selected line instead of the scene's first */}
+        {selIdx ? (
+          <label
+            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, flexShrink: 0, whiteSpace: "nowrap", cursor: "pointer", color: fromLine ? "var(--text)" : "var(--dim)" }}
+            title="Preview and Playtest start at the selected line, after replaying what the lines and scenes before it show and set"
+          >
+            <input type="checkbox" checked={fromLine} onChange={e => setFromLine(e.target.checked)} style={{ accentColor: "var(--teal)", margin: 0 }} />
+            {t('editor.scene.from_line').replace('{n}', String(selIdx + 1))}
+          </label>
+        ) : null}
         {previewState === "err" && (
           <span style={{ fontSize: 10, color: "var(--err)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
             title={previewMsg}

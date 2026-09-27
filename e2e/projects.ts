@@ -43,3 +43,29 @@ export const logicProject = project("Logic", {
   start: "start",
   layout: { start: [0, 0], good: [300, 0], bad: [300, 200] },
 });
+
+/**
+ * A route through three scenes that sets a background and variables on the
+ * way, for starting play partway through.
+ */
+export const routeProject = project("Route", {
+  scenes: [
+    scene("opening", [
+      { id: "o1", type: "narration", text: "Opening line" },
+      { id: "o2", type: "bg", bg: "park.png" },
+      { id: "o3", type: "setvar", var_name: "met", var_val: "True" },
+      { id: "o4", type: "setvar", var_name: "points", var_val: "2" },
+      { id: "o5", type: "jump", scene_id: "middle" },
+    ]),
+    scene("middle", [
+      { id: "m1", type: "narration", text: "Middle line" },
+      { id: "m2", type: "setvar", var_name: "points", var_val: "points + 1" },
+      { id: "m3", type: "narration", text: "Second middle line" },
+      { id: "m4", type: "setvar", var_name: "points", var_val: "points + 10" },
+      { id: "m5", type: "jump", scene_id: "finale" },
+    ]),
+    scene("finale", [{ id: "f1", type: "narration", text: "Finale line" }]),
+  ],
+  start: "opening",
+  layout: { opening: [0, 0], middle: [300, 0], finale: [600, 0] },
+});

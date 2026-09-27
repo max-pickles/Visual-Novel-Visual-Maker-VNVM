@@ -46,7 +46,7 @@ interface Props {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function StoryCanvas({ project, onProjectChange, rootPath, onNodePositionsChange, onEditScene, onGoScene, flyToSceneId, onFlyToComplete, onEnterMainMenu }: Props) {
+export function StoryCanvas({ project, onProjectChange, rootPath, onNodePositionsChange, onEditScene, onGoScene, flyToSceneId, onFlyToComplete, onEnterMainMenu, onPlayScene }: Props) {
   // State from global store
   const {
     pan, setPan, zoom, setZoom,
@@ -1130,6 +1130,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           selection={activeSelection}
           onEditScene={onEditScene}
           onGoScene={onGoScene}
+          onPlayScene={onPlayScene}
           onDeleteSelected={handleDeleteSelected}
           onRenameNode={(id, label) => {
             if (!onProjectChange) return;

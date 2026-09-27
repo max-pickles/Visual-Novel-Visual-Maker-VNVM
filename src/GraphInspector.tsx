@@ -87,6 +87,8 @@ interface Props {
   selection: Set<string>;
   onEditScene?: (id: string) => void;
   onGoScene?: (id: string) => void;
+  /** Open the Playtest at this scene. */
+  onPlayScene?: (id: string) => void;
   onDeleteSelected?: () => void;
   onRenameNode?: (id: string, label: string) => void;
   onSetStart?: (id: string) => void;
@@ -95,7 +97,7 @@ interface Props {
   onUpdateFolderType?: (id: string, type: 'folder' | 'hub') => void;
 }
 
-export function GraphInspector({ project, rootPath, selection, onEditScene, onGoScene, onDeleteSelected, onRenameNode, onSetStart, onEnterMainMenu, onMoveToRoot, onUpdateFolderType }: Props) {
+export function GraphInspector({ project, rootPath, selection, onEditScene, onGoScene, onPlayScene, onDeleteSelected, onRenameNode, onSetStart, onEnterMainMenu, onMoveToRoot, onUpdateFolderType }: Props) {
   const { t } = useTranslation();
   const [renameVal, setRenameVal] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -106,7 +108,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
   const sdkPendingRef = React.useRef<(() => void) | null>(null);
 
   // Compute effective bgs for all scenes at top level (hooks must not be conditional)
-  const { effectiveBg, effectiveMusic, inheritedMusic, inheritedBg, inheritedSprite } = useMemo(() => computeSceneBgs(project), [project]);
+  const { effectiveBg, effectiveMusic, inheritedMusic } = useMemo(() => computeSceneBgs(project), [project]);
   const id = selection.size === 1 ? Array.from(selection)[0] : null;
   const scene = id ? project.scenes.find(s => s.id === id) ?? null : null;
   const bgName = scene ? (effectiveBg[scene.id] ?? null) : null;
@@ -220,7 +222,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
                   try {
                     const sdk = localStorage.getItem(SDK_PATH_KEY) || undefined;
                     const declaredElsewhere = await declaredVarsInGame(rootPath);
-                    const rpy = compilePreview(project, MAIN_MENU_ID, undefined, playMode, undefined, undefined, { declaredElsewhere });
+                    const rpy = compilePreview(project, MAIN_MENU_ID, { playMode, declaredElsewhere });
                     await launchRenpyPreview(rootPath, rpy, sdk);
                   } catch (e) {
                     const msg = String(e);
@@ -441,7 +443,7 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
               try {
                 const sdk = localStorage.getItem(SDK_PATH_KEY) || undefined;
                 const declaredElsewhere = await declaredVarsInGame(rootPath);
-                const rpy = compilePreview(project, scene.id, musicTrack ?? undefined, playMode, inheritedBg[scene.id] ?? undefined, inheritedSprite[scene.id] ?? undefined, { declaredElsewhere });
+                const rpy = compilePreview(project, scene.id, { playMode, declaredElsewhere });
                 await launchRenpyPreview(rootPath, rpy, sdk);
               } catch (e) {
                 const msg = String(e);
@@ -458,6 +460,16 @@ export function GraphInspector({ project, rootPath, selection, onEditScene, onGo
           >
             {playing ? t('canvas.launching') : t('canvas.play_from')}
           </button>
+          {onPlayScene && (
+            <button
+              className="btn btn-ghost flex1"
+              style={{ width: '100%', justifyContent: 'center', gap: 6 }}
+              title="Play in the editor's Playtest, starting with the backgrounds, sprites, music and variables of the scenes before this one"
+              onClick={() => onPlayScene(scene.id)}
+            >
+              {t('canvas.playtest_from')}
+            </button>
+          )}
           <div className="row gap4">
             <button
               className="btn flex1"
