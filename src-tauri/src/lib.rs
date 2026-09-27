@@ -415,15 +415,19 @@ pub fn renpy_launcher_in(dir: &Path) -> Option<PathBuf> {
 
 /// The launcher for a user-supplied SDK location: the SDK folder or a launcher
 /// in it. A launcher for another platform leads to this platform's one next to
-/// it, so picking renpy.exe on Linux still finds renpy.sh. Anything else is
+/// it, so picking renpy.exe on Linux still finds renpy.sh. So does renpy.app,
+/// the SDK's macOS app (a folder), which is what Finder shows. Anything else is
 /// ignored, so the setting can't be used to start some other program.
 pub fn renpy_launcher_from_hint(hint: &str) -> Option<PathBuf> {
     let path = Path::new(hint.trim());
+    let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase());
+    if path.is_dir() && name.as_deref() == Some("renpy.app") {
+        return renpy_launcher_in(path.parent()?);
+    }
     if path.is_dir() {
         return renpy_launcher_in(path);
     }
-    let name = path.file_name()?.to_string_lossy().to_lowercase();
-    if path.is_file() && ["renpy.exe", "renpy.sh", "renpy"].contains(&name.as_str()) {
+    if path.is_file() && ["renpy.exe", "renpy.sh", "renpy"].contains(&name?.as_str()) {
         renpy_launcher_in(path.parent()?)
     } else {
         None
@@ -526,7 +530,7 @@ mod tests {
 
     /// An SDK folder with every platform's launcher in it, like the real one.
     fn make_sdk(dir: &Path) {
-        fs::create_dir_all(dir).unwrap();
+        fs::create_dir_all(dir.join("renpy.app/Contents/MacOS")).unwrap();
         for name in ["renpy.exe", "renpy.sh", "renpy.py"] {
             fs::write(dir.join(name), "").unwrap();
         }
@@ -539,12 +543,14 @@ mod tests {
         make_sdk(&sdk);
         let expected = Some(sdk.join(if cfg!(windows) { "renpy.exe" } else { "renpy.sh" }));
         assert_eq!(renpy_launcher_from_hint(sdk.to_str().unwrap()), expected);
-        // Picking either launcher leads to the one this platform can run.
-        for name in ["renpy.exe", "renpy.sh"] {
+        // Picking either launcher, or the macOS app, leads to the one this platform can run.
+        for name in ["renpy.exe", "renpy.sh", "renpy.app"] {
             assert_eq!(renpy_launcher_from_hint(sdk.join(name).to_str().unwrap()), expected);
         }
         // Nothing else is ever started, even from inside the SDK.
         assert_eq!(renpy_launcher_from_hint(sdk.join("renpy.py").to_str().unwrap()), None);
+        fs::create_dir_all(sdk.join("Other.app")).unwrap();
+        assert_eq!(renpy_launcher_from_hint(sdk.join("Other.app").to_str().unwrap()), None);
         assert_eq!(renpy_launcher_from_hint(dir.join("missing").to_str().unwrap()), None);
         fs::remove_dir_all(&dir).unwrap();
     }

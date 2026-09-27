@@ -4,6 +4,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type { VNProject } from "./types";
 import { migrateProject } from "./types";
 import { declaredVarNames, declaredLabelNames } from "./rpyDeclarations";
+import { IS_MAC, IS_WINDOWS } from "./platform";
 
 // ─── Monitor / Window ─────────────────────────────────────────────────────────
 
@@ -288,13 +289,15 @@ export async function launchRenpyLauncher(
  */
 export const SDK_PATH_KEY = "vnv_renpy_sdk_path";
 
-const IS_WINDOWS = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
-
-/** The SDK ships both renpy.exe and renpy.sh; this is the one that runs here. */
-export const RENPY_LAUNCHER = IS_WINDOWS ? "renpy.exe" : "renpy.sh";
+/**
+ * The file in the SDK to point the setting at here. The SDK ships both
+ * renpy.exe and renpy.sh, and each runs on its own platform. On macOS it's
+ * renpy.app, which Finder shows (renpy.sh next to it is what runs).
+ */
+export const RENPY_LAUNCHER = IS_WINDOWS ? "renpy.exe" : IS_MAC ? "renpy.app" : "renpy.sh";
 
 /** Where an SDK might be unpacked on this platform, for placeholders. */
-export const EXAMPLE_SDK_DIR = IS_WINDOWS ? "C:/renpy-8.5-sdk" : "/home/you/renpy-8.5-sdk";
+export const EXAMPLE_SDK_DIR = IS_WINDOWS ? "C:/renpy-8.5-sdk" : IS_MAC ? "/Applications/renpy-8.5-sdk" : "/home/you/renpy-8.5-sdk";
 
 /**
  * Ask the backend to search common locations for the Ren'Py SDK executable.
