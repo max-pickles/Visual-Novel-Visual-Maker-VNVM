@@ -264,6 +264,7 @@ export const ja = {
       notes_placeholder: "このシーンの作者メモ、あらすじ、またはリマインダーを追加します...",
       hide_sprites: "サムネイル内のキャラクターの立ち絵を隠す",
       select_event_hint: "イベントを選択して検査および編集します",
+      choose_voice: "ボイスファイルを選択",
       choose_bg: "背景を選択",
       choose_image: "画像を選択",
       picker_hint: "— 「この画像を使用」をクリックするか、タイルをダブルクリックして適用します",

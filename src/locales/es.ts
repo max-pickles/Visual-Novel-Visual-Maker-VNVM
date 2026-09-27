@@ -264,6 +264,7 @@ export const es = {
       notes_placeholder: "Añade notas de autor, sinopsis o recordatorios para esta escena\u2026",
       hide_sprites: "Ocultar personajes en la miniatura",
       select_event_hint: "Selecciona un evento para inspeccionarlo y editarlo",
+      choose_voice: "Elegir Archivo de Voz",
       choose_bg: "Elegir Fondo",
       choose_image: "Elegir Imagen",
       picker_hint: "\u2014 haz clic en \u201cUsar esta imagen\u201d o doble clic en un mosaico",

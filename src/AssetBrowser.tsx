@@ -15,6 +15,8 @@ interface Props {
   project?: VNProject;
   /** Picker mode — shows a Select button, calls back with relative path */
   onPick?: (path: string) => void;
+  /** The tab it opens on (images unless given). */
+  initialType?: AssetType;
 }
 
 type AssetType = "images" | "video" | "audio";
@@ -58,8 +60,8 @@ function countUsages(relPath: string, project?: VNProject): number {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AssetBrowser({ rootPath, project, onPick }: Props) {
-  const [assetType, setAssetType] = useState<AssetType>("images");
+export function AssetBrowser({ rootPath, project, onPick, initialType = "images" }: Props) {
+  const [assetType, setAssetType] = useState<AssetType>(initialType);
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");

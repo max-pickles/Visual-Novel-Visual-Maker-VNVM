@@ -264,6 +264,7 @@ export const en = {
       notes_placeholder: "Add author notes, synopsis, or reminders for this scene\u2026",
       hide_sprites: "Hide character sprites in thumbnail",
       select_event_hint: "Select an event to inspect and edit it",
+      choose_voice: "Choose Voice File",
       choose_bg: "Choose Background",
       choose_image: "Choose Image",
       picker_hint: "\u2014 click \u201cUse This Image\u201d or double-click a tile to apply",

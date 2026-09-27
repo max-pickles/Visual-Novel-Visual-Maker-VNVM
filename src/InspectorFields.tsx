@@ -65,7 +65,7 @@ export function AssetPicker({
       {/* Open Full Browser shortcut */}
       {onOpenFullBrowser && (
         <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={onOpenFullBrowser}>
-          ⊞ {tr('inspector.open_browser')}
+          {tr('inspector.open_browser')}
         </button>
       )}
 
