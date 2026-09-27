@@ -876,6 +876,8 @@ interface ReplayStatement {
   clears?: boolean;
   /** An audio statement: starts something still playing, queues a track, or leaves the channel silent. */
   audio?: "play" | "queue" | "silent";
+  /** A speaker's `show <tag> <pose> at <side>`: the image tag it shows. */
+  sprite?: string;
 }
 
 /** `$ name = value`, `$ name += value`, `$ obj.attr[key] = value`… but not `$ name == value` or a call. */
@@ -957,7 +959,8 @@ function replayStatements(step: ReplayStep, proj: VNProject): ReplayStatement[] 
     }
     case "dialogue": {
       const show = speakerShow(ev, proj);
-      return show ? [{ target: "display", lines: [show] }] : [];
+      const char = findChar(proj, ev.char_id);
+      return show && char ? [{ target: "display", sprite: charImageTag(char), lines: [show] }] : [];
     }
     case "music":
       return [ev.music
@@ -979,9 +982,10 @@ function replayStatements(step: ReplayStep, proj: VNProject): ReplayStatement[] 
 
 /**
  * Statements that put the game where `steps` left it, in the order they ran:
- * every assignment, the background and images shown since the last `scene`,
- * the camera, and whatever each audio channel is still playing. Nothing in
- * them waits for the player or plays a transition, so they run instantly.
+ * every assignment, the background and images shown since the last `scene`
+ * (a speaker's repeated shows as one), the camera, and whatever each audio
+ * channel is still playing. Nothing in them waits for the player or plays a
+ * transition, so they run instantly.
  */
 function compileReplay(proj: VNProject, steps: ReplayStep[], prefix: string): string[] {
   const statements = steps.flatMap(step => replayStatements(step, proj));
@@ -993,14 +997,27 @@ function compileReplay(proj: VNProject, steps: ReplayStep[], prefix: string): st
   const channelStart = new Map<string, number>();
   statements.forEach((s, i) => { if (s.audio === "play" || s.audio === "silent") channelStart.set(s.target, i); });
 
-  return statements
-    .filter((s, i) => {
-      if (s.target === "display") return i >= lastScene;
-      if (s.target === "camera") return i === lastCamera;
-      if (s.audio) return i >= (channelStart.get(s.target) ?? -1) && s.audio !== "silent";
-      return true;
-    })
-    .flatMap(s => s.lines.map(line => `${prefix}${line}`));
+  const kept = statements.filter((s, i) => {
+    if (s.target === "display") return i >= lastScene;
+    if (s.target === "camera") return i === lastCamera;
+    if (s.audio) return i >= (channelStart.get(s.target) ?? -1) && s.audio !== "silent";
+    return true;
+  });
+
+  // A speaker's later show replaces their earlier one where it stands, as
+  // Ren'Py does when a showing tag is shown again. Each names one of the
+  // speaker's images and a position, so nothing of the earlier show is left.
+  // It can't reach back past anything else that shows or hides images, which
+  // might show or hide the speaker's image too.
+  const merged: ReplayStatement[] = [];
+  let settled = 0;
+  for (const s of kept) {
+    const same = s.sprite ? merged.findIndex((m, i) => i >= settled && m.sprite === s.sprite) : -1;
+    if (same >= 0) merged[same] = s;
+    else merged.push(s);
+    if (!s.sprite && (s.target === "display" || s.target === "keep")) settled = merged.length;
+  }
+  return merged.flatMap(s => s.lines.map(line => `${prefix}${line}`));
 }
 
 // ─── Preview compiler ──────────────────────────────────────────────────────────

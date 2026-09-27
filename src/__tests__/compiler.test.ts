@@ -798,6 +798,53 @@ describe("compilePreview – starting mid-story", () => {
       `jump vns_scene_${later.id}`,
     ]);
   });
+
+  it("shows each speaker once, with their latest pose and position, where they first appeared", () => {
+    const { proj, start, later, eileen } = story();
+    eileen.sprites.sad = "eileen_sad.png";
+    const bob = newCharacter("Bob");
+    bob.sprites.neutral = "bob.png";
+    proj.characters.push(bob);
+    start.events.splice(-1, 0,
+      e("dialogue", { char_id: bob.id, side: "left", text: "Yo." }),
+      e("setvar", { var_name: "late", var_val: "True" }),
+      e("dialogue", { char_id: eileen.id, pose: "sad", side: "center", text: "Oh." }),
+    );
+    expect(block(compilePreview(proj, later.id), "vnv_preview_entry")).toEqual([
+      `## Set up as if played through start → Later`,
+      `scene expression ${fill("park.png")}`,
+      `show expression "cat.png" at left`,
+      `show Eileen sad at center`,
+      `play music "audio/theme.ogg"`,
+      `$ met = True`,
+      `show Bob neutral at left`,
+      `$ late = True`,
+      `jump vns_scene_${later.id}`,
+    ]);
+  });
+
+  it("doesn't fold a speaker's shows together across anything else that shows or hides images", () => {
+    const { proj, start, later, eileen } = story();
+    start.events.splice(-1, 0,
+      e("raw", { raw_code: "hide Eileen" }),
+      e("dialogue", { char_id: eileen.id, pose: "happy", side: "left", text: "Back!" }),
+      e("image", { image: "moon.png", side: "right" }),
+      e("dialogue", { char_id: eileen.id, pose: "happy", side: "right", text: "Again." }),
+      e("raw", { raw_code: "hide Eileen onlayer master" }),
+      e("dialogue", { char_id: eileen.id, pose: "happy", side: "center", text: "Still here." }),
+    );
+    const shown = block(compilePreview(proj, later.id), "vnv_preview_entry").filter(l => /^(show|hide) /.test(l));
+    expect(shown).toEqual([
+      `show expression "cat.png" at left`,
+      `show Eileen happy at right`,
+      `hide Eileen`,
+      `show Eileen happy at left`,
+      `show expression "moon.png" at right`,
+      `show Eileen happy at right`,
+      `hide Eileen onlayer master`,
+      `show Eileen happy at center`,
+    ]);
+  });
 });
 
 // ─── File paths ───────────────────────────────────────────────────────────────
