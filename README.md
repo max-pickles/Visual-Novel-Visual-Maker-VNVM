@@ -103,6 +103,8 @@ npm run tauri build
 
 The installers are placed in `src-tauri/target/release/bundle/`: an `.msi` and a setup `.exe` on Windows, a `.deb`, an `.rpm` and an AppImage on Linux, an `.app` and a `.dmg` on macOS. The Ren'Py project template in `Templet/game/` is bundled with the app and copied into every new project.
 
+CI builds the Windows installers on every change: download the `vnvmaker-windows-installers` artifact from a CI run. They aren't signed, so Windows SmartScreen asks before running them (**More info** → **Run anyway**).
+
 New projects are created in `Documents/VNVMaker/games` by default; change the folder under **Preferences**.
 
 ### Linux
@@ -208,7 +210,7 @@ The Translation Dashboard's **Sync to Ren'Py** writes `game/tl/<language>/vnv_tr
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the unused-asset scan, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer, the playtest's expression evaluator and stage, the route that Play from Here replays, and the backgrounds and music the editor's scene previews inherit along it. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, and builds and installs the Arch Linux package.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the unused-asset scan, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer, the playtest's expression evaluator and stage, the route that Play from Here replays, and the backgrounds and music the editor's scene previews inherit along it. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, builds the Windows installers, and builds and installs the Arch Linux package.
 
 ```bash
 npx vite build
