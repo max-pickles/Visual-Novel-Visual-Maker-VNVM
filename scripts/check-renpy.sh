@@ -18,10 +18,12 @@ trap 'rm -rf "$OUT"' EXIT
 node "$OUT/fixtures.mjs" "$OUT/games" "$RENPY" "$ROOT"
 
 export SDL_AUDIODRIVER=dummy
+# Each Ren'Py run gets 5 minutes. After a failed test Ren'Py can keep running
+# and ignore timeout's TERM signal, so -k kills it 10 seconds later.
 failed=0
 for dir in "$OUT"/games/*/; do
   name="$(basename "$dir")"
-  if ! (cd "$RENPY" && SDL_VIDEODRIVER=dummy timeout 300 ./run.sh "$dir" lint --error-code > "$OUT/$name.lint.log" 2>&1); then
+  if ! (cd "$RENPY" && SDL_VIDEODRIVER=dummy timeout -k 10 300 ./run.sh "$dir" lint --error-code > "$OUT/$name.lint.log" 2>&1); then
     echo "::error::Ren'Py lint failed for $name"
     cat "$OUT/$name.lint.log" "$dir/errors.txt" "$dir/traceback.txt" 2>/dev/null || true
     failed=1
@@ -31,7 +33,7 @@ for dir in "$OUT"/games/*/; do
   if [ -f "$dir/vnv_translations.txt" ]; then
     stale=0
     while read -r lang; do
-      count="$(cd "$RENPY" && SDL_VIDEODRIVER=dummy timeout 300 ./run.sh "$dir" translate "$lang" --count 2>&1 < /dev/null | tail -n 1)"
+      count="$(cd "$RENPY" && SDL_VIDEODRIVER=dummy timeout -k 10 300 ./run.sh "$dir" translate "$lang" --count 2>&1 < /dev/null | tail -n 1)"
       if [[ "$count" != "$lang: 0 missing dialogue translations"* ]]; then
         echo "::error::$name: the $lang translation no longer matches the dialogue ($count)"
         stale=1
@@ -46,7 +48,7 @@ for dir in "$OUT"/games/*/; do
   if [ -f "$dir/vnv_testcases.rpy" ]; then
     # Lint reports testcase statements as unreachable, so add them only now.
     mv "$dir/vnv_testcases.rpy" "$dir/game/"
-    if ! (cd "$RENPY" && timeout 300 ./run.sh "$dir" test vnv_play > "$OUT/$name.play.log" 2>&1); then
+    if ! (cd "$RENPY" && timeout -k 10 300 ./run.sh "$dir" test vnv_play > "$OUT/$name.play.log" 2>&1); then
       echo "::error::Playthrough failed for $name"
       cat "$OUT/$name.play.log" "$dir/traceback.txt" 2>/dev/null || true
       failed=1

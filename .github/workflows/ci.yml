@@ -118,6 +118,7 @@ jobs:
   renpy:
     name: Ren'Py lint and playthrough
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       RENPY_TAG: 8.5.2.26010301
     steps:
