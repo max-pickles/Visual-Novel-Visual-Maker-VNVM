@@ -44,6 +44,14 @@ export const assetsProject = project("Assets", {
   layout: { start: [0, 0], end: [300, 0] },
 });
 
+/** One achievement, whose icon is chosen with the asset picker. */
+export const pickerProject = project("Picker", {
+  scenes: [scene("start", [{ id: "a", type: "narration", text: "Hello" }])],
+  start: "start",
+  layout: { start: [0, 0] },
+  achievements: [{ id: "first", name: "First Steps", description: "Start the game", hidden: false }],
+});
+
 /** Variables and a condition that the playtest has to evaluate to pick a branch. */
 export const logicProject = project("Logic", {
   scenes: [

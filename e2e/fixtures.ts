@@ -4,6 +4,12 @@
  */
 import { test as base, expect, type Page } from "@playwright/test";
 import type { VNProject } from "../src/types";
+import { en } from "../src/locales/en";
+import { es } from "../src/locales/es";
+import { ja } from "../src/locales/ja";
+
+/** The app's text in each language it can be set to (the pref_language preference). */
+export const locales: Record<string, typeof en> = { en, es, ja };
 
 /** How the mocked backend behaves; see tauri-mock.js. */
 export interface MockOptions {
@@ -59,7 +65,8 @@ export async function openApp(page: Page, mock: MockOptions = {}) {
   }, mock);
   await page.addInitScript({ path: `${test.info().project.testDir}/tauri-mock.js` });
   await page.goto("/");
-  await expect(page.getByText("Create Project", { exact: true })).toBeVisible();
+  const locale = locales[mock.localStorage?.pref_language ?? "en"] ?? en;
+  await expect(page.getByText(locale.menu.create_project, { exact: true })).toBeVisible();
 }
 
 /** Run the new-project wizard and wait for the editor. */
