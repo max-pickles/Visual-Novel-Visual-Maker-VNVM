@@ -385,7 +385,10 @@ function silentWav(seconds = 1, rate = 8000): Buffer {
   const e = (type: VNEvent["type"], fields: Partial<VNEvent> = {}): VNEvent => ({ ...newEvent(type), ...fields });
   const eileen = newCharacter("Eileen");
   eileen.sprites.happy = "images/eileen_happy.png";
-  p.characters.push(eileen);
+  eileen.sprites.sad = "images/eileen_sad.png";
+  const bob = newCharacter("Bob");
+  bob.sprites.neutral = "images/bob.png";
+  p.characters.push(eileen, bob);
   const start = p.scenes[0];
   const later = newScene("later");
   p.scenes.push(later);
@@ -395,6 +398,8 @@ function silentWav(seconds = 1, rate = 8000): Buffer {
     e("bg", { bg: "images/park.png" }),
     e("image", { image: "images/cat.png", side: "left" }),
     e("dialogue", { char_id: eileen.id, pose: "happy", side: "right", text: "Hi!" }),
+    e("dialogue", { char_id: bob.id, side: "left", text: "Hello." }),
+    e("dialogue", { char_id: eileen.id, pose: "sad", side: "center", text: "Oh." }),
     e("music", { music: "audio/theme.wav" }),
     e("sfx", { sfx: "audio/rain.wav", loop: true }),
     e("setvar", { var_name: "met", var_val: "True" }),
@@ -411,7 +416,7 @@ function silentWav(seconds = 1, rate = 8000): Buffer {
     e("jump", { scene_id: later.id }),
   ];
   later.events = [e("narration", { text: "Later on." }), e("bg", { bg: "images/night.png" }), e("narration", { text: "At night." })];
-  const images = ["room", "old", "park", "cat", "eileen_happy", "raw", "night"].map(f => `images/${f}.png`);
+  const images = ["room", "old", "park", "cat", "eileen_happy", "eileen_sad", "bob", "raw", "night"].map(f => `images/${f}.png`);
 
   // Each check waits until play stops at the first line of `label`, then looks
   // at what the replay set up. The long pauses above would time it out if the
@@ -439,6 +444,9 @@ function silentWav(seconds = 1, rate = 8000): Buffer {
   check("later", `vns_scene_${later.id}`, [
     'renpy.showing("images/cat.png") and renpy.showing("Eileen") and renpy.showing("rawimg")',
     'not renpy.showing("images/old.png")',
+    // Each speaker with their latest pose, stacked in the order they first appeared.
+    'renpy.showing("Eileen sad") and renpy.showing("Bob neutral")',
+    '[t for t in renpy.get_showing_tags("master", sort=True) if t in ("Eileen", "Bob")] == ["Eileen", "Bob"]',
   ]);
   // From the last line, after the night background cleared the sprites.
   check("line", "vnv_preview_from", [

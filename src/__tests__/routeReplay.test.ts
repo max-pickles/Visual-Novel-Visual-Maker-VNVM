@@ -3,7 +3,7 @@
  * and what runs along it before play starts there.
  */
 
-import { findRoute, replayTo } from "../routeReplay";
+import { findRoute, replayTo, routeTree } from "../routeReplay";
 import { newEvent, newProject, newScene } from "../types";
 import type { VNEvent, VNProject } from "../types";
 
@@ -82,6 +82,24 @@ describe("findRoute", () => {
     const proj = story({ start: [], a: [jump("b")], b: [jump("a")] });
     expect(findRoute(proj, "b")).toBeNull();
     expect(findRoute(proj, "missing")).toBeNull();
+  });
+});
+
+// ─── routeTree ────────────────────────────────────────────────────────────────
+
+describe("routeTree", () => {
+  it("links each scene a route reaches to the scene before it, which comes first", () => {
+    const proj = story({
+      start: [menu("a", "b")],
+      a: [jump("c")],
+      b: [jump("c")],
+      c: [],
+      side: [say("Elsewhere"), jump("d")],
+      d: [],
+      lost: [jump("lost")],
+    });
+    const links = [...routeTree(proj)].map(([id, link]) => (link ? `${link.from}@${link.idx} → ${id}` : id));
+    expect(links).toEqual(["start", "start@0 → a", "start@0 → b", "a@0 → c", "side", "side@1 → d"]);
   });
 });
 

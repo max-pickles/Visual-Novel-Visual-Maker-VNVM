@@ -7,7 +7,8 @@
  * nobody has played to yet has no save, so this follows a route from the start
  * scene instead and lists what ran along it. Each play mode applies that list
  * its own way: the preview compiles it into statements (compilePreview), the
- * Playtest folds it into its stage (playtestStage.ts).
+ * Playtest folds it into its stage (playtestStage.ts). The editor's scene
+ * previews follow the same routes (computeSceneBgs in sceneGraphUtils.ts).
  */
 import type { VNEvent, VNProject, VNScene } from "./types";
 
@@ -64,6 +65,47 @@ function sceneExits(scene: VNScene, sceneIds: ReadonlySet<string>): Exit[] {
   return exits;
 }
 
+/** Where a route comes into a scene from: the scene before it and the index of the event there that leads on. */
+export interface RouteLink {
+  from: string;
+  idx: number;
+}
+
+/**
+ * How the routes findRoute takes reach every scene: for each scene a route
+ * reaches, the scene before it on that route, or null where the route starts.
+ * Scenes no route reaches are left out. Each scene comes after the one before
+ * it, so the scenes can be followed in order.
+ */
+export function routeTree(project: VNProject): Map<string, RouteLink | null> {
+  const ids = new Set(project.scenes.map(s => s.id));
+  const exits = new Map(project.scenes.map(s => [s.id, sceneExits(s, ids)]));
+
+  // Breadth-first, so each scene is reached with the fewest scene changes.
+  const search = (sources: string[]) => {
+    const cameFrom = new Map<string, RouteLink | null>();
+    const queue: string[] = [];
+    for (const id of sources) {
+      if (!cameFrom.has(id)) { cameFrom.set(id, null); queue.push(id); }
+    }
+    for (let q = 0; q < queue.length; q++) {
+      for (const { idx, target } of exits.get(queue[q]) ?? []) {
+        if (!cameFrom.has(target)) { cameFrom.set(target, { from: queue[q], idx }); queue.push(target); }
+      }
+    }
+    return cameFrom;
+  };
+
+  const startId = ids.has(project.start ?? "") ? project.start! : project.scenes[0]?.id;
+  const tree = startId ? search([startId]) : new Map<string, RouteLink | null>();
+  // Scenes the start scene can't reach are reached from the scenes nothing leads to.
+  const ledTo = new Set([...exits.values()].flatMap(list => list.map(e => e.target)));
+  for (const [id, link] of search(project.scenes.map(s => s.id).filter(id => !ledTo.has(id)))) {
+    if (!tree.has(id)) tree.set(id, link);
+  }
+  return tree;
+}
+
 /**
  * The route to `targetId` with the fewest scene changes, from the game's start
  * scene or, when that can't reach it, from any scene nothing leads to. Each
@@ -71,38 +113,14 @@ function sceneExits(scene: VNScene, sceneIds: ReadonlySet<string>): Exit[] {
  * Empty when the target is where the search starts; null when nothing reaches it.
  */
 export function findRoute(project: VNProject, targetId: string): { scene: VNScene; exitIdx: number }[] | null {
+  const tree = routeTree(project);
+  if (!tree.has(targetId)) return null;
   const byId = new Map(project.scenes.map(s => [s.id, s]));
-  if (!byId.has(targetId)) return null;
-  const ids = new Set(byId.keys());
-  const exits = new Map(project.scenes.map(s => [s.id, sceneExits(s, ids)]));
-
-  const search = (sources: string[]) => {
-    const cameFrom = new Map<string, { from: string; idx: number } | null>();
-    const queue: string[] = [];
-    for (const id of sources) {
-      if (!cameFrom.has(id)) { cameFrom.set(id, null); queue.push(id); }
-    }
-    for (let q = 0; q < queue.length; q++) {
-      const id = queue[q];
-      if (id === targetId) {
-        const route: { scene: VNScene; exitIdx: number }[] = [];
-        for (let step = cameFrom.get(id); step; step = cameFrom.get(step.from)) {
-          route.unshift({ scene: byId.get(step.from)!, exitIdx: step.idx });
-        }
-        return route;
-      }
-      for (const { idx, target } of exits.get(id) ?? []) {
-        if (!cameFrom.has(target)) { cameFrom.set(target, { from: id, idx }); queue.push(target); }
-      }
-    }
-    return null;
-  };
-
-  const startId = byId.has(project.start ?? "") ? project.start! : project.scenes[0]?.id;
-  const fromStart = startId ? search([startId]) : null;
-  if (fromStart) return fromStart;
-  const ledTo = new Set([...exits.values()].flatMap(list => list.map(e => e.target)));
-  return search(project.scenes.map(s => s.id).filter(id => !ledTo.has(id)));
+  const route: { scene: VNScene; exitIdx: number }[] = [];
+  for (let link = tree.get(targetId); link; link = tree.get(link.from)) {
+    route.unshift({ scene: byId.get(link.from)!, exitIdx: link.idx });
+  }
+  return route;
 }
 
 /**
