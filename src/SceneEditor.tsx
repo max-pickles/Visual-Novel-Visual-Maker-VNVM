@@ -14,6 +14,7 @@ import { EventList } from "./EventList";
 import { ScenePreview } from "./ScenePreview";
 import { AssetBrowser } from "./AssetBrowser";
 import { emptyStage, sceneStartStage } from "./playtestStage";
+import { isDeleteKey, shortcutLabel } from "./platform";
 import { compilePreview, compileSingleAnimationPreview } from "./compiler";
 import { launchRenpyPreview, findRenpySdk, declaredVarsInGame, SDK_PATH_KEY } from "./tauriApi";
 import { AnimPropertiesPanel, AnimActionsPanel, AnimTimelinePanel } from "./AnimationTrack";
@@ -278,7 +279,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
         return;
       }
       const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "c" && selIdx !== null) { copyEvent(selIdx); return; }
       if (ctrl && e.key === "x" && selIdx !== null) { cutEvent(selIdx); return; }
@@ -292,7 +293,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
         setSelIdx(i => i === null ? 0 : Math.max(0, i - 1));
       }
       if (e.key === "Escape")  { setArmedTool(null); }
-      if (e.key === "Delete" && selIdx !== null) deleteEvent(selIdx);
+      if (isDeleteKey(e) && selIdx !== null) deleteEvent(selIdx);
       if (e.key === "d" && ctrl && selIdx !== null) duplicateEvent(selIdx);
     };
     window.addEventListener("keydown", handler);
@@ -448,8 +449,8 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
         </div>
 
         {/* Undo/Redo */}
-        <button className="btn btn-ghost btn-icon" onClick={onUndo} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.3 }} title="Undo (Ctrl+Z)">↩</button>
-        <button className="btn btn-ghost btn-icon" onClick={onRedo} disabled={!canRedo} style={{ opacity: canRedo ? 1 : 0.3 }} title="Redo (Ctrl+Y)">↪</button>
+        <button className="btn btn-ghost btn-icon" onClick={onUndo} disabled={!canUndo} style={{ opacity: canUndo ? 1 : 0.3 }} title={`Undo (${shortcutLabel("Ctrl+Z")})`}>↩</button>
+        <button className="btn btn-ghost btn-icon" onClick={onRedo} disabled={!canRedo} style={{ opacity: canRedo ? 1 : 0.3 }} title={`Redo (${shortcutLabel("Ctrl+Shift+Z")})`}>↪</button>
 
         <span style={{ color: "var(--bdr)", margin: "0 2px" }}>│</span>
 

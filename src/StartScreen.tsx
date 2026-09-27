@@ -12,6 +12,7 @@ import type { AppPrefs } from "./App";
 import { useTranslation } from "./translationContext";
 import { PreferencesPanel, LanguagePanel } from "./PreferencesPanel";
 import { NewProjectWizard, useNewProjectWizard } from "./NewProjectWizard";
+import { IS_MAC } from "./platform";
 
 interface Props {
   onLoadVnv: (project: VNProject) => void;
@@ -471,7 +472,7 @@ export function StartScreen({ onLoadVnv, prefs }: Props) {
                       <div className="actions">
                         <button
                           className="btn btn-ghost"
-                          title={t("recent.show_in_explorer")}
+                          title={t(IS_MAC ? "recent.show_in_finder" : "recent.show_in_explorer")}
                           onClick={e => {
                             e.stopPropagation();
                             const folder = p.path.replace(/\/[^/]+$/, '');

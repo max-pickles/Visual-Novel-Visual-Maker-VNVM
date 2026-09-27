@@ -24,6 +24,7 @@ export const en = {
     vnv_project: "VNV Project",
     rpy_project: "Ren'Py Project",
     show_in_explorer: "Show in File Explorer",
+    show_in_finder: "Show in Finder",
     open: "Open",
     remove_from_list: "Remove from list",
     no_recent: "No recent projects.",

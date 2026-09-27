@@ -88,8 +88,9 @@ export async function openProject(page: Page, title: string) {
   await expect(editorTab(page, "Graph")).toBeVisible();
 }
 
-/** The editor's tab button with this label ("Graph", "Scenes", ...). */
-export const editorTab = (page: Page, label: string) => page.locator(`button[title^="${label} (Ctrl+"]`);
+/** The editor's tab button with this label ("Graph", "Scenes", ...); its shortcut is ⌘ on a Mac. */
+export const editorTab = (page: Page, label: string) =>
+  page.locator(`button[title^="${label} (Ctrl+"], button[title^="${label} (⌘"]`);
 
 /** The editor's Back button, which closes the project. */
 export const backButton = (page: Page) => page.getByRole("button", { name: "← Back", exact: true });

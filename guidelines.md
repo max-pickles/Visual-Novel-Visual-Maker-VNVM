@@ -80,6 +80,7 @@ VNV Maker supports extensive theming (Light mode, Dark mode, Solarized, Nord, et
 ## 7. Security & Portability Rules
 *   **Project content is untrusted.** Projects are shared and imported, so never put project text into `dangerouslySetInnerHTML` (use `renderRenpyText` from `renpyText.tsx`) and never evaluate project expressions as JavaScript (use `evalPy` from `pyExpr.ts`). The production CSP in `tauri.conf.json` blocks inline scripts and `eval` as a second line of defense.
 *   **No machine-specific paths.** Resolve folders at runtime (Tauri path APIs, `BaseDirectory::Resource` for the bundled `Templet/`) instead of hardcoding them.
+*   **Every platform's keyboard.** On macOS ⌘ takes Ctrl's place, Ctrl-click opens the context menu, and the delete key sends Backspace. Accept `metaKey` wherever you check `ctrlKey`, use `isDeleteKey` for deleting, and write shortcut hints with `shortcutLabel` (both in `platform.ts`).
 *   **Never overwrite a folder you didn't create.** Creating, importing and exporting check that the destination is new (or ask first) and never the project itself.
 *   **Backend commands check their paths.** Text writes only accept `.rpy`, project saves/loads only `.vnvmaker`, deletes only files inside a `game/` folder (or a project's `project.vnvmaker`), copies only project folders, and the file manager (`show_in_explorer`) only opens folders. The asset protocol starts with an empty scope; `allowProjectAssets()` adds a project's folder when it is opened. Keep new commands to the same standard.
 

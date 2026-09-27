@@ -638,7 +638,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
       // GPU marquee: reset to invisible (Twine: scale 0 so layout isn't affected)
       if (lassoElemRef.current) lassoElemRef.current.style.transform = 'translate(-10000px,-10000px) scale(0,0)';
       e.currentTarget.setPointerCapture(e.pointerId);
-      if (!e.shiftKey && !e.ctrlKey) setSelection(new Set());
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setSelection(new Set());
     }
   };
 
@@ -694,7 +694,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
           if (n.x < lr.x + lr.w && n.x + n.w > lr.x && n.y < lr.y + lr.h && n.y + n.h > lr.y)
             sel.add(n.id);
         });
-        if (!e.shiftKey && !e.ctrlKey) setSelection(sel);
+        if (!e.shiftKey && !e.ctrlKey && !e.metaKey) setSelection(sel);
         else setSelection(prev => new Set([...prev, ...sel]));
       }
       lassoRectRef.current = null;
@@ -721,7 +721,7 @@ export function StoryCanvas({ project, onProjectChange, rootPath, onNodePosition
     // Twine: recentlyDragging guard — suppress the spurious select that fires after a drag
     if (!recentlyDragging.current) {
       if (!selection.has(id)) {
-        if (e.shiftKey || e.ctrlKey) {
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
           nextSelection = new Set([...selection, id]);
           setSelection(nextSelection);
         } else {
