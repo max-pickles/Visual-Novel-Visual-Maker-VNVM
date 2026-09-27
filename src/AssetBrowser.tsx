@@ -390,6 +390,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                         <div key={f}
                           className={`asset-tile${isSel ? " selected" : ""}`}
                           onClick={() => select(f)}
+                          onDoubleClick={() => confirmPick(f)}
                           title={f}
                           style={{ width: 100, height: 100, padding: 4 }}>
                           {assetType === "video" ? (
@@ -415,6 +416,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                       return (
                         <div key={f}
                           onClick={() => select(f)}
+                          onDoubleClick={() => confirmPick(f)}
                           style={{
                             display: "flex", alignItems: "center", gap: 12,
                             padding: "6px 10px", borderRadius: 5, cursor: "pointer",
@@ -463,13 +465,15 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                           border: `1px solid ${isSel ? "var(--teal)" : isPlaying ? "color-mix(in srgb, var(--teal) 30%, transparent)" : "var(--bdr)"}`,
                           transition: "background 0.12s, border-color 0.12s",
                         }}
-                        onClick={() => select(f)}>
+                        onClick={() => select(f)}
+                        onDoubleClick={() => confirmPick(f)}>
                         {/* Playing bar indicator */}
                         {isPlaying && <div style={{ width: 3, height: 52, background: "var(--teal)", flexShrink: 0 }} />}
-                        {/* Play/pause button */}
+                        {/* Play/pause button (double-clicking it doesn't pick the track) */}
                         <button
                           style={{ width: 44, height: 52, background: "var(--bg3)", border: "none", borderRight: "1px solid var(--bdr)", cursor: "pointer", color: isPlaying ? "var(--teal)" : "var(--dim)", fontSize: 18, flexShrink: 0 }}
-                          onClick={(e) => { e.stopPropagation(); playAudio(f); }}>
+                          onClick={(e) => { e.stopPropagation(); playAudio(f); }}
+                          onDoubleClick={(e) => e.stopPropagation()}>
                           {isPlaying ? "⏸" : "▶"}
                         </button>
                         {/* File info */}

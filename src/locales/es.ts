@@ -267,7 +267,7 @@ export const es = {
       choose_voice: "Elegir Archivo de Voz",
       choose_bg: "Elegir Fondo",
       choose_image: "Elegir Imagen",
-      picker_hint: "\u2014 haz clic en \u201cUsar esta imagen\u201d o doble clic en un mosaico",
+      picker_hint: "\u2014 haz clic en \u201cUse This\u201d o doble clic en un archivo",
       armed_hint: "Clic en la línea de tiempo para insertar",
       arm_tooltip: "Clic para armar {tool}, luego clic en la línea de tiempo",
       launched: "¡Iniciado!",

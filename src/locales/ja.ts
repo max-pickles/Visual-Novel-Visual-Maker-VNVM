@@ -267,7 +267,7 @@ export const ja = {
       choose_voice: "ボイスファイルを選択",
       choose_bg: "背景を選択",
       choose_image: "画像を選択",
-      picker_hint: "— 「この画像を使用」をクリックするか、タイルをダブルクリックして適用します",
+      picker_hint: "— 「Use This」をクリックするか、ファイルをダブルクリックして適用します",
       armed_hint: "挿入するタイムラインをクリックします",
       arm_tooltip: "クリックして {tool} を準備し、タイムラインをクリックして挿入します",
       launched: "起動しました！",

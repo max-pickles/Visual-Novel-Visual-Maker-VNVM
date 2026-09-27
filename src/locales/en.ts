@@ -267,7 +267,7 @@ export const en = {
       choose_voice: "Choose Voice File",
       choose_bg: "Choose Background",
       choose_image: "Choose Image",
-      picker_hint: "\u2014 click \u201cUse This Image\u201d or double-click a tile to apply",
+      picker_hint: "\u2014 click \u201cUse This\u201d or double-click a file to apply",
       armed_hint: "Click timeline to insert",
       arm_tooltip: "Click to arm {tool}, then click timeline to insert",
       launched: "Launched!",
