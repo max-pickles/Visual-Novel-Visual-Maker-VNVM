@@ -124,6 +124,21 @@ For **Play**, download the Ren'Py SDK (`renpy-8.x.x-sdk.tar.bz2`) from [renpy.or
 
 If the window stays blank, a WebKitGTK problem with some graphics drivers (mostly NVIDIA on Wayland), start it with `env WEBKIT_DISABLE_DMABUF_RENDERER=1 vnvmaker`.
 
+### macOS
+
+VNVMaker runs on macOS 11 (Big Sur) or later, on Apple silicon and Intel Macs. It draws its window with the system's WebKit, so keep Safari up to date (16.2 or later). CI builds a disk image on every change: download the `vnvmaker-macos-dmg` artifact from a CI run, open the `.dmg` and drag **VNVMaker** into **Applications**. The app isn't notarized by Apple, so macOS won't open it the first time. Open **System Settings → Privacy & Security** (**System Preferences → Security & Privacy** on macOS 11 and 12) and click **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/VNVMaker.app` once.
+
+To build it yourself, install Xcode's command line tools (`xcode-select --install`), Rust and Node.js, then run `npm run tauri build`. For one app that runs on both Apple silicon and Intel Macs:
+
+```bash
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run tauri build -- --target universal-apple-darwin
+```
+
+For **Play**, download the Ren'Py SDK (`renpy-8.x.x-sdk.dmg`) from [renpy.org](https://www.renpy.org/latest.html) and copy the SDK folder out of it, for example into Applications. In the SDK wizard, pick the `renpy.app` inside that folder, or the folder itself; VNVMaker runs the SDK's `renpy.sh`. An SDK folder in Applications (yours or the system's), your home folder, Desktop, Downloads or Documents is found without setting anything.
+
+Shortcuts use ⌘ where Windows and Linux use Ctrl, and the delete key deletes the selected event in the Scene Editor. Quitting with ⌘Q saves or asks about unsaved changes first, like closing the window.
+
 ---
 
 ## 🎮 Ren'Py SDK Setup
@@ -132,7 +147,7 @@ VNV Maker needs to know where your Ren'Py SDK lives to launch previews.
 
 1. Open any project.
 2. Click the **⚙ gear icon** in the Scene Editor toolbar (or the SDK status badge).
-3. The **SDK Setup Wizard** will scan common paths automatically. If it doesn't find your SDK, click **Browse** and pick `renpy.exe` (Windows) or `renpy.sh` (macOS/Linux). In **Preferences** you can also pick the SDK folder itself. The SDK contains both launchers; VNVMaker always runs the one for your platform.
+3. The **SDK Setup Wizard** will scan common paths automatically. If it doesn't find your SDK, click **Browse** and pick `renpy.exe` (Windows), `renpy.app` (macOS) or `renpy.sh` (Linux). In **Preferences** you can also pick the SDK folder itself. The SDK contains both launchers; VNVMaker always runs the one for your platform.
 4. Click **Save** — your path is stored in `localStorage` and remembered across sessions.
 
 ---
@@ -210,7 +225,7 @@ The Translation Dashboard's **Sync to Ren'Py** writes `game/tl/<language>/vnv_tr
 npm test
 ```
 
-Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the unused-asset scan, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer, the playtest's expression evaluator and stage, the route that Play from Here replays, and the backgrounds and music the editor's scene previews inherit along it. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux and Windows, builds the Windows installers, and builds and installs the Arch Linux package.
+Tests live in `src/__tests__/` and cover the compiler, the `.rpy` importer, the validator, project save/load, the export rules, the unused-asset scan, the `gui.rpy`/`options.rpy` parsers, the Ren'Py text-tag renderer, the playtest's expression evaluator and stage, the route that Play from Here replays, and the backgrounds and music the editor's scene previews inherit along it. The Rust side has its own tests (`cargo test` in `src-tauri/`). CI (`.github/workflows/ci.yml`) also typechecks (with unused locals and parameters as errors), builds the frontend, runs the browser smoke tests, runs `cargo clippy` and `cargo test` on Linux, Windows and macOS, builds the Windows installers and the macOS app, and builds and installs the Arch Linux package.
 
 ```bash
 npx vite build
