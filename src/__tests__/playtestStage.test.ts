@@ -3,7 +3,7 @@
  * the Playtest shows, and the stage a replayed route starts with.
  */
 
-import { applyEvent, emptyStage, enterScene, replayStage } from "../playtestStage";
+import { applyEvent, emptyStage, enterScene, replayStage, sceneStartStage } from "../playtestStage";
 import type { Stage } from "../playtestStage";
 import { replayTo } from "../routeReplay";
 import { newCharacter, newEvent, newProject, newScene } from "../types";
@@ -133,5 +133,48 @@ describe("replayStage", () => {
     const stage = replayStage(replayTo(proj, "later").steps, proj);
     expect(stage.bg).toBe("gui/game_menu.png");
     expect(stage.music).toBe("theme.ogg");
+  });
+});
+
+// ─── sceneStartStage ──────────────────────────────────────────────────────────
+
+describe("sceneStartStage", () => {
+  /** A start scene that shows a background, an image and a speaker, plays music, then jumps to "later". */
+  function twoScenes() {
+    const proj = makeProj();
+    const start = proj.scenes[0];
+    const later = { ...newScene("Later"), id: "later", events: [ev("narration", { text: "Here" })] };
+    proj.scenes.push(later);
+    start.events = [
+      ev("bg", { bg: "park.png" }),
+      ev("image", { image: "cat.png" }),
+      ev("dialogue", { char_id: "eileen", pose: "happy", text: "Hi!" }),
+      ev("music", { music: "theme.ogg" }),
+      ev("jump", { scene_id: "later" }),
+    ];
+    return { proj, start, later };
+  }
+
+  it("starts a scene with what its route left on screen, speakers included", () => {
+    const { proj, later } = twoScenes();
+    const stage = sceneStartStage(proj, later);
+    expect(stage.bg).toBe("park.png");
+    expect(shown(stage)).toEqual(["cat.png=cat.png", "char:eileen=eileen happy.png"]);
+    expect(stage.music).toBe("theme.ogg");
+  });
+
+  it("then shows the scene's own background and music, which clear the sprites", () => {
+    const { proj, later } = twoScenes();
+    later.bg = "night.png";
+    later.music = "calm.ogg";
+    const stage = sceneStartStage(proj, later);
+    expect([stage.bg, stage.music]).toEqual(["night.png", "calm.ogg"]);
+    expect(shown(stage)).toEqual([]);
+  });
+
+  it("starts the start scene with nothing before it", () => {
+    const { proj, start } = twoScenes();
+    start.bg = "default.png";
+    expect(sceneStartStage(proj, start)).toEqual({ ...emptyStage(), bg: "default.png" });
   });
 });

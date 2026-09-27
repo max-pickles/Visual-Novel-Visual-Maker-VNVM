@@ -13,7 +13,7 @@ import { Inspector } from "./Inspector";
 import { EventList } from "./EventList";
 import { ScenePreview } from "./ScenePreview";
 import { AssetBrowser } from "./AssetBrowser";
-import { computeSceneBgs } from "./sceneGraphUtils";
+import { emptyStage, sceneStartStage } from "./playtestStage";
 import { compilePreview, compileSingleAnimationPreview } from "./compiler";
 import { launchRenpyPreview, findRenpySdk, declaredVarsInGame, SDK_PATH_KEY } from "./tauriApi";
 import { AnimPropertiesPanel, AnimActionsPanel, AnimTimelinePanel } from "./AnimationTrack";
@@ -168,12 +168,8 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
     }
   }, [selIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // State (bg + sprite) inherited from the game flow BEFORE this scene's first event
-  const { inheritedBg, inheritedSprite } = useMemo(() => {
-    if (!scene) return { inheritedBg: null, inheritedSprite: null };
-    const { inheritedBg: bgMap, inheritedSprite: sprMap } = computeSceneBgs(project as import("./types").VNProject);
-    return { inheritedBg: bgMap[scene.id] ?? null, inheritedSprite: sprMap[scene.id] ?? null };
-  }, [project, scene?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // What's on screen when the scene starts, as the Playtest and Play from Here show it
+  const startStage = useMemo(() => (scene ? sceneStartStage(project, scene) : emptyStage()), [project, scene]);
 
   // Keep selSceneId in sync when initialSceneId changes
   useEffect(() => {
@@ -731,8 +727,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                     selectedIdx={oldSc.events.length - 1}
                     project={project}
                     rootPath={project._rootPath ?? ""}
-                    inheritedBg={inheritedBg}
-                    inheritedSprite={inheritedSprite}
+                    startStage={sceneStartStage(project, oldSc)}
                     colorGradeFilter={colorGradeToCss(oldSc.color_grade) || undefined}
                     guiCfg={guiCfg}
                     showGuides={false}
@@ -751,8 +746,7 @@ export function SceneEditor({ project, onProjectChange, initialSceneId, canUndo,
                 selectedIdx={selIdx}
                 project={project}
                 rootPath={project._rootPath ?? ""}
-                inheritedBg={inheritedBg}
-                inheritedSprite={inheritedSprite}
+                startStage={startStage}
                 colorGradeFilter={colorGradeToCss(scene?.color_grade) || undefined}
                 guiCfg={guiCfg}
                 showGuides={showGuides}

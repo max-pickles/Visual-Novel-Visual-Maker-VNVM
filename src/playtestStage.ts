@@ -10,7 +10,7 @@
 import type { VNEvent, VNProject, VNScene } from "./types";
 import { characterSprite, findChar } from "./types";
 import { evalPy } from "./pyExpr";
-import type { ReplayStep } from "./routeReplay";
+import { replayTo, type ReplayStep } from "./routeReplay";
 
 export interface Stage {
   bg: string | null;
@@ -136,4 +136,13 @@ export function replayStage(steps: ReplayStep[], project: VNProject): Stage {
     (stage, step) => (step.kind === "enter" ? enterScene(stage, step.scene, project) : applyEvent(stage, step.event, project)),
     emptyStage(),
   );
+}
+
+/**
+ * The stage when play enters `scene` along its route (see replayTo): what the
+ * scenes before it left behind, then the scene's own background and music.
+ * The Scene Editor's preview starts each scene from it.
+ */
+export function sceneStartStage(project: VNProject, scene: VNScene): Stage {
+  return enterScene(replayStage(replayTo(project, scene.id).steps, project), scene, project);
 }
