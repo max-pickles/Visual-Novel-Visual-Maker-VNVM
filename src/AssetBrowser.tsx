@@ -9,6 +9,7 @@ import type { VNProject } from "./types";
 import { listAssetFiles } from "./tauriApi";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useMusicPlayer } from "./musicPlayerContext";
+import { useTranslation } from "./translationContext";
 
 interface Props {
   rootPath: string;
@@ -40,6 +41,11 @@ function extOf(f: string): string {
   return f.split(".").pop()?.toLowerCase() ?? "";
 }
 
+// Wrap the parts of a translated string that are in backticks, e.g. "Add `.png` files"
+function wrapTicked(text: string, wrap: (part: string, key: number) => React.ReactNode): React.ReactNode[] {
+  return text.split("`").map((part, i) => (i % 2 ? wrap(part, i) : part));
+}
+
 // Count how many times a file path appears in the project events
 function countUsages(relPath: string, project?: VNProject): number {
   if (!project) return 0;
@@ -61,6 +67,7 @@ function countUsages(relPath: string, project?: VNProject): number {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AssetBrowser({ rootPath, project, onPick, initialType = "images" }: Props) {
+  const { t } = useTranslation();
   const [assetType, setAssetType] = useState<AssetType>(initialType);
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -216,17 +223,17 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
 
         {/* Type toggle */}
         <div className="row gap4">
-          {(["images", "video", "audio"] as AssetType[]).map((t) => (
-            <button key={t}
+          {(["images", "video", "audio"] as AssetType[]).map((type) => (
+            <button key={type}
               style={{
                 padding: "4px 12px", fontSize: 11, fontWeight: 600, border: "1px solid",
-                borderColor: assetType === t ? "var(--teal)" : "var(--bdr)",
+                borderColor: assetType === type ? "var(--teal)" : "var(--bdr)",
                 borderRadius: 5, cursor: "pointer",
-                background: assetType === t ? "color-mix(in srgb, var(--teal) 12%, transparent)" : "transparent",
-                color: assetType === t ? "var(--teal)" : "var(--dim)",
+                background: assetType === type ? "color-mix(in srgb, var(--teal) 12%, transparent)" : "transparent",
+                color: assetType === type ? "var(--teal)" : "var(--dim)",
               }}
-              onClick={() => setAssetType(t)}>
-              {t === "images" ? "🖼 Images" : t === "video" ? "🎬 Videos" : "🎵 Music"}
+              onClick={() => setAssetType(type)}>
+              {t(type === "images" ? "asset_browser.images" : type === "video" ? "asset_browser.video" : "asset_browser.music")}
             </button>
           ))}
         </div>
@@ -234,17 +241,17 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
         <div style={{ width: 1, height: 24, background: "var(--bdr)", flexShrink: 0 }} />
 
         {/* Search */}
-        <input className="input" placeholder="🔍 Search files…" value={search}
+        <input className="input" placeholder={t("asset_browser.search_ph")} value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 200 }} />
 
         {/* Sort */}
         <select className="input" value={sortMode}
           onChange={(e) => setSortMode(e.target.value as SortMode)}
-          style={{ width: 130, fontSize: 11 }}>
-          <option value="name">Sort: Name</option>
-          <option value="folder">Sort: Folder</option>
-          <option value="ext">Sort: Extension</option>
+          style={{ width: "auto", minWidth: 130, fontSize: 11 }}>
+          <option value="name">{t("asset_browser.sort_name")}</option>
+          <option value="folder">{t("asset_browser.sort_folder")}</option>
+          <option value="ext">{t("asset_browser.sort_ext")}</option>
         </select>
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
@@ -254,7 +261,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
               {(["grid", "list"] as ViewMode[]).map((v) => (
                 <button key={v}
                   onClick={() => setViewMode(v)}
-                  title={v === 'grid' ? 'Grid view' : 'List view'}
+                  title={t(v === 'grid' ? 'asset_browser.grid_view' : 'asset_browser.list_view')}
                   style={{
                     padding: "4px 8px", fontSize: 12, border: "1px solid",
                     borderColor: viewMode === v ? "var(--teal)" : "var(--bdr)",
@@ -268,11 +275,11 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
             </div>
           )}
 
-          <button className="btn btn-ghost" onClick={load} title="Refresh" style={{ padding: "4px 8px", fontSize: 12 }}>↻</button>
+          <button className="btn btn-ghost" onClick={load} title={t("asset_browser.refresh")} style={{ padding: "4px 8px", fontSize: 12 }}>↻</button>
 
           {playing && (
             <button className="btn btn-ghost" style={{ fontSize: 11, color: "var(--teal)" }} onClick={stopAudio}>
-              ⏹ Stop
+              {t("asset_browser.stop")}
             </button>
           )}
         </div>
@@ -282,7 +289,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
 
         {/* ── Folder Tree ── */}
         <div className="panel col" style={{ width: 264, height: "100%", overflowY: "auto", flexShrink: 0 }}>
-          <div className="sec-hdr" style={{ fontSize: 13 }}>FOLDERS</div>
+          <div className="sec-hdr" style={{ fontSize: 13 }}>{t("asset_browser.folders")}</div>
 
 
           {folders.filter(dir => isFolderVisible(dir)).map((dir) => {
@@ -311,14 +318,14 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                 <span style={{ fontSize: 22 }}>{folder === dir && !isCollapsed ? "📂" : "📁"}</span>
                 <div className="col flex1" style={{ minWidth: 0, gap: 1 }}>
                   <span style={{ fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-                  <span style={{ fontSize: 12, color: "var(--faint)" }}>{count} files</span>
+                  <span style={{ fontSize: 12, color: "var(--faint)" }}>{t(count === 1 ? "asset_browser.folder_files_one" : "asset_browser.folder_files_many").replace("{n}", String(count))}</span>
                 </div>
               </div>
             );
           })}
 
           {!loading && !folders.length && (
-            <div style={{ padding: "12px 14px", fontSize: 14, color: "var(--faint)" }}>No subfolders</div>
+            <div style={{ padding: "12px 14px", fontSize: 14, color: "var(--faint)" }}>{t("asset_browser.no_subfolders")}</div>
 
           )}
         </div>
@@ -329,7 +336,8 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
           {/* File count bar */}
           <div className="row" style={{ padding: "6px 14px", borderBottom: "1px solid var(--bdr)", background: "var(--bg1)", flexShrink: 0, alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 11, color: "var(--dim)" }}>
-              {loading ? "Loading…" : `${visibleFiles.length} / ${files.length} ${assetType === "images" ? "images" : assetType === "video" ? "videos" : "tracks"}`}
+              {loading ? t("asset_browser.loading_short") : t(assetType === "images" ? "asset_browser.count_images" : assetType === "video" ? "asset_browser.count_videos" : "asset_browser.count_tracks")
+                .replace("{shown}", String(visibleFiles.length)).replace("{total}", String(files.length))}
             </span>
             {selected && (
               <>
@@ -337,13 +345,13 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                 <span style={{ fontSize: 11, color: "var(--teal)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   ✓ {selectedName}
                 </span>
-                <button onClick={copyPath} title="Copy path"
+                <button onClick={copyPath} title={t("asset_browser.copy_path_title")}
                   style={{ fontSize: 10, padding: "2px 8px", background: "var(--bg3)", border: "1px solid var(--bdr)", borderRadius: 4, cursor: "pointer", color: "var(--dim)" }}>
-                  📋 Copy Path
+                  {t("asset_browser.copy_path")}
                 </button>
                 {onPick && (
                   <button className="btn btn-teal" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => confirmPick(selected)}>
-                    ✅ Use This
+                    {t("asset_browser.use_this")}
                   </button>
                 )}
               </>
@@ -360,7 +368,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                 <div style={{ marginBottom: 16, padding: "10px 14px", background: "color-mix(in srgb, var(--warn) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 30%, transparent)", borderRadius: 6, color: "var(--text)", fontSize: 13, display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <span style={{ fontSize: 16, lineHeight: 1 }}>⚠️</span>
                   <div>
-                    <strong style={{ color: "var(--warn)" }}>Note:</strong> Only <strong>.webm</strong> files are playable in the Ren'Py engine. While you can preview .mp4 and .mov files here, they will not work when running the game.
+                    <strong style={{ color: "var(--warn)" }}>{t("asset_browser.note")}</strong> {wrapTicked(t("asset_browser.video_notice"), (part, key) => <strong key={key}>{part}</strong>)}
                   </div>
                 </div>
               )}
@@ -368,13 +376,13 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
               {loading && (
                 <div style={{ textAlign: "center", padding: "48px 0", color: "var(--faint)", fontSize: 13 }}>
                   <div style={{ fontSize: 24, marginBottom: 8, animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</div>
-                  <div>Scanning files…</div>
+                  <div>{t("asset_browser.loading")}</div>
                 </div>
               )}
 
               {!loading && !rootPath && (
                 <div style={{ textAlign: "center", padding: "48px 0", color: "var(--faint)", fontSize: 13 }}>
-                  Open a project first to browse assets.
+                  {t("asset_browser.open_project_first")}
                 </div>
               )}
 
@@ -438,7 +446,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                           {onPick && isSel && (
                             <button className="btn btn-teal" style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
                               onClick={(e) => { e.stopPropagation(); confirmPick(f); }}>
-                              Use
+                              {t("asset_browser.use_row")}
                             </button>
                           )}
                         </div>
@@ -491,7 +499,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                         {onPick && (
                           <button className="btn btn-teal" style={{ margin: "0 8px", fontSize: 11, padding: "3px 8px", flexShrink: 0 }}
                             onClick={(e) => { e.stopPropagation(); select(f); confirmPick(f); }}>
-                            ✅ Use
+                            {t("asset_browser.use_track")}
                           </button>
                         )}
                       </div>
@@ -554,32 +562,32 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                       position: 'absolute', left: 0, top: 0, bottom: 0, width: 5,
                       cursor: 'ew-resize', zIndex: 10, background: 'transparent',
                     }}
-                    title="Drag to resize preview"
+                    title={t('asset_browser.resize_preview')}
                   />
 
                   {/* Header toolbar */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--bdr)', background: 'var(--bg2)', flexShrink: 0, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--dim)', letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>Preview</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--dim)', letterSpacing: '.1em', textTransform: 'uppercase', marginRight: 4 }}>{t('asset_browser.preview')}</span>
                     {/* Nav */}
-                    {iconBtn('◀', 'Previous image', () => prevFile && select(prevFile), false)}
-                    {iconBtn('▶', 'Next image', () => nextFile && select(nextFile), false)}
+                    {iconBtn('◀', t('asset_browser.prev_image'), () => prevFile && select(prevFile), false)}
+                    {iconBtn('▶', t('asset_browser.next_image'), () => nextFile && select(nextFile), false)}
                     <div style={{ width: 1, height: 18, background: 'var(--bdr)' }} />
                     {/* Zoom controls */}
-                    {iconBtn('−', 'Zoom out', () => setPvZoom(z => Math.max(0.1, z / 1.25)))}
+                    {iconBtn('−', t('asset_browser.zoom_out'), () => setPvZoom(z => Math.max(0.1, z / 1.25)))}
                     <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--dim)', minWidth: 44, textAlign: 'center' }}>{Math.round(pvZoom * 100)}%</span>
-                    {iconBtn('+', 'Zoom in', () => setPvZoom(z => Math.min(20, z * 1.25)))}
-                    {iconBtn('⊙', 'Reset zoom & pan', () => { setPvZoom(1); setPvPan({ x: 0, y: 0 }); })}
+                    {iconBtn('+', t('asset_browser.zoom_in'), () => setPvZoom(z => Math.min(20, z * 1.25)))}
+                    {iconBtn('⊙', t('asset_browser.zoom_reset'), () => { setPvZoom(1); setPvPan({ x: 0, y: 0 }); })}
                     <div style={{ width: 1, height: 18, background: 'var(--bdr)' }} />
                     {/* Rotate */}
-                    {iconBtn('↺', 'Rotate 90° CCW', () => setPvRotation(r => (r - 90 + 360) % 360))}
-                    {iconBtn('↻', 'Rotate 90° CW',  () => setPvRotation(r => (r + 90) % 360))}
+                    {iconBtn('↺', t('asset_browser.rotate_ccw'), () => setPvRotation(r => (r - 90 + 360) % 360))}
+                    {iconBtn('↻', t('asset_browser.rotate_cw'), () => setPvRotation(r => (r + 90) % 360))}
                     <div style={{ width: 1, height: 18, background: 'var(--bdr)' }} />
                     {/* Background */}
-                    {iconBtn('◼', 'Dark background',    () => setPvBg('dark'),    pvBg === 'dark')}
-                    {iconBtn('▦', 'Checker (transparency)', () => setPvBg('checker'), pvBg === 'checker')}
-                    {iconBtn('◻', 'White background',   () => setPvBg('white'),   pvBg === 'white')}
+                    {iconBtn('◼', t('asset_browser.bg_dark'), () => setPvBg('dark'), pvBg === 'dark')}
+                    {iconBtn('▦', t('asset_browser.bg_checker'), () => setPvBg('checker'), pvBg === 'checker')}
+                    {iconBtn('◻', t('asset_browser.bg_white'), () => setPvBg('white'), pvBg === 'white')}
                     <div style={{ flex: 1 }} />
-                    {iconBtn('⛶', 'Fullscreen', () => setPvFullscreen(true))}
+                    {iconBtn('⛶', t('asset_browser.fullscreen'), () => setPvFullscreen(true))}
                   </div>
 
                   {/* Image viewport */}
@@ -640,12 +648,12 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                     ) : (
                       <div style={{ textAlign: 'center', color: 'var(--faint)' }}>
                         <div style={{ fontSize: 40 }}>{assetType === "video" ? "🎬" : "🖼"}</div>
-                        <div style={{ fontSize: 11, marginTop: 8 }}>Cannot load {assetType === "video" ? "video" : "image"}</div>
+                        <div style={{ fontSize: 11, marginTop: 8 }}>{t(assetType === "video" ? "asset_browser.cannot_load_video" : "asset_browser.cannot_load_image")}</div>
                       </div>
                     )}
                     {/* Zoom hint */}
                     {pvZoom > 1 && (
-                      <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 10, color: 'color-mix(in srgb, var(--preview-white) 35%, transparent)', pointerEvents: 'none' }}>Drag to pan • Scroll to zoom</div>
+                      <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 10, color: 'color-mix(in srgb, var(--preview-white) 35%, transparent)', pointerEvents: 'none' }}>{t('asset_browser.pan_hint')}</div>
                     )}
                     {/* Rotation badge */}
                     {pvRotation !== 0 && (
@@ -657,13 +665,13 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                   <div style={{ flexShrink: 0, borderTop: '1px solid var(--bdr)', background: 'var(--bg1)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', wordBreak: 'break-all' }}>{selectedName}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
-                      <InfoRow label="Path"   value={selected} mono />
-                      <InfoRow label="Type"   value={`.${selectedExt.toUpperCase()}`} />
-                      {imageDims && <InfoRow label="Size" value={`${imageDims.w} × ${imageDims.h} px`} />}
-                      <InfoRow label="Used"   value={`${usageCount} event${usageCount !== 1 ? 's' : ''}`} color={usageCount > 0 ? 'var(--ok)' : 'var(--faint)'} />
+                      <InfoRow label={t('asset_browser.info_path')} value={selected} mono />
+                      <InfoRow label={t('asset_browser.info_type')} value={`.${selectedExt.toUpperCase()}`} />
+                      {imageDims && <InfoRow label={t('asset_browser.info_size')} value={`${imageDims.w} × ${imageDims.h} px`} />}
+                      <InfoRow label={t('asset_browser.info_used')} value={t(usageCount === 1 ? 'asset_browser.used_one' : 'asset_browser.used_many').replace('{n}', String(usageCount))} color={usageCount > 0 ? 'var(--ok)' : 'var(--faint)'} />
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={copyPath} style={{ flex: 1, padding: '5px 10px', fontSize: 11, borderRadius: 5, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--bdr)', color: 'var(--dim)', textAlign: 'left' }}>📋 Copy Path</button>
+                      <button onClick={copyPath} style={{ flex: 1, padding: '5px 10px', fontSize: 11, borderRadius: 5, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--bdr)', color: 'var(--dim)', textAlign: 'left' }}>{t('asset_browser.copy_path')}</button>
                       <button
                         onClick={() => {
                           const folderPath = selected.split('/').slice(0, -1).join('/');
@@ -679,9 +687,9 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                         }}
                         style={{ flex: 1, padding: '5px 10px', fontSize: 11, borderRadius: 5, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--bdr)', color: 'var(--dim)', textAlign: 'left' }}
                       >
-                        📂 Go to Folder
+                        {t('asset_browser.go_to_folder')}
                       </button>
-                      {onPick && <button className="btn btn-teal" style={{ flex: 1, fontSize: 11 }} onClick={() => confirmPick(selected)}>✅ Use This</button>}
+                      {onPick && <button className="btn btn-teal" style={{ flex: 1, fontSize: 11 }} onClick={() => confirmPick(selected)}>{t('asset_browser.use_this')}</button>}
                     </div>
                   </div>
 
@@ -695,7 +703,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'color-mix(in srgb, var(--preview-dark) 70%, transparent)', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                         <span style={{ fontSize: 13, color: 'color-mix(in srgb, var(--preview-white) 85%, transparent)', fontWeight: 600, flex: 1 }}>{selectedName}</span>
                         {imageDims && <span style={{ fontSize: 11, color: 'color-mix(in srgb, var(--preview-white) 40%, transparent)', fontFamily: 'var(--mono)' }}>{imageDims.w} × {imageDims.h}px</span>}
-                        <button onClick={() => setPvFullscreen(false)} style={{ background: 'color-mix(in srgb, var(--preview-white) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--preview-white) 20%, transparent)', color: 'var(--preview-white)', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>✕ Close</button>
+                        <button onClick={() => setPvFullscreen(false)} style={{ background: 'color-mix(in srgb, var(--preview-white) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--preview-white) 20%, transparent)', color: 'var(--preview-white)', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>{t('asset_browser.close')}</button>
                       </div>
                       {/* Lightbox image */}
                       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
@@ -713,7 +721,7 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
                         <button onClick={e => { e.stopPropagation(); select(nextFile); }} style={{ position: 'absolute', right: 20, top: '50%', transform: 'translateY(-50%)', background: 'color-mix(in srgb, var(--preview-white) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--preview-white) 20%, transparent)', color: 'var(--preview-white)', borderRadius: '50%', width: 48, height: 48, fontSize: 22, cursor: 'pointer' }}>▶</button>
                       )}
                       {/* ESC hint */}
-                      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: 'color-mix(in srgb, var(--preview-white) 30%, transparent)' }}>Click anywhere to close</div>
+                      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', fontSize: 11, color: 'color-mix(in srgb, var(--preview-white) 30%, transparent)' }}>{t('asset_browser.click_to_close')}</div>
                     </div>
                   )}
                 </div>
@@ -729,23 +737,24 @@ export function AssetBrowser({ rootPath, project, onPick, initialType = "images"
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function EmptyState({ type, hasFiles, search }: { type: AssetType; hasFiles: boolean; search: string }) {
+  const { t } = useTranslation();
   if (search && hasFiles) {
     return (
       <div style={{ width: "100%", textAlign: "center", padding: "40px 0", color: "var(--faint)", fontSize: 13 }}>
         <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
-        No results for "{search}"
+        {/* A function, so "$&" and the like in the search text aren't replacement patterns */}
+        {t("asset_browser.no_results").replace("{search}", () => search)}
       </div>
     );
   }
+  const kind = type === "images" ? "images" : type === "video" ? "videos" : "audio";
   return (
     <div style={{ width: "100%", textAlign: "center", padding: "40px 0", color: "var(--faint)", fontSize: 13, lineHeight: 1.8 }}>
       <div style={{ fontSize: 36, marginBottom: 10 }}>{type === "images" ? "🖼" : type === "video" ? "🎬" : "🎵"}</div>
-      {type === "images"
-        ? <>No images found.<br /><span style={{ fontSize: 11 }}>Add <code style={{ fontFamily: "var(--mono)" }}>.png</code> or <code style={{ fontFamily: "var(--mono)" }}>.jpg</code> files to your <code style={{ fontFamily: "var(--mono)" }}>game/images/</code> folder.</span></>
-        : type === "video"
-        ? <>No videos found.<br /><span style={{ fontSize: 11 }}>Add <code style={{ fontFamily: "var(--mono)" }}>.webm</code> or <code style={{ fontFamily: "var(--mono)" }}>.mp4</code> files to your project.</span></>
-        : <>No audio found.<br /><span style={{ fontSize: 11 }}>Add <code style={{ fontFamily: "var(--mono)" }}>.ogg</code> or <code style={{ fontFamily: "var(--mono)" }}>.mp3</code> files to your <code style={{ fontFamily: "var(--mono)" }}>game/audio/</code> folder.</span></>
-      }
+      {t(`asset_browser.no_${kind}`)}<br />
+      <span style={{ fontSize: 11 }}>
+        {wrapTicked(t(`asset_browser.no_${kind}_sub`), (part, key) => <code key={key} style={{ fontFamily: "var(--mono)" }}>{part}</code>)}
+      </span>
     </div>
   );
 }

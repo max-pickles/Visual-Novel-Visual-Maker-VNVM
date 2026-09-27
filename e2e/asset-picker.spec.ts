@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, createProject, editorTab } from "./fixtures";
+import { test, expect, openApp, createProject, editorTab, locales } from "./fixtures";
+import { pickerProject } from "./projects";
 
 /** A new project with one achievement, whose icon is chosen in an AssetBrowser picker. */
 async function openAchievement(page: Page, assets: Record<string, string[]>) {
@@ -89,4 +90,21 @@ test("double-clicking a file in the asset picker picks it", async ({ page, allow
   await page.getByText("audio/rain.ogg", { exact: true }).dblclick();
   await expect(pickerTitle(page)).toBeHidden();
   await expect(iconLabel(page, "rain.ogg")).toBeVisible();
+});
+
+test("the asset picker is in the app's language", async ({ page }) => {
+  const es = locales.es;
+  await openApp(page, { project: pickerProject, assets: { images: ["images/park.png"] }, localStorage: { pref_language: "es" } });
+  await page.getByRole("button", { name: new RegExp(`^${es.menu.open_project}`) }).click();
+  await page.getByText(pickerProject.title, { exact: true }).click();
+  await editorTab(page, es.editor.nav.achievements).click();
+  await page.getByRole("button", { name: `🖼 ${es.editor.scene.choose_image}` }).click();
+
+  await expect(page.getByText(es.editor.scene.picker_hint, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: es.asset_browser.music })).toBeVisible();
+  await expect(page.getByText(es.asset_browser.folders, { exact: true })).toBeVisible();
+  await page.getByTitle("images/park.png").click();
+  await expect(page.getByText(es.asset_browser.preview, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: es.asset_browser.use_this }).last().click();
+  await expect(iconLabel(page, "park.png")).toBeVisible();
 });
