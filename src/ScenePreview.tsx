@@ -9,14 +9,15 @@ import type { VNEvent, VNProject } from "./types";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { GuiConfig } from "./guiParser";
 import { useTranslation } from "./translationContext";
+import { applyEvent, type Stage } from "./playtestStage";
 
 interface Props {
   events: VNEvent[];
   selectedIdx: number | null;
   project: VNProject;
   rootPath: string;
-  inheritedBg?:     string | null;
-  inheritedSprite?: string | null;
+  /** What's on screen when the scene starts (sceneStartStage in playtestStage.ts). */
+  startStage: Stage;
   guiCfg?: GuiConfig | null;
   showGuides?: boolean;
   /** CSS filter string from color grade (e.g. 'saturate(0.3) brightness(0.6)') */
@@ -78,10 +79,6 @@ function useResolvedImage(rootPath: string, name: string | null) {
   return { url, onErr };
 }
 
-// ── State tracker ─────────────────────────────────────────────────────────────
-
-const RENPY_COLORS = new Set(["black", "white", "transparent"]);
-
 // ── Font Injector ─────────────────────────────────────────────────────────────
 
 export function RenpyFonts({ guiCfg, rootPath }: { guiCfg?: GuiConfig | null, rootPath: string }) {
@@ -129,40 +126,17 @@ export function RenpyFonts({ guiCfg, rootPath }: { guiCfg?: GuiConfig | null, ro
   );
 }
 
-function stateAt(
-  events: VNEvent[],
-  idx: number,
-  startBg: string | null,
-  startSprite: string | null,
-) {
-  let bg:     string | null = startBg;
-  const sprites = new Map<string, VNEvent>();
-
-  if (startSprite) {
-    const tag = startSprite.replace(/\\/g, "/").split("/").pop()?.split(/[\s_]/)[0].toLowerCase() || "sprite";
-    sprites.set(tag, { id: 'inherited', type: 'image', image: startSprite, side: 'center' } as VNEvent);
-  }
-
-  const safeIdx = Math.min(idx, events.length - 1);
-  for (let i = 0; i <= safeIdx; i++) {
-    const ev = events[i];
-    if (!ev) continue;
-    // Scene transition clears sprites
-    if (ev.type === "bg" && ev.bg && !RENPY_COLORS.has(ev.bg.toLowerCase())) {
-      bg = ev.bg;
-      sprites.clear();
-    }
-    // Track images by their first word (character tag)
-    if ((ev.type === "image" || ev.type === "animation") && ev.image) {
-      const name = ev.image.replace(/\\/g, "/").split("/").pop() || ev.image;
-      const tag = name.split(/[\s_]/)[0].toLowerCase();
-      sprites.set(tag, ev);
-    }
-  }
-  return { bg, sprites: Array.from(sprites.values()) };
-}
-
 // ── Sprite Renderer ───────────────────────────────────────────────────────────
+
+/** Another layer of a layered character's sprite, drawn over the first. */
+function SpriteLayer({ rootPath, file }: { rootPath: string; file: string }) {
+  const img = useResolvedImage(rootPath, file);
+  return img.url ? (
+    <img src={img.url} alt="" onError={img.onErr} draggable={false}
+      style={{ position: "absolute", left: 0, top: 0, height: "100%", objectFit: "contain", display: "block", pointerEvents: "none" }}
+    />
+  ) : null;
+}
 
 function SpriteRenderer({ spEv, rootPath, isSelected, onImageClick, hovSpId, setHovSpId, logW, logH, fitScale, zoom, onUpdateEventById }: any) {
   const spriteImg = useResolvedImage(rootPath, spEv.image);
@@ -377,7 +351,10 @@ function SpriteRenderer({ spEv, rootPath, isSelected, onImageClick, hovSpId, set
         <img ref={imgRef} src={spriteImg.url} alt="sprite" onError={spriteImg.onErr} draggable={false}
           style={{ height: "100%", objectFit: "contain", display: "block", pointerEvents: "none" }}
         />
-        
+        {(spEv.layers as string[] | undefined)?.slice(1).map((file, i) => (
+          <SpriteLayer key={i} rootPath={rootPath} file={file} />
+        ))}
+
         {/* Handles */}
         {isSelected && (
           <>
@@ -413,7 +390,7 @@ function SpriteRenderer({ spEv, rootPath, isSelected, onImageClick, hovSpId, set
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ScenePreview({ events, selectedIdx, project, rootPath, inheritedBg = null, inheritedSprite = null, colorGradeFilter, guiCfg = null, showGuides = false, onImageClick, onNavigateToScene, zoom, setZoom, onUpdateEventById, onSetThumbnail, isCurrentThumbnail }: Props & { zoom: number, setZoom: React.Dispatch<React.SetStateAction<number>>, onUpdateEventById?: (id: string, partial: Partial<VNEvent>) => void }) {
+export function ScenePreview({ events, selectedIdx, project, rootPath, startStage, colorGradeFilter, guiCfg = null, showGuides = false, onImageClick, onNavigateToScene, zoom, setZoom, onUpdateEventById, onSetThumbnail, isCurrentThumbnail }: Props & { zoom: number, setZoom: React.Dispatch<React.SetStateAction<number>>, onUpdateEventById?: (id: string, partial: Partial<VNEvent>) => void }) {
   const [hovBg, setHovBg] = useState(false);
   const [hovSpId, setHovSpId] = useState<string | null>(null);
   const [containerSize, setContainerSize] = useState({ w: 800, h: 450 });
@@ -421,9 +398,12 @@ export function ScenePreview({ events, selectedIdx, project, rootPath, inherited
 
   const safeIdx = selectedIdx !== null ? Math.min(selectedIdx, events.length - 1) : null;
   const ev = safeIdx !== null && safeIdx >= 0 ? events[safeIdx] : null;
-  const { bg, sprites } = safeIdx !== null && safeIdx >= 0
-    ? stateAt(events, safeIdx, inheritedBg, inheritedSprite)
-    : { bg: inheritedBg, sprites: [] };
+  // The scene's start, then its lines up to the selected one, as the Playtest applies them.
+  const { bg, sprites } = useMemo(() => {
+    const shown = safeIdx !== null && safeIdx >= 0 ? events.slice(0, safeIdx + 1) : [];
+    const stage = shown.reduce((s, e) => applyEvent(s, e, project), startStage);
+    return { bg: stage.bg, sprites: Array.from(stage.sprites.values()) };
+  }, [events, safeIdx, startStage, project]);
 
   let char = ev?.char_id ? project.characters.find(c => c.id === ev.char_id) : null;
   let fallbackName = "";

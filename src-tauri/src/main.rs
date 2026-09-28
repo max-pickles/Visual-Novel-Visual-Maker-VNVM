@@ -462,8 +462,42 @@ fn update_app_icon(window: tauri::Window, teal_hex: String, acc_hex: String) -> 
     Ok(())
 }
 
+/// The id of the app menu's Quit item on macOS (see `app_menu`).
+#[cfg(target_os = "macos")]
+const QUIT_MENU_ID: &str = "vnv-quit";
+
+/// Tauri's default macOS menu, except that Quit (⌘Q) closes the window the
+/// way its close button does, so the editor saves or asks about unsaved
+/// changes first. The default Quit ends the app on the spot.
+#[cfg(target_os = "macos")]
+fn app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItem, MenuItemKind};
+    let menu = Menu::default(app)?;
+    // The first submenu is the app menu, and Quit is its last item.
+    if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.first() {
+        if let Some(quit @ MenuItemKind::Predefined(_)) = app_menu.items()?.last() {
+            app_menu.remove(quit)?;
+            let label = format!("Quit {}", app.package_info().name);
+            app_menu.append(&MenuItem::with_id(app, QUIT_MENU_ID, label, true, Some("Cmd+Q"))?)?;
+        }
+    }
+    Ok(menu)
+}
+
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu).on_menu_event(|app, event| {
+        if event.id() == QUIT_MENU_ID {
+            match app.get_webview_window("main") {
+                Some(window) => {
+                    let _ = window.close();
+                }
+                None => app.exit(0),
+            }
+        }
+    });
+    builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())

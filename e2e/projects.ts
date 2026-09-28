@@ -44,6 +44,35 @@ export const assetsProject = project("Assets", {
   layout: { start: [0, 0], end: [300, 0] },
 });
 
+/**
+ * A second scene whose preview has to start with what the first one left on
+ * screen (a background, an image and a speaker), then show a layered
+ * character who speaks first in it.
+ */
+export const stageProject = project("Stage", {
+  characters: [
+    { id: "eve", name: "Eve", display: "Eve", color: "#c8d0ff", sprites: { neutral: "images/eve.png" }, poses: ["neutral"] },
+    {
+      id: "lay", name: "Lay", display: "Lay", color: "#c8d0ff", sprites: {}, poses: ["neutral"],
+      is_layered: true, layer_order: ["base", "eyes"], layered_sprites: { neutral: { base: "images/base.png", eyes: "images/eyes.png" } },
+    },
+  ],
+  scenes: [
+    scene("first", [
+      { id: "f1", type: "bg", bg: "images/room.png" },
+      { id: "f2", type: "image", image: "images/cat.png", side: "left" },
+      { id: "f3", type: "dialogue", char_id: "eve", pose: "neutral", side: "right", text: "Hello from the first scene." },
+      { id: "f4", type: "jump", scene_id: "second" },
+    ]),
+    scene("second", [
+      { id: "s1", type: "dialogue", char_id: "lay", pose: "neutral", side: "center", text: "Layered hello." },
+      { id: "s2", type: "narration", text: "The end." },
+    ]),
+  ],
+  start: "first",
+  layout: { first: [0, 0], second: [300, 0] },
+});
+
 /** One achievement, whose icon is chosen with the asset picker. */
 export const pickerProject = project("Picker", {
   scenes: [scene("start", [{ id: "a", type: "narration", text: "Hello" }])],

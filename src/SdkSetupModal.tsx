@@ -64,11 +64,11 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
   const handleBrowse = async () => {
     try {
       const result = await open({
-        title: "Locate Ren'Py SDK (renpy.exe / renpy.sh)",
+        title: `Locate Ren'Py SDK (${RENPY_LAUNCHER})`,
         multiple: false,
         directory: false,
         filters: [
-          { name: "Ren'Py Executable", extensions: ["exe", "sh", "py", ""] },
+          { name: "Ren'Py Executable", extensions: ["exe", "sh", "py", "app", ""] },
           { name: "All Files",          extensions: ["*"] },
         ],
       });
@@ -176,7 +176,7 @@ export function SdkSetupModal({ onConfirm, onDismiss, initialPath = "" }: Props)
             <span style={{ fontSize: 12, color: statusColor, flex: 1 }}>
               {status === "scanning"
                 ? "Scanning common locations for Ren'Py SDK…"
-                : statusMsg || "Enter the path to your renpy.exe (or renpy.sh on macOS/Linux)."}
+                : statusMsg || `Enter the path to your ${RENPY_LAUNCHER}, or the SDK folder.`}
             </span>
             {status === "scanning" && (
               <span style={{

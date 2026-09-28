@@ -20,6 +20,7 @@ import { compilePreview } from "./compiler";
 import { ToastManager } from "./toastContext";
 import { useTabHistory } from "./useHistory";
 import { useShortcuts } from "./useShortcuts";
+import { shortcutLabel } from "./platform";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { message } from "@tauri-apps/plugin-dialog";
@@ -279,7 +280,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if ((e.ctrlKey && e.key === "/") || (!e.ctrlKey && !e.altKey && e.key === "?")) {
+      if (((e.ctrlKey || e.metaKey) && e.key === "/") || (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "?")) {
         e.preventDefault();
         setShowShortcuts(v => !v);
       }
@@ -396,7 +397,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
             className="btn btn-ghost"
             onClick={handleUndo}
             disabled={!canUndo(activeTab)}
-            title="Undo (Ctrl+Z)"
+            title={`Undo (${shortcutLabel("Ctrl+Z")})`}
             style={{
               opacity: canUndo(activeTab) ? 1 : 0.28,
               fontSize: 15, padding: "0 8px", height: 32, borderRadius: 7,
@@ -408,7 +409,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
             className="btn btn-ghost"
             onClick={handleRedo}
             disabled={!canRedo(activeTab)}
-            title="Redo (Ctrl+Shift+Z)"
+            title={`Redo (${shortcutLabel("Ctrl+Shift+Z")})`}
             style={{
               opacity: canRedo(activeTab) ? 1 : 0.28,
               fontSize: 15, padding: "0 8px", height: 32, borderRadius: 7,
@@ -424,7 +425,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
         <button
           className="btn btn-ghost"
           onClick={() => setShowSearch(v => !v)}
-          title="Search project (Ctrl+F)"
+          title={`Search project (${shortcutLabel("Ctrl+Shift+F")})`}
           style={{
             display: "flex", alignItems: "center", gap: 5,
             height: 32, padding: "0 12px", borderRadius: 8, fontSize: 12,
@@ -441,7 +442,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
         <button
           className="btn btn-ghost"
           onClick={() => setShowQuickOpen(v => !v)}
-          title="Quick-open scene (Ctrl+P)"
+          title={`Quick-open scene (${shortcutLabel("Ctrl+P")})`}
           style={{
             display: "flex", alignItems: "center", gap: 5,
             height: 32, padding: "0 12px", borderRadius: 8, fontSize: 12,
@@ -514,7 +515,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
             return (
               <button key={n.id}
                 onClick={() => setActiveTab(n.id)}
-                title={`${n.label} (Ctrl+${idx + 1})`}
+                title={`${n.label} (${shortcutLabel(`Ctrl+${idx + 1}`)})`}
                 style={{
                   display: "flex", alignItems: "center", gap: 5,
                   padding: "0 12px", height: 36, borderRadius: "6px 6px 0 0",
@@ -670,7 +671,7 @@ export function VNEditor({ project: initialProject, onClose, autoSave: autoSaveE
             <span style={{ color: "var(--bdr)" }}>│</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: "var(--warn)", fontWeight: 600 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--warn)' }} />
-              {t('editor.nav.unsaved')} (Ctrl+S)
+              {t('editor.nav.unsaved')} ({shortcutLabel("Ctrl+S")})
             </div>
           </>
         )}

@@ -405,7 +405,7 @@ export function ExportPanel({ project }: Props) {
                 <div className="label">REN'PY SDK CONFIG</div>
               </div>
               <div className="col gap4">
-                <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK folder, or renpy.exe / renpy.sh</div>
+                <div style={{ fontSize: 10, color: "var(--dim)" }}>SDK folder, or {RENPY_LAUNCHER}</div>
                 <div className="row gap8">
                   <input className="input mono" style={{ flex: 1, fontSize: 11, padding: '8px 12px', background: 'var(--bg3)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--dim)' }} value={sdkPath} onChange={e => {
                     const p = e.target.value;

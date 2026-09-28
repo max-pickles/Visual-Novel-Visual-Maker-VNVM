@@ -571,7 +571,7 @@ const TranslationDashboard: React.FC<TranslationDashboardProps> = ({ project, ro
                         <textarea className="input vnv-scroll" autoFocus value={editText}
                           onChange={e => setEditText(e.target.value)}
                           onKeyDown={e => {
-                            if (e.key === 'Enter' && e.ctrlKey) saveTranslation(s.id, editText);
+                            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveTranslation(s.id, editText);
                             if (e.key === 'Escape') setEditId(null);
                           }}
                           style={{ fontSize: 14, lineHeight: 1.5, padding: '4px', flex: 1, resize: 'none', background: 'transparent', border: 'none', outline: '1px solid var(--teal)', borderRadius: 2 }}

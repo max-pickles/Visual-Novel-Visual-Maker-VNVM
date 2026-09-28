@@ -24,6 +24,7 @@ export const ja = {
     vnv_project: "VNV プロジェクト",
     rpy_project: "Ren'Py プロジェクト",
     show_in_explorer: "エクスプローラーで表示",
+    show_in_finder: "Finderで表示",
     open: "開く",
     remove_from_list: "リストから削除",
     no_recent: "最近のプロジェクトはありません。",

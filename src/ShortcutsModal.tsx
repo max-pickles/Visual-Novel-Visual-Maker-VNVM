@@ -3,6 +3,7 @@
  * Triggered by the ? button in VNEditor's top bar (or Ctrl+/).
  */
 import { useTranslation } from "./translationContext";
+import { shortcutLabel } from "./platform";
 
 interface ShortcutEntry { keys: string[]; labelKey: string; contextKey: string; }
 
@@ -10,7 +11,7 @@ const SHORTCUTS: ShortcutEntry[] = [
   // Global
   { keys: ["Ctrl+S"],          labelKey: "shortcuts.labels.save",          contextKey: "shortcuts.contexts.global" },
   { keys: ["Ctrl+Z"],          labelKey: "shortcuts.labels.undo",                  contextKey: "shortcuts.contexts.global" },
-  { keys: ["Ctrl+Y"],          labelKey: "shortcuts.labels.redo",                  contextKey: "shortcuts.contexts.global" },
+  { keys: ["Ctrl+Shift+Z"],    labelKey: "shortcuts.labels.redo",                  contextKey: "shortcuts.contexts.global" },
   { keys: ["Ctrl+Shift+F"],    labelKey: "shortcuts.labels.search",         contextKey: "shortcuts.contexts.global" },
   { keys: ["Ctrl+P"],          labelKey: "shortcuts.labels.quick_open",      contextKey: "shortcuts.contexts.global" },
   { keys: ["Escape"],          labelKey: "shortcuts.labels.close_dialog",contextKey: "shortcuts.contexts.global" },
@@ -100,7 +101,7 @@ export function ShortcutsModal({ onClose }: Props) {
                               color: "var(--text)",
                               boxShadow: "0 1px 0 var(--bdr)",
                               whiteSpace: "nowrap",
-                            }}>{k}</kbd>
+                            }}>{shortcutLabel(k)}</kbd>
                           ))}
                         </div>
                       </td>
@@ -124,7 +125,7 @@ export function ShortcutsModal({ onClose }: Props) {
           <span>{t("shortcuts.footer_press")}</span>
           <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "var(--bg3)", border: "1px solid var(--bdr)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--text)" }}>?</kbd>
           <span>{t("shortcuts.footer_or")}</span>
-          <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "var(--bg3)", border: "1px solid var(--bdr)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--text)" }}>Ctrl+/</kbd>
+          <kbd style={{ padding: "1px 6px", borderRadius: 4, background: "var(--bg3)", border: "1px solid var(--bdr)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--text)" }}>{shortcutLabel("Ctrl+/")}</kbd>
           <span>{t("shortcuts.footer_open")}</span>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} className="btn btn-ghost" style={{ fontSize: 11 }}>{t("shortcuts.close")}</button>
